@@ -2,29 +2,33 @@
 ROTAS DE AUTENTICAÇÃO
 ========================
 
-Este ficheiro define os endpoints relacionados com autenticação: registo e
-login. O logout e a rota "quem sou eu" serão acrescentados aqui mais
-adiante, como parte da mesma fatia vertical.
+Este ficheiro define os endpoints relacionados com autenticação: registo,
+login, logout e a rota "quem sou eu".
 """
 
 import secrets
 from datetime import datetime, timezone
 
 # APIRouter permite agrupar rotas relacionadas, como explicado abaixo.
+# Cookie declara, de forma explícita, que um parâmetro vem de um cookie do
+# pedido — usado abaixo, no logout, para ler "session_token" tal como
+# obter_utilizador_atual já faz (app/core/deps.py).
 # Depends é o mecanismo de injecção de dependências do FastAPI — é o que
-# permite à rota, mais abaixo, receber automaticamente uma sessão de base
-# de dados através de get_db, sem ter de a criar manualmente.
+# permite a uma rota receber automaticamente uma sessão de base de dados
+# (get_db) ou o utilizador autenticado (obter_utilizador_atual), sem ter
+# de os obter manualmente.
 # HTTPException permite interromper um pedido a meio, devolvendo um erro
 # HTTP específico (usado abaixo para os casos de email duplicado e de
-# credenciais inválidas). Response é o objecto de resposta HTTP, usado na
-# rota de login para lhe anexar o cookie de sessão. status fornece os
-# códigos HTTP como constantes com nome (ex.: status.HTTP_409_CONFLICT),
-# mais legível do que escrever directamente o número.
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+# credenciais inválidas). Response é o objecto de resposta HTTP, usado no
+# login e no logout para lhe anexar ou remover o cookie de sessão. status
+# fornece os códigos HTTP como constantes com nome (ex.:
+# status.HTTP_409_CONFLICT), mais legível do que escrever directamente o
+# número.
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
 # select é a função do SQLAlchemy usada para construir consultas (o
 # equivalente ao SELECT em SQL), usada abaixo para procurar um utilizador
-# pelo email.
+# pelo email ou uma sessão pelo hash do seu token.
 from sqlalchemy import select
 
 # AsyncSession é o tipo da sessão de base de dados assíncrona — usado aqui
@@ -32,6 +36,7 @@ from sqlalchemy import select
 # o que get_db (importado a seguir) devolve.
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.deps import obter_utilizador_atual
 from app.core.security import hash_password, verify_password
 from app.core.sessions import SESSION_DURATION, gerar_token_sessao, hash_token
 from app.db.session import get_db
@@ -187,4 +192,54 @@ async def login(
         max_age=int(SESSION_DURATION.total_seconds()),
     )
 
+    return utilizador
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    response: Response,
+    session_token: str | None = Cookie(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Termina a sessão actual: apaga a linha correspondente em "sessions" e
+    remove o cookie do browser.
+
+    Ao contrário da rota "quem sou eu", não usa obter_utilizador_atual como
+    dependência — não interessa aqui validar se a sessão ainda é válida
+    antes de a apagar. Um pedido sem cookie, ou com uma sessão já expirada
+    ou inexistente, não tem nada para apagar, mas continua a ser um logout
+    bem-sucedido do ponto de vista de quem o pede (não há sessão activa no
+    fim, que era o objectivo).
+    """
+    if session_token is not None:
+        resultado = await db.execute(
+            select(UserSession).where(UserSession.token_hash == hash_token(session_token))
+        )
+        sessao = resultado.scalar_one_or_none()
+        if sessao is not None:
+            await db.delete(sessao)
+            await db.commit()
+
+    # status_code=204 (No Content) não devolve corpo — por isso esta rota
+    # não declara response_model nem devolve nada além de remover o
+    # cookie. delete_cookie() funciona enviando um Set-Cookie com uma data
+    # de expiração já passada, instrução que faz o browser descartar
+    # imediatamente o cookie existente.
+    response.delete_cookie("session_token")
+
+
+@router.get("/me", response_model=UserPublico)
+async def obter_utilizador_autenticado(
+    utilizador: User = Depends(obter_utilizador_atual),
+) -> User:
+    """
+    Devolve os dados do utilizador actualmente autenticado.
+
+    Toda a lógica de validação da sessão (ler o cookie, confirmar que
+    corresponde a uma sessão válida, renovar a sua expiração) vive em
+    obter_utilizador_atual (app/core/deps.py) — esta rota seria a mesma
+    para qualquer outro endpoint que exigisse um utilizador autenticado,
+    só muda o que devolve depois de o obter.
+    """
     return utilizador

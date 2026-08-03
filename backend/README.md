@@ -1,20 +1,31 @@
 # Backend
 API da aplicação, escrita em Python com o FastAPI.
 
+## Índice
+- [Estrutura](#estrutura)
+- [Requisitos](#requisitos)
+- [Instalação](#instalação)
+- [Correr em desenvolvimento](#correr-em-desenvolvimento)
+- [Correr os testes](#correr-os-testes)
+- [Estado actual](#estado-actual)
+
 ## Estrutura
 - `app/` — pacote da aplicação:
   - `main.py` — instância da FastAPI, liga os routers.
   - `core/config.py` — configuração da aplicação (lê o `.env`).
   - `core/security.py` — hash e verificação de passwords (Argon2id).
   - `core/sessions.py` — geração e hash de tokens de sessão (SHA-256).
+  - `core/deps.py` — dependências partilhadas por várias rotas, sobretudo `obter_utilizador_atual` (identifica o utilizador autenticado a partir do cookie de sessão).
   - `db/session.py` — ligação à base de dados.
   - `models/user.py`, `models/session.py` — tabelas `users` e `sessions`.
   - `schemas/auth.py` — formato dos pedidos e respostas dos endpoints de autenticação.
-  - `routers/auth.py` — os endpoints de autenticação em si (por agora, registo e login).
+  - `routers/auth.py` — os endpoints de autenticação em si (registo, login, logout, "quem sou eu").
 - `tests/` — testes automatizados:
   - `conftest.py` — fixtures partilhadas por todos os testes (base de dados de teste, isolamento por transacção, cliente HTTP).
   - `test_auth_registo.py` — testes ao endpoint `POST /auth/registo`.
   - `test_auth_login.py` — testes ao endpoint `POST /auth/login`.
+  - `test_auth_logout.py` — testes ao endpoint `POST /auth/logout`.
+  - `test_auth_me.py` — testes à rota `GET /auth/me`.
 - `alembic/` — migrações da base de dados; `env.py` liga o Alembic à configuração e aos modelos da aplicação.
 - `alembic.ini` — configuração do Alembic (onde ficam as migrações, o logging).
 - `pyproject.toml` — nome, versão e dependências do projecto (o que o `uv` lê para saber o que instalar); inclui também a configuração do pytest.
@@ -69,8 +80,10 @@ Os testes correm contra uma base de dados PostgreSQL própria, separada da de de
    As tabelas da base de dados de teste são criadas automaticamente, a partir dos modelos, no início da execução — não é preciso aplicar migrações Alembic aí. Cada teste corre isolado dos restantes (o que gravar é sempre revertido no final), pelo que a suite pode ser corrida repetidamente sem qualquer limpeza manual.
 
 ## Estado actual
-Dois endpoints reais, ambos testados automaticamente:
+Fatia vertical da autenticação concluída — quatro endpoints, todos testados automaticamente:
 - `POST /auth/registo` — cria um novo utilizador com a password guardada em hash (Argon2id), rejeitando emails já registados.
 - `POST /auth/login` — autentica um utilizador existente e inicia uma sessão (cookie httpOnly, válida por 30 minutos de inactividade), devolvendo sempre o mesmo erro genérico para email inexistente ou password incorrecta.
+- `POST /auth/logout` — termina a sessão actual (apaga-a da base de dados e remove o cookie); não falha mesmo sem sessão activa.
+- `GET /auth/me` — devolve os dados do utilizador autenticado, a partir do cookie de sessão; renova a validade dessa sessão a cada pedido.
 
-Logout e a rota "quem sou eu" ainda faltam, para fechar a fatia vertical da autenticação.
+A próxima fatia vertical ainda não foi decidida.

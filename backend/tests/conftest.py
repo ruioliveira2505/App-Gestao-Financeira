@@ -108,7 +108,15 @@ async def client(db_session):
     app.dependency_overrides[get_db] = sobrepor_get_db
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    # base_url="https://..." (não "http://"), apesar de o ASGITransport não
+    # fazer nenhuma ligação de rede real (chama a aplicação directamente em
+    # memória) — importa na mesma, porque o cookie de sessão é marcado
+    # secure=True (ver app/routers/auth.py) e o httpx, tal como um browser
+    # real, só reenvia um cookie Secure em pedidos sobre HTTPS. Com
+    # "http://test", o cookie ficava guardado no cliente mas nunca era
+    # reenviado ao servidor — as rotas que dependem dele (logout, "quem
+    # sou eu") recebiam sempre um pedido sem sessão.
+    async with AsyncClient(transport=transport, base_url="https://test") as ac:
         yield ac
 
     # Repõe o estado original, para não afectar outros testes que não
