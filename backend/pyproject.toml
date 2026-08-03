@@ -5,6 +5,47 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.18.5",
+    "argon2-cffi>=25.1.0",
+    "asyncpg>=0.31.0",
+    "email-validator>=2.3.0",
     "fastapi>=0.140.7",
+    "pydantic-settings>=2.14.2",
+    "sqlalchemy>=2.0.51",
     "uvicorn[standard]>=0.51.0",
 ]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "python-dotenv>=1.2.2",
+]
+
+[tool.pytest.ini_options]
+# "strict" (o valor por omissão do pytest-asyncio) exige que cada teste
+# assíncrono leve explicitamente a marca @pytest.mark.asyncio — como
+# acontece em todos os testes deste projecto. Fica aqui indicado de forma
+# explícita, em vez de depender apenas do valor por omissão da
+# biblioteca, que poderia mudar em versões futuras.
+asyncio_mode = "strict"
+
+# Por omissão, o pytest-asyncio cria um "event loop" novo para cada teste,
+# isolado dos restantes. Mas o "engine" do SQLAlchemy (app/db/session.py) é
+# um único objecto, partilhado por toda a sessão de testes através da
+# fixture preparar_base_de_dados (scope="session", em conftest.py) — e uma
+# ligação assíncrona criada num "event loop" não pode ser reutilizada
+# noutro, o que causava os erros vistos ao correr os testes. Estas duas
+# opções fazem tudo — fixtures e testes — partilhar um único "event loop"
+# durante toda a sessão, eliminando esse conflito.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+# Sem isto, o pacote "app" (esta pasta, backend/) não é encontrado quando
+# o pytest tenta importar tests/conftest.py — por não existir nenhum
+# __init__.py em tests/, o pytest só junta ao sys.path a pasta onde cada
+# ficheiro de teste vive (tests/), não a pasta acima (backend/), onde
+# "app" realmente está. "." refere-se à pasta onde este pyproject.toml
+# vive, ou seja, backend/.
+pythonpath = ["."]

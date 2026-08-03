@@ -19,4 +19,4 @@ Acompanhar finanças espalhadas por várias contas bancárias, e categorizar cad
 Pré-requisitos: [uv](https://docs.astral.sh/uv/) e Node.js (com `npm`). Depois, seguir as instruções específicas em `backend/README.md` e `frontend/README.md`.
 
 ## Estado actual
-Stack escolhida e esqueleto do projecto montado (backend e frontend). Ainda sem nenhuma funcionalidade da aplicação implementada — a próxima etapa é a autenticação (registo e início de sessão de utilizadores).
+Stack escolhida e esqueleto do projecto montado (backend e frontend). Autenticação em curso: o registo de utilizadores está implementado e testado automaticamente (ver [`backend/README.md`](backend/README.md)); faltam login, logout e a rota "quem sou eu" para fechar essa fatia vertical.
