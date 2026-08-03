@@ -2,21 +2,25 @@
 ROTAS DE AUTENTICAÇÃO
 ========================
 
-Este ficheiro define os endpoints relacionados com autenticação. Por
-agora, apenas o registo de um novo utilizador; o login, o logout e a rota
-"quem sou eu" serão acrescentados aqui mais adiante, como parte da mesma
-fatia vertical.
+Este ficheiro define os endpoints relacionados com autenticação: registo e
+login. O logout e a rota "quem sou eu" serão acrescentados aqui mais
+adiante, como parte da mesma fatia vertical.
 """
+
+import secrets
+from datetime import datetime, timezone
 
 # APIRouter permite agrupar rotas relacionadas, como explicado abaixo.
 # Depends é o mecanismo de injecção de dependências do FastAPI — é o que
 # permite à rota, mais abaixo, receber automaticamente uma sessão de base
 # de dados através de get_db, sem ter de a criar manualmente.
 # HTTPException permite interromper um pedido a meio, devolvendo um erro
-# HTTP específico (usado abaixo para o caso de email duplicado). status
-# fornece os códigos HTTP como constantes com nome (ex.: status.HTTP_409_CONFLICT),
-# mais legível do que escrever directamente o número 409.
-from fastapi import APIRouter, Depends, HTTPException, status
+# HTTP específico (usado abaixo para os casos de email duplicado e de
+# credenciais inválidas). Response é o objecto de resposta HTTP, usado na
+# rota de login para lhe anexar o cookie de sessão. status fornece os
+# códigos HTTP como constantes com nome (ex.: status.HTTP_409_CONFLICT),
+# mais legível do que escrever directamente o número.
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 # select é a função do SQLAlchemy usada para construir consultas (o
 # equivalente ao SELECT em SQL), usada abaixo para procurar um utilizador
@@ -28,10 +32,12 @@ from sqlalchemy import select
 # o que get_db (importado a seguir) devolve.
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_password
+from app.core.security import hash_password, verify_password
+from app.core.sessions import SESSION_DURATION, gerar_token_sessao, hash_token
 from app.db.session import get_db
+from app.models.session import UserSession
 from app.models.user import User
-from app.schemas.auth import UserPublico, UserRegisto
+from app.schemas.auth import UserLogin, UserPublico, UserRegisto
 
 # APIRouter agrupa rotas relacionadas entre si; é depois incluído na
 # aplicação principal (app/main.py). prefix="/auth" faz com que todas as
@@ -39,6 +45,13 @@ from app.schemas.auth import UserPublico, UserRegisto
 # tags=["auth"] agrupa-as, com esse nome, na documentação automática que o
 # FastAPI gera.
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Hash de uma password "fantasma", calculado uma única vez quando este
+# módulo é importado — nunca corresponde a nenhuma password real, e serve
+# apenas para a rota de login gastar um tempo semelhante ao de uma
+# verificação real quando o email indicado nem sequer existe. Ver o
+# comentário em login(), mais abaixo, para a razão desta cautela.
+_HASH_FANTASMA = hash_password(secrets.token_urlsafe(32))
 
 
 # response_model=UserPublico diz ao FastAPI para converter o que esta
@@ -101,3 +114,77 @@ async def registar(dados: UserRegisto, db: AsyncSession = Depends(get_db)) -> Us
     # model_config = {"from_attributes": True} definido nesse schema —
     # é aí, nessa conversão, que o password_hash fica de fora da resposta.
     return novo_utilizador
+
+
+@router.post("/login", response_model=UserPublico)
+async def login(
+    dados: UserLogin, response: Response, db: AsyncSession = Depends(get_db)
+) -> User:
+    """
+    Autentica um utilizador existente e inicia uma sessão.
+
+    Em caso de sucesso, cria uma linha em "sessions" e entrega o respectivo
+    token num cookie httpOnly do browser (nunca no corpo da resposta), e
+    devolve os dados públicos do utilizador. Em caso de falha — email
+    inexistente ou password incorrecta — devolve sempre o mesmo erro
+    genérico (401), sem indicar qual dos dois motivos se aplica.
+    """
+    resultado = await db.execute(select(User).where(User.email == dados.email))
+    utilizador = resultado.scalar_one_or_none()
+
+    if utilizador is not None:
+        password_correcta = verify_password(dados.password, utilizador.password_hash)
+    else:
+        # Mesmo quando o email não existe, verifica-se a password na mesma
+        # — contra o hash fantasma definido no topo deste ficheiro, sem
+        # qualquer relação com o pedido — em vez de responder de imediato.
+        # O Argon2id é deliberadamente lento; sem esta linha, "email não
+        # existe" responderia muito mais depressa do que "email existe,
+        # password errada" (que exige uma verificação real), e essa
+        # diferença de tempo, por si só, revelaria a quem está a tentar
+        # entrar quais os emails que têm conta registada.
+        verify_password(dados.password, _HASH_FANTASMA)
+        password_correcta = False
+
+    if not password_correcta:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email ou password incorretos.",
+        )
+
+    # Gera um novo token aleatório e grava apenas o seu hash (nunca o token
+    # em si) numa nova sessão, associada a este utilizador e válida durante
+    # SESSION_DURATION a partir de agora — ver app/core/sessions.py para a
+    # razão de ser um hash diferente do usado para as passwords, e para o
+    # significado desta duração (expiração deslizante, renovada a cada
+    # pedido autenticado, a partir da rota "quem sou eu").
+    token = gerar_token_sessao()
+    nova_sessao = UserSession(
+        token_hash=hash_token(token),
+        user_id=utilizador.id,
+        expires_at=datetime.now(timezone.utc) + SESSION_DURATION,
+    )
+    db.add(nova_sessao)
+    await db.commit()
+
+    # httponly=True: o cookie não fica acessível a JavaScript no browser, só
+    # é enviado automaticamente pelo browser em cada pedido — protege
+    # contra um ataque de XSS conseguir ler o token e roubar a sessão.
+    # samesite="lax": o cookie só é enviado em pedidos que partam deste
+    # site (ou de navegação directa a ele), não em pedidos despoletados por
+    # outros sites — mitigação contra CSRF.
+    # secure=True: o cookie só é enviado em ligações HTTPS — os browsers
+    # actuais tratam "localhost" como um contexto seguro mesmo sem HTTPS,
+    # por isso isto não impede o funcionamento em desenvolvimento local.
+    # max_age, em segundos: tempo de vida do cookie no próprio browser,
+    # coerente com SESSION_DURATION — o tempo de vida da sessão no servidor.
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=True,
+        max_age=int(SESSION_DURATION.total_seconds()),
+    )
+
+    return utilizador

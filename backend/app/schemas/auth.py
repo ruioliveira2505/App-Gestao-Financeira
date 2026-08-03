@@ -40,6 +40,19 @@ class UserRegisto(BaseModel):
     password: str = Field(min_length=8)
 
 
+class UserLogin(BaseModel):
+    """Dados recebidos no pedido de login."""
+
+    email: EmailStr
+
+    # Sem Field(min_length=8) aqui, ao contrário de UserRegisto: não faz
+    # sentido validar o formato de uma password no login — o único
+    # objectivo desta password é ser comparada com o hash já guardado, e
+    # essa comparação já falha, sozinha, para qualquer password incorrecta,
+    # seja qual for o motivo de estar errada.
+    password: str
+
+
 class UserPublico(BaseModel):
     """
     Dados de um utilizador devolvidos pela API — nunca inclui o
