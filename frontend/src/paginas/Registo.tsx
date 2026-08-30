@@ -21,9 +21,9 @@
  *      mostra-se a mensagem e fica-se na página.
  */
 
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 
-// Link desenha um hiperligação que navega sem recarregar a página.
+// Link desenha uma hiperligação que navega sem recarregar a página.
 // Navigate, quando renderizado, provoca uma navegação imediata.
 // useNavigate devolve uma função para navegar a partir de código (aqui,
 // depois de o registo ter sucesso).
@@ -31,6 +31,11 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 
 import { ErroApi } from '../lib/api'
 import { useAuth } from '../auth/useAuth'
+import { Botao } from '../componentes/Botao'
+import { CaixaErro } from '../componentes/CaixaErro'
+import { CampoTexto } from '../componentes/CampoTexto'
+import { Formulario } from '../componentes/Formulario'
+import { LayoutAutenticacao } from './LayoutAutenticacao'
 
 // Mesma regra do schema UserRegisto no backend (backend/app/schemas/auth.py):
 // a password tem de ter pelo menos 8 caracteres.
@@ -44,7 +49,7 @@ export function Registo() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  // Mensagem de erro a mostrar por baixo do formulário, ou null se não há
+  // Mensagem de erro a mostrar dentro do formulário, ou null se não há
   // erro.
   const [erro, setErro] = useState<string | null>(null)
   // Verdadeiro enquanto o pedido de registo está em curso — usado para
@@ -58,11 +63,9 @@ export function Registo() {
     return <Navigate to="/" replace />
   }
 
-  async function submeter(evento: FormEvent) {
-    // Por omissão, submeter um formulário HTML recarrega a página. Isto
-    // impede esse comportamento — a submissão é tratada aqui, em
-    // JavaScript.
-    evento.preventDefault()
+  // Chamada pelo componente Formulario na submissão (o evento do DOM e o
+  // evento.preventDefault() são tratados lá dentro).
+  async function submeter() {
     setErro(null)
 
     if (password.length < COMPRIMENTO_MINIMO_PASSWORD) {
@@ -87,43 +90,36 @@ export function Registo() {
   }
 
   return (
-    <main>
-      <h1>Criar conta</h1>
+    <LayoutAutenticacao titulo="Criar conta">
+      <Formulario aoSubmeter={submeter}>
+        <CampoTexto
+          etiqueta="Email"
+          tipo="email"
+          valor={email}
+          aoMudar={setEmail}
+          obrigatorio
+          autoComplete="email"
+        />
 
-      <form onSubmit={submeter}>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(evento) => setEmail(evento.target.value)}
-            required
-          />
-        </label>
+        <CampoTexto
+          etiqueta="Password"
+          tipo="password"
+          valor={password}
+          aoMudar={setPassword}
+          obrigatorio
+          autoComplete="new-password"
+        />
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(evento) => setPassword(evento.target.value)}
-            required
-            minLength={COMPRIMENTO_MINIMO_PASSWORD}
-          />
-        </label>
+        {erro !== null && <CaixaErro>{erro}</CaixaErro>}
 
-        {/* role="alert" faz os leitores de ecrã anunciarem a mensagem
-            assim que ela aparece. */}
-        {erro !== null && <p role="alert">{erro}</p>}
-
-        <button type="submit" disabled={aSubmeter}>
+        <Botao type="submit" disabled={aSubmeter}>
           {aSubmeter ? 'A criar conta…' : 'Criar conta'}
-        </button>
-      </form>
+        </Botao>
+      </Formulario>
 
       <p>
         Já tens conta? <Link to="/login">Iniciar sessão</Link>
       </p>
-    </main>
+    </LayoutAutenticacao>
   )
 }

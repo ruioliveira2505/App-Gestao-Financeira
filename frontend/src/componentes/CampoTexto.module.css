@@ -1,0 +1,23 @@
+/*
+ * ESTILOS DO CampoTexto
+ * =====================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (CampoTexto.tsx). O aspecto do <input> em si vem dos estilos
+ * base em src/index.css; aqui trata-se apenas do arranjo do rótulo por
+ * cima do campo.
+ */
+
+/* Empilha o rótulo e o campo na vertical, com um pequeno espaço entre
+   eles. */
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+.etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}

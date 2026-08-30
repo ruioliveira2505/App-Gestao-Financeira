@@ -23,7 +23,7 @@
  * qualquer valor incorreto.
  */
 
-import { useState, type FormEvent } from 'react'
+import { useState } from 'react'
 
 // Link desenha uma hiperligação que navega sem recarregar a página.
 // Navigate, quando renderizado, provoca uma navegação imediata.
@@ -33,6 +33,11 @@ import { Link, Navigate, useNavigate } from 'react-router-dom'
 
 import { ErroApi } from '../lib/api'
 import { useAuth } from '../auth/useAuth'
+import { Botao } from '../componentes/Botao'
+import { CaixaErro } from '../componentes/CaixaErro'
+import { CampoTexto } from '../componentes/CampoTexto'
+import { Formulario } from '../componentes/Formulario'
+import { LayoutAutenticacao } from './LayoutAutenticacao'
 
 const MENSAGEM_ERRO_GENERICA = 'Ocorreu um erro inesperado. Tenta novamente.'
 
@@ -42,7 +47,7 @@ export function Login() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  // Mensagem de erro a mostrar por baixo do formulário, ou null se não há
+  // Mensagem de erro a mostrar dentro do formulário, ou null se não há
   // erro.
   const [erro, setErro] = useState<string | null>(null)
   // Verdadeiro enquanto o pedido está em curso — desativa o botão e evita
@@ -56,10 +61,9 @@ export function Login() {
     return <Navigate to="/" replace />
   }
 
-  async function submeter(evento: FormEvent) {
-    // Impede o comportamento por omissão de um formulário HTML, que é
-    // recarregar a página ao submeter.
-    evento.preventDefault()
+  // Chamada pelo componente Formulario na submissão (o evento do DOM e o
+  // evento.preventDefault() são tratados lá dentro).
+  async function submeter() {
     setErro(null)
     setASubmeter(true)
 
@@ -75,42 +79,36 @@ export function Login() {
   }
 
   return (
-    <main>
-      <h1>Iniciar sessão</h1>
+    <LayoutAutenticacao titulo="Iniciar sessão">
+      <Formulario aoSubmeter={submeter}>
+        <CampoTexto
+          etiqueta="Email"
+          tipo="email"
+          valor={email}
+          aoMudar={setEmail}
+          obrigatorio
+          autoComplete="email"
+        />
 
-      <form onSubmit={submeter}>
-        <label>
-          Email
-          <input
-            type="email"
-            value={email}
-            onChange={(evento) => setEmail(evento.target.value)}
-            required
-          />
-        </label>
+        <CampoTexto
+          etiqueta="Password"
+          tipo="password"
+          valor={password}
+          aoMudar={setPassword}
+          obrigatorio
+          autoComplete="current-password"
+        />
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(evento) => setPassword(evento.target.value)}
-            required
-          />
-        </label>
+        {erro !== null && <CaixaErro>{erro}</CaixaErro>}
 
-        {/* role="alert" faz os leitores de ecrã anunciarem a mensagem
-            assim que ela aparece. */}
-        {erro !== null && <p role="alert">{erro}</p>}
-
-        <button type="submit" disabled={aSubmeter}>
+        <Botao type="submit" disabled={aSubmeter}>
           {aSubmeter ? 'A iniciar sessão…' : 'Iniciar sessão'}
-        </button>
-      </form>
+        </Botao>
+      </Formulario>
 
       <p>
         Ainda não tens conta? <Link to="/registo">Criar conta</Link>
       </p>
-    </main>
+    </LayoutAutenticacao>
   )
 }

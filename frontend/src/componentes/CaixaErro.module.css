@@ -1,0 +1,19 @@
+/*
+ * ESTILOS DA CaixaErro
+ * ====================
+ *
+ * Ficheiro ".module.css": a classe fica limitada ao componente que o
+ * importa (CaixaErro.tsx). As cores vêm dos tokens "negativo" definidos em
+ * src/index.css (--cor-negativo-bg, --cor-negativo-border,
+ * --cor-negativo-text), com valores próprios para o tema claro e para o
+ * escuro.
+ */
+
+.caixa {
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-negativo-border);
+  border-radius: var(--raio-sm);
+  background: var(--cor-negativo-bg);
+  color: var(--cor-negativo-text);
+  font-size: var(--texto-sm);
+}

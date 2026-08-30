@@ -1,0 +1,42 @@
+/*
+ * ESTILOS DO LAYOUT DAS PÁGINAS DE AUTENTICAÇÃO
+ * ============================================
+ *
+ * Ficheiro ".module.css": as classes aqui definidas ficam limitadas ao
+ * componente que o importa (LayoutAutenticacao.tsx). O Vite reescreve
+ * cada nome de classe para um identificador único ao construir, pelo que
+ * ".cartao" aqui nunca colide com um ".cartao" de outro componente.
+ *
+ * Todos os valores (cores, espaçamentos, raio, sombra) vêm dos tokens
+ * definidos em src/index.css, através de var(--nome).
+ */
+
+/* Camada que ocupa o ecrã todo e centra o cartão na horizontal e na
+   vertical. */
+.fundo {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Afastamento das margens do ecrã, para o cartão não encostar aos
+     limites em janelas pequenas. */
+  padding: var(--espaco-5);
+}
+
+/* O cartão em si: uma caixa branca (ou escura, no tema escuro), elevada
+   do fundo por uma sombra subtil. */
+.cartao {
+  width: 100%;
+  max-width: var(--largura-conteudo);
+
+  /* Empilha os filhos (título, formulário, ligação) na vertical, com um
+     espaço fixo entre eles. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-5);
+
+  padding: var(--espaco-6);
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-xl);
+}

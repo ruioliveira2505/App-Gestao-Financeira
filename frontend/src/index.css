@@ -1,111 +1,283 @@
+/*
+ * TOKENS E ESTILOS BASE
+ * =====================
+ *
+ * Este ficheiro é carregado uma única vez (em src/main.tsx) e vale para
+ * toda a aplicação. Tem duas partes:
+ *
+ *   1. TOKENS — valores com nome (cores, espaçamentos, tamanhos de texto,
+ *      raios) declarados como "custom properties" do CSS: variáveis que
+ *      começam por "--". Definidos aqui uma vez e reutilizados em todo o
+ *      lado com var(--nome). Mudar um valor num só sítio propaga-o a toda
+ *      a interface, e garante consistência.
+ *
+ *   2. ESTILOS BASE — regras aplicadas directamente aos elementos HTML
+ *      "nus" (body, h1, input, button...), para que tenham um aspecto
+ *      cuidado sem precisarem de nenhuma classe. O estilo específico de
+ *      cada componente vive no ficheiro .module.css desse componente.
+ *
+ * LINGUAGEM VISUAL: minimalista e sóbria. A interface é dominada por
+ * cinzentos (com um toque quente); a cor só aparece onde carrega
+ * significado — a acção principal é monocromática (quase-preto no tema
+ * claro, quase-branco no escuro), e verde/vermelho/âmbar ficam reservados
+ * a estados e a valores (dinheiro a entrar/sair). Bordas de 1px em vez de
+ * sombras; sombra apenas para o que flutua mesmo (menus, modais).
+ */
+
+/* ---------------------------------------------------------------------
+ * 1. TOKENS
+ * ------------------------------------------------------------------- */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* Tipo de letra: a fonte do sistema operativo do utilizador
+     (San Francisco no macOS, Segoe UI no Windows, Roboto no Android).
+     Não carrega nenhuma fonte da rede — é imediato e integra-se com o
+     ambiente. */
+  --fonte: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  /* --- Escala de espaçamento (base 4) ---
+     Todos os afastamentos (margin, padding, gap) saem desta escala, para
+     o ritmo visual se manter consistente. */
+  --espaco-1: 4px;
+  --espaco-2: 8px;
+  --espaco-3: 12px;
+  --espaco-4: 16px;
+  --espaco-5: 24px;
+  --espaco-6: 32px;
+  --espaco-8: 48px;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
+  /* --- Escala tipográfica ---
+     Poucos tamanhos, em "rem" (relativo ao tamanho base do browser, para
+     respeitar quem o tenha aumentado). O corpo é 15px: mais compacto do
+     que o típico 16px, mas confortável e com contraste suficiente. */
+  --texto-xs: 0.6875rem; /* 11px — micro-rótulos em MAIÚSCULAS */
+  --texto-sm: 0.8125rem; /* 13px — rótulos de campo */
+  --texto-base: 0.9375rem; /* 15px — texto corrente e controlos */
+  --texto-md: 1rem; /* 16px — título de cartão ou de modal */
+  --texto-lg: 1.25rem; /* 20px — subtítulos */
+  --texto-xl: 1.375rem; /* 22px — título de uma página */
+  --texto-2xl: 1.5rem; /* 24px — valores em destaque */
+
+  /* --- Raios dos cantos arredondados --- */
+  --raio-sm: 6px; /* botões, campos, itens de menu */
+  --raio-md: 8px; /* dropdowns, toasts */
+  --raio-lg: 10px; /* cartões, tabelas */
+  --raio-xl: 12px; /* modais, cartão de autenticação */
+
+  /* --- Larguras máximas de conteúdo ---
+     Para as linhas de texto não se esticarem de lado a lado em ecrãs
+     largos. "--largura-conteudo" é estreita (formulários de login e
+     registo); "--largura-pagina" é a de uma página já autenticada. */
+  --largura-conteudo: 26rem;
+  --largura-pagina: 64rem;
+
+  /* --- Sombra ---
+     Uma única sombra, reservada ao que flutua sobre o resto da interface
+     (menus, popovers, modais). Cartões e tabelas usam borda, não sombra. */
+  --sombra-menu: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* --- CORES (tema claro) ---
+     Nomeadas pela função que cumprem, nunca pela cor em si (--cor-acento,
+     não --preto): o tema escuro, mais abaixo, troca os valores mantendo o
+     significado. */
+
+  /* Neutros, em camadas: fundo da página → superfície (cartões, campos) →
+     superfície-2 (estados subtis: hover de linha, campo desativado). O
+     off-white tem um toque quente, de propósito — um cinzento puro fica
+     inerte. */
+  --cor-fundo: #f7f7f5;
+  --cor-superficie: #ffffff;
+  --cor-superficie-2: #fafaf9;
+
+  /* Texto, em três níveis de contraste. O nível 3 é claro de mais para
+     leitura — usar só em ícones, marcas de água (placeholders) e
+     separadores. */
+  --cor-texto: #1a1a1a;
+  --cor-texto-2: #5c5c66; /* secundário — contraste suficiente para leitura */
+  --cor-texto-3: #8a8a94; /* ténue — não usar em texto a ler */
+
+  /* Bordas, em dois pesos: a normal delimita zonas; a leve separa linhas
+     dentro da mesma zona. */
+  --cor-borda: #e6e6e3;
+  --cor-borda-leve: #f0f0ee;
+
+  /* Acento — monocromático. É a cor da acção principal, do foco e dos
+     estados activos. */
+  --cor-acento: #1a1a1a;
+  --cor-acento-hover: #333333;
+  --cor-acento-texto: #ffffff; /* texto por cima da cor de acento */
+
+  /* Cores semânticas — abafadas, de propósito. Cada uma com quatro
+     variantes: "base" (ícone, texto forte), "-bg" (fundo de uma caixa),
+     "-border" e "-text" (texto dentro dessa caixa). "negativo" é também a
+     cor dos erros de formulário. */
+  --cor-positivo: #2f7a53;
+  --cor-positivo-bg: #f0f6f2;
+  --cor-positivo-border: #bcdcca;
+  --cor-positivo-text: #245c3d;
+
+  --cor-negativo: #b3392c;
+  --cor-negativo-bg: #fbf1f0;
+  --cor-negativo-border: #e6c4bf;
+  --cor-negativo-text: #8f2d23;
+
+  --cor-aviso: #a9721f;
+  --cor-aviso-bg: #fbf5ea;
+  --cor-aviso-border: #e6d3ab;
+  --cor-aviso-text: #7c5417;
+
+  /* Informa o browser de que a interface suporta os dois temas — faz os
+     controlos nativos (barras de deslocamento, cursor de texto)
+     adaptarem-se. */
   color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
+/* --- CORES (tema escuro) ---
+   Quando o sistema operativo do utilizador está em "modo escuro", o
+   browser aplica este bloco, que redefine apenas os valores das cores.
+   Tudo o resto (espaçamentos, tamanhos, raios) fica igual. As superfícies
+   escuras não são preto puro (#000), e o acento inverte para quase-branco. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
+    --cor-fundo: #191919;
+    --cor-superficie: #222222;
+    --cor-superficie-2: #1c1c1c;
 
-  #social .button-icon {
-    filter: invert(1) brightness(2);
+    --cor-texto: #ededed;
+    --cor-texto-2: #a0a0a0;
+    --cor-texto-3: #7a7a7a;
+
+    --cor-borda: #333333;
+    --cor-borda-leve: #2a2a2a;
+
+    --cor-acento: #ededed;
+    --cor-acento-hover: #d0d0d0;
+    --cor-acento-texto: #191919;
+
+    --cor-positivo: #5fbd8a;
+    --cor-positivo-bg: #14231b;
+    --cor-positivo-border: #2c4c39;
+    --cor-positivo-text: #84cfa5;
+
+    --cor-negativo: #e57368;
+    --cor-negativo-bg: #251514;
+    --cor-negativo-border: #4d2b27;
+    --cor-negativo-text: #eda29a;
+
+    --cor-aviso: #d9a94e;
+    --cor-aviso-bg: #241d12;
+    --cor-aviso-border: #4a3c22;
+    --cor-aviso-text: #e6c583;
+
+    --sombra-menu: 0 4px 16px rgba(0, 0, 0, 0.5);
   }
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+/* ---------------------------------------------------------------------
+ * 2. ESTILOS BASE
+ * ------------------------------------------------------------------- */
+
+/* box-sizing: border-box faz a largura e a altura de um elemento
+   incluírem o seu padding e a sua borda, em vez de os somarem por fora —
+   torna os tamanhos previsíveis. Aplicado a todos os elementos. */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  font-family: var(--fonte);
+  font-size: var(--texto-base);
+  line-height: 1.5;
+  color: var(--cor-texto);
+  background: var(--cor-fundo);
+  -webkit-font-smoothing: antialiased;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+/* O elemento onde o React monta a aplicação (ver index.html e
+   src/main.tsx). Ocupa pelo menos a altura toda da janela ("svh" = "small
+   viewport height", que lida bem com as barras dos browsers em telemóvel),
+   para os ecrãs poderem centrar o conteúdo na vertical. */
+#root {
+  min-height: 100svh;
 }
 
 h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
+  margin: 0;
+  font-size: var(--texto-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
+
 h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
+  margin: 0;
+  font-size: var(--texto-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
+
 p {
   margin: 0;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* Ligações: no esquema monocromático, colori-las com o acento deixá-las-ia
+   iguais ao texto. Distinguem-se pelo sublinhado; ao passar o rato,
+   esmaecem ligeiramente. */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+a:hover {
+  color: var(--cor-texto-2);
+}
+
+/* Os campos de formulário e os botões não herdam, por omissão, a fonte
+   nem a cor do texto à sua volta — estas linhas corrigem isso. */
+input,
+button,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* Aspecto por omissão de um campo de texto, já sem precisar de classe. O
+   layout à volta (rótulo por cima, espaçamento entre campos) é
+   acrescentado pelo componente de campo. */
+input {
+  width: 100%;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+}
+
+input::placeholder {
+  color: var(--cor-texto-3);
+}
+
+/* Ao focar um campo (por rato ou teclado), a borda escurece para o
+   acento. */
+input:focus {
+  border-color: var(--cor-acento);
+}
+
+/* :focus-visible é a variante de :focus que o browser só activa quando o
+   foco chegou pelo teclado (tecla Tab), e não por um clique do rato —
+   evita um anel permanente à volta de um elemento acabado de clicar, mas
+   mantém-no para quem navega por teclado. */
+input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--cor-acento);
+  outline-offset: 2px;
+}
+
+button {
+  cursor: pointer;
 }

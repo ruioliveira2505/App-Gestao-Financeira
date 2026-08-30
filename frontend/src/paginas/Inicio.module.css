@@ -1,0 +1,16 @@
+/*
+ * ESTILOS DA PÁGINA INICIAL
+ * =========================
+ *
+ * Ficheiro ".module.css": a classe fica limitada ao componente que o
+ * importa (Inicio.tsx). O cabeçalho tem estilos próprios em
+ * Cabecalho.module.css.
+ */
+
+/* Zona de conteúdo abaixo do cabeçalho: centrada e com uma largura máxima,
+   para as linhas não se esticarem de lado a lado num ecrã largo. */
+.conteudo {
+  max-width: var(--largura-pagina);
+  margin: 0 auto;
+  padding: var(--espaco-6) var(--espaco-5);
+}

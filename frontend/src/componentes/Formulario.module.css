@@ -1,0 +1,15 @@
+/*
+ * ESTILOS DO Formulario
+ * =====================
+ *
+ * Ficheiro ".module.css": a classe fica limitada ao componente que o
+ * importa (Formulario.tsx). Trata apenas do arranjo vertical dos
+ * elementos do formulário (campos, caixa de erro, botão).
+ */
+
+.formulario {
+  display: flex;
+  flex-direction: column;
+  /* Espaço uniforme entre cada elemento do formulário. */
+  gap: var(--espaco-4);
+}

@@ -19,9 +19,10 @@ Interface da aplicação, escrita em React com TypeScript, construída e servida
     - `AuthProvider.tsx` — mantém o estado "há sessão iniciada?"; verifica-o no arranque com `GET /auth/me`.
     - `useAuth.ts` — hook que dá a qualquer componente acesso a esse estado e às acções de registo/login/logout.
     - `RotaProtegida.tsx` — guarda de rota: mostra o conteúdo só se houver sessão, senão reencaminha para `/login`.
-  - `paginas/` — os ecrãs: `Registo.tsx`, `Login.tsx`, `Inicio.tsx`.
+  - `paginas/` — os ecrãs (`Registo.tsx`, `Login.tsx`, `Inicio.tsx`) e a moldura partilhada `LayoutAutenticacao.tsx`. Cada um com o seu `.module.css` ao lado.
+  - `componentes/` — peças de interface reutilizáveis, cada uma com o seu `.module.css`: `Botao`, `CampoTexto`, `CaixaErro`, `Formulario`, `Cabecalho`.
   - `test/` — apoio aos testes: `setup.ts` (extensões comuns a todos os testes) e `servidor-msw.ts` (servidor de simulação de rede).
-  - `App.css` / `index.css` — estilos (ainda por definir).
+  - `index.css` — carregado uma vez, vale para toda a aplicação: os *tokens* de design (cores, espaçamentos, tamanhos de texto, raios — como "custom properties" do CSS), o reset e os estilos base dos elementos HTML. O estilo específico de cada componente vive no `Componente.module.css` ao lado dele (CSS Modules — classes com âmbito limitado a esse componente).
 - `public/` — ficheiros servidos tal como estão, sem passar pelo processo de build (hoje só o `favicon.svg`).
 - `index.html` — a única página HTML real; o React monta tudo dentro dela.
 - `vite.config.ts` — configuração do Vite: plugin de React, proxy de desenvolvimento (`/api` → backend) e bloco de configuração dos testes (Vitest).
@@ -58,10 +59,10 @@ npm run test -- --run   # corre a suite uma vez e termina
 Os testes usam o Vitest com o ambiente `jsdom` (APIs de browser em JavaScript, sem abrir um browser real) e o MSW, que intercepta os pedidos HTTP e responde com dados controlados — nenhum teste contacta a rede nem precisa do backend a correr.
 
 ## Estado actual
-Autenticação completa de ponta a ponta, com testes automáticos (24 testes):
+Autenticação completa de ponta a ponta, com testes automáticos (31 testes):
 - `/registo` — cria a conta e inicia logo a sessão; valida no cliente o comprimento mínimo da password e mostra as mensagens de erro do servidor (ex.: email já registado).
 - `/login` — autentica um utilizador existente; mostra a mensagem de erro do servidor para credenciais inválidas.
 - `/` — área autenticada (por agora, só identifica o utilizador e oferece o botão "Terminar sessão"); protegida por `RotaProtegida`, que reencaminha para `/login` quem não tenha sessão.
 - A sessão persiste entre recarregamentos da página, através de um pedido a `GET /auth/me` feito no arranque.
 
-Sem estilos definidos e sem qualquer funcionalidade do domínio financeiro — essas são os passos seguintes.
+Existe uma fundação de design mínima: paleta minimalista dominada por neutros com acento monocromático, tema claro e escuro (segue o do sistema operativo), e um punhado de componentes de interface reutilizáveis. Não há ainda qualquer funcionalidade do domínio financeiro — é o passo seguinte.

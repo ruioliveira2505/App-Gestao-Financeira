@@ -1,0 +1,62 @@
+/*
+ * ESTILOS DO Botao
+ * ================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (Botao.tsx). O reset básico do <button> (cursor, herança da
+ * fonte, anel de foco por teclado) já vem dos estilos base em
+ * src/index.css.
+ *
+ * Uma classe base (.botao) mais uma classe por variante
+ * (.primario / .secundario / .perigo), combinadas pelo componente.
+ */
+
+.botao {
+  padding: var(--espaco-2) var(--espaco-4);
+  border: 1px solid transparent;
+  border-radius: var(--raio-sm);
+  font-size: var(--texto-base);
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.botao:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Variante principal: fundo com a cor de acento (quase-preto no tema
+   claro, quase-branco no escuro). É a acção mais provável de um ecrã. */
+.primario {
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.primario:hover:not(:disabled) {
+  background: var(--cor-acento-hover);
+}
+
+/* Variante secundária: sem preenchimento, só contorno. Para acções
+   alternativas ("Cancelar", "Voltar"). */
+.secundario {
+  background: transparent;
+  border-color: var(--cor-borda);
+  color: var(--cor-texto);
+}
+
+.secundario:hover:not(:disabled) {
+  background: var(--cor-superficie-2);
+  border-color: var(--cor-texto-3);
+}
+
+/* Variante de perigo: contorno e texto na cor negativa. Para acções
+   destrutivas ("Apagar"). */
+.perigo {
+  background: transparent;
+  border-color: var(--cor-negativo-border);
+  color: var(--cor-negativo);
+}
+
+.perigo:hover:not(:disabled) {
+  background: var(--cor-negativo-bg);
+}
