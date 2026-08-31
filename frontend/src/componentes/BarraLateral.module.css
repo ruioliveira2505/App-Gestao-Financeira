@@ -1,0 +1,187 @@
+/*
+ * ESTILOS DA BarraLateral
+ * =======================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (BarraLateral.tsx). Os itens de navegação têm estilos próprios
+ * em ItemNav.module.css; o menu do perfil, em Menu.module.css.
+ *
+ * Modos, decididos por CSS + a classe .recolhida:
+ *   - Ecrã largo, expandida (por omissão): barra de 220px.
+ *   - Ecrã largo, .recolhida: 72px, só ícones (regras dentro do
+ *     @media (min-width: 769px)). Só a largura anima e só os rótulos
+ *     deixam de aparecer — nada muda de posição.
+ *   - Ecrã estreito (<= 768px): a barra é uma gaveta que desliza a partir
+ *     da esquerda, começando por baixo da barra de topo; a classe
+ *     .recolhida é ignorada aqui.
+ */
+
+.barra {
+  width: 220px;
+  flex-shrink: 0;
+  /* Em ecrã largo, ocupa a altura do contentor .layout (que está pregado
+     ao ecrã). Em estreito, mais abaixo, passa a gaveta com posição
+     própria. */
+  height: 100%;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  padding: var(--espaco-4);
+  background: var(--cor-superficie);
+  border-right: 1px solid var(--cor-borda);
+
+  /* Anima a mudança de largura ao recolher/expandir (só tem efeito em
+     ecrã largo — em estreito a largura não muda). */
+  transition: width 0.15s ease;
+}
+
+/* Altura fixa: não muda ao esconder o nome da aplicação (modo recolhido),
+   por isso o topo — e tudo o que está por baixo — não "salta". */
+.topo {
+  flex-shrink: 0;
+  height: var(--altura-barra-topo);
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: 0 var(--espaco-2);
+}
+
+.nomeApp {
+  font-size: var(--texto-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.botaoRecolher {
+  display: flex;
+  flex-shrink: 0;
+  padding: var(--espaco-1);
+  border: none;
+  background: none;
+  border-radius: var(--raio-sm);
+  color: var(--cor-texto-2);
+}
+
+.botaoRecolher:hover {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+/* margin-top: auto empurra a zona de perfil para o fundo da barra. */
+.perfil {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* O botão que abre o menu do perfil: avatar + nome, a ocupar a largura
+   toda. */
+.gatilhoPerfil {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  width: 100%;
+  padding: var(--espaco-2);
+  border: none;
+  background: none;
+  border-radius: var(--raio-sm);
+  text-align: left;
+}
+
+.gatilhoPerfil:hover {
+  background: var(--cor-superficie-2);
+}
+
+.avatar {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--texto-sm);
+  font-weight: 600;
+}
+
+.nome {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+  /* Um nome comprido é cortado com "…" em vez de esticar a barra. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fundo escurecido — sem efeito por omissão; só ganha aparência em ecrã
+   estreito, mais abaixo. */
+.backdrop {
+  display: none;
+}
+
+/* Modo recolhido — só em ecrã largo. Muda apenas a largura e esconde os
+   textos; nada muda de posição. */
+@media (min-width: 769px) {
+  .recolhida {
+    width: 72px;
+  }
+
+  .recolhida .nomeApp,
+  .recolhida .nome {
+    display: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .barra {
+    position: fixed;
+    /* top + bottom + "height: auto" fazem a gaveta esticar exactamente
+       entre a barra de topo e o fundo do ecrã — anula o "height: 100%" da
+       regra base, que a fazia mais alta que o ecrã. */
+    top: var(--altura-barra-topo);
+    bottom: 0;
+    height: auto;
+    z-index: 30;
+
+    /* Fechada: totalmente fora do ecrã à esquerda. Uma posição negativa à
+       esquerda nunca provoca scroll horizontal (ao contrário de um
+       "transform", que em alguns browsers móveis provoca). */
+    left: -220px;
+    transition: left 0.2s ease;
+  }
+
+  .barraAberta {
+    left: 0;
+    box-shadow: var(--sombra-menu);
+  }
+
+  /* Em gaveta, o topo (título + botão de recolher) não faz sentido: o
+     título já está na barra de topo, e recolher não se aplica. */
+  .topo {
+    display: none;
+  }
+
+  .backdropVisivel {
+    display: block;
+    position: fixed;
+    /* Não cobre a barra de topo. */
+    inset: var(--altura-barra-topo) 0 0 0;
+    z-index: 20;
+    /* Sem escurecimento nem desfoque — o elemento é invisível, existe só
+       para captar o toque fora da gaveta e a fechar. */
+    background: transparent;
+    /* Impede o scroll de "atravessar" para o conteúdo por trás. */
+    touch-action: none;
+  }
+}

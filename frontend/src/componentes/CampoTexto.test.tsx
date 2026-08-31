@@ -35,4 +35,18 @@ describe('CampoTexto', () => {
     expect(campo).toHaveValue('segredo')
     expect(campo).toHaveAttribute('type', 'password')
   })
+
+  it('num campo de password, o botão de olho alterna entre ocultar e mostrar', async () => {
+    render(
+      <CampoTexto etiqueta="Password" tipo="password" valor="segredo" aoMudar={() => {}} />,
+    )
+
+    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Mostrar password' }))
+    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'text')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Ocultar password' }))
+    expect(screen.getByLabelText('Password')).toHaveAttribute('type', 'password')
+  })
 })

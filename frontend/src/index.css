@@ -72,6 +72,11 @@
   --largura-conteudo: 26rem;
   --largura-pagina: 64rem;
 
+  /* Altura da barra de topo que aparece em ecrã estreito (com o botão de
+     menu). Partilhada pelo LayoutApp (a barra e o afastamento do
+     conteúdo) e pela BarraLateral (a gaveta começa por baixo dela). */
+  --altura-barra-topo: 56px;
+
   /* --- Sombra ---
      Uma única sombra, reservada ao que flutua sobre o resto da interface
      (menus, popovers, modais). Cartões e tabelas usam borda, não sombra. */
@@ -187,6 +192,19 @@
   box-sizing: border-box;
 }
 
+/* Respeita a preferência do sistema "reduzir movimento": desliga
+   praticamente todas as animações e transições. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 body {
   margin: 0;
   font-family: var(--fonte);
@@ -202,7 +220,7 @@ body {
    viewport height", que lida bem com as barras dos browsers em telemóvel),
    para os ecrãs poderem centrar o conteúdo na vertical. */
 #root {
-  min-height: 100svh;
+  min-height: 100dvh;
 }
 
 h1 {
@@ -244,6 +262,16 @@ select,
 textarea {
   font: inherit;
   color: inherit;
+}
+
+/* O Safari no iOS faz zoom automático ao focar um campo com texto menor
+   que 16px. Manter os campos a 16px evita esse zoom, sem ter de
+   desactivar o zoom da página (que prejudicaria quem precisa dele). Os
+   botões não focam texto, por isso não entram aqui. */
+input,
+select,
+textarea {
+  font-size: 16px;
 }
 
 /* Aspecto por omissão de um campo de texto, já sem precisar de classe. O

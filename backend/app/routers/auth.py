@@ -36,6 +36,7 @@ from sqlalchemy import select
 # o que get_db (importado a seguir) devolve.
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import obter_utilizador_atual
 from app.core.security import hash_password, verify_password
 from app.core.sessions import SESSION_DURATION, gerar_token_sessao, hash_token
@@ -178,9 +179,12 @@ async def login(
     # samesite="lax": o cookie só é enviado em pedidos que partam deste
     # site (ou de navegação directa a ele), não em pedidos despoletados por
     # outros sites — mitigação contra CSRF.
-    # secure=True: o cookie só é enviado em ligações HTTPS — os browsers
-    # actuais tratam "localhost" como um contexto seguro mesmo sem HTTPS,
-    # por isso isto não impede o funcionamento em desenvolvimento local.
+    # secure: o cookie só é enviado em ligações HTTPS. Os browsers tratam
+    # "localhost" como contexto seguro mesmo sem HTTPS, por isso o
+    # desenvolvimento local nesta máquina funciona na mesma. O valor vem da
+    # configuração (settings.cookie_secure, True por omissão) para poder ser
+    # desligado ao testar noutro dispositivo por HTTP — ver
+    # app/core/config.py. NUNCA desligar em produção.
     # max_age, em segundos: tempo de vida do cookie no próprio browser,
     # coerente com SESSION_DURATION — o tempo de vida da sessão no servidor.
     response.set_cookie(
@@ -188,7 +192,7 @@ async def login(
         value=token,
         httponly=True,
         samesite="lax",
-        secure=True,
+        secure=settings.cookie_secure,
         max_age=int(SESSION_DURATION.total_seconds()),
     )
 
@@ -225,8 +229,15 @@ async def logout(
     # não declara response_model nem devolve nada além de remover o
     # cookie. delete_cookie() funciona enviando um Set-Cookie com uma data
     # de expiração já passada, instrução que faz o browser descartar
-    # imediatamente o cookie existente.
-    response.delete_cookie("session_token")
+    # imediatamente o cookie existente. Os atributos (httponly, samesite,
+    # secure) têm de coincidir com os usados ao criar o cookie, senão o
+    # browser não o reconhece como o mesmo e não o apaga.
+    response.delete_cookie(
+        "session_token",
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+    )
 
 
 @router.get("/me", response_model=UserPublico)

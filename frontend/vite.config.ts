@@ -40,6 +40,14 @@ export default defineConfig({
   // desenvolvimento (o comando `npm run dev`). Nada aqui tem efeito no
   // resultado do `npm run build`.
   server: {
+    // host: true faz o servidor escutar em todas as interfaces de rede da
+    // máquina, não apenas em "localhost". O `npm run dev` passa a imprimir
+    // também um endereço "Network:" (ex.: http://192.168.1.x:5173) que
+    // outros dispositivos no mesmo Wi-Fi — um telemóvel — podem abrir para
+    // ver a aplicação. O proxy de /api continua a funcionar, porque é
+    // resolvido do lado do servidor (esta máquina).
+    host: true,
+
     // PROXY DE DESENVOLVIMENTO
     // ------------------------
     //

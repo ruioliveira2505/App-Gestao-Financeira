@@ -32,7 +32,7 @@ API da aplicação, escrita em Python com o FastAPI.
 - `uv.lock` — lockfile: fixa a versão exacta de cada dependência instalada.
 - `.python-version` — versão do Python usada neste projecto.
 - `.venv/` — ambiente virtual com as dependências instaladas (local, não fica no repositório).
-- `.env` — variáveis de ambiente da base de dados de desenvolvimento; local, não fica no repositório.
+- `.env` — variáveis de ambiente locais; não fica no repositório. Obrigatória: `DATABASE_URL`. Opcional: `COOKIE_SECURE` (`true` por omissão — o cookie de sessão só viaja em HTTPS; pôr `false` apenas para testar a aplicação noutro dispositivo por HTTP, nunca em produção).
 - `.env.test` — o mesmo, mas para a base de dados de teste; local, não fica no repositório.
 - `.env.example` — modelo do `.env`, sem valores reais, incluído no repositório.
 

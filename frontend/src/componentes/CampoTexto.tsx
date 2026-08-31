@@ -9,15 +9,13 @@
  *
  * É um "componente controlado": o valor do campo vive no estado de quem o
  * usa, que o passa em "valor" e recebe cada alteração em "aoMudar". O
- * CampoTexto não guarda estado nenhum.
+ * CampoTexto guarda apenas um estado próprio, e só quando tipo="password":
+ * se a password está a ser mostrada ou escondida (botão de olho).
  */
 
-// useId gera um identificador único e estável para esta instância do
-// componente. Serve para ligar o <label> ao <input> através do par
-// htmlFor / id: clicar no rótulo passa o foco para o campo, e um leitor
-// de ecrã anuncia o rótulo ao chegar ao campo.
-import { useId } from 'react'
+import { useId, useState } from 'react'
 
+import { IconeOlho, IconeOlhoFechado } from './icones'
 import estilos from './CampoTexto.module.css'
 
 type Props = {
@@ -28,8 +26,9 @@ type Props = {
   // Chamada a cada alteração, já com o novo texto do campo (não com o
   // evento do DOM).
   aoMudar: (valor: string) => void
-  // Tipo do <input>. "password" esconde o que é escrito; "email" ajusta o
-  // teclado em telemóvel. Por omissão, "text".
+  // Tipo do <input>. "password" esconde o que é escrito e acrescenta um
+  // botão para revelar/ocultar; "email" ajusta o teclado em telemóvel.
+  // Por omissão, "text".
   tipo?: 'text' | 'email' | 'password'
   // Marca o campo como de preenchimento obrigatório.
   obrigatorio?: boolean
@@ -47,20 +46,45 @@ export function CampoTexto({
   autoComplete,
 }: Props) {
   const id = useId()
+  const [passwordVisivel, setPasswordVisivel] = useState(false)
+
+  const ePassword = tipo === 'password'
+  // Quando é uma password e o utilizador pediu para a ver, o <input> passa
+  // a "text" (mostra os caracteres); caso contrário mantém o tipo pedido.
+  const tipoEfetivo = ePassword && passwordVisivel ? 'text' : tipo
+
+  const campo = (
+    <input
+      id={id}
+      type={tipoEfetivo}
+      value={valor}
+      onChange={(evento) => aoMudar(evento.target.value)}
+      required={obrigatorio}
+      autoComplete={autoComplete}
+    />
+  )
 
   return (
     <div className={estilos.campo}>
       <label htmlFor={id} className={estilos.etiqueta}>
         {etiqueta}
       </label>
-      <input
-        id={id}
-        type={tipo}
-        value={valor}
-        onChange={(evento) => aoMudar(evento.target.value)}
-        required={obrigatorio}
-        autoComplete={autoComplete}
-      />
+
+      {ePassword ? (
+        <div className={estilos.comBotao}>
+          {campo}
+          <button
+            type="button"
+            className={estilos.botaoOlho}
+            onClick={() => setPasswordVisivel((visivel) => !visivel)}
+            aria-label={passwordVisivel ? 'Ocultar password' : 'Mostrar password'}
+          >
+            {passwordVisivel ? <IconeOlhoFechado /> : <IconeOlho />}
+          </button>
+        </div>
+      ) : (
+        campo
+      )}
     </div>
   )
 }

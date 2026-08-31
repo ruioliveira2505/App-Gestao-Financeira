@@ -1,0 +1,12 @@
+/*
+ * ESTILOS DA PÁGINA CONTAS
+ * ========================
+ *
+ * Ficheiro ".module.css": a classe fica limitada ao componente que o
+ * importa (Contas.tsx).
+ */
+
+.nota {
+  margin-top: var(--espaco-3);
+  color: var(--cor-texto-2);
+}

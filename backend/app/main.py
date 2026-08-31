@@ -20,7 +20,7 @@ from app.routers import auth
 # Cria a aplicação. O parâmetro title aparece na documentação interactiva
 # gerada automaticamente pelo FastAPI (acessível, quando o servidor está a
 # correr, em /docs).
-app = FastAPI(title="App Gestão Financeira")
+app = FastAPI(title="Gestão Financeira")
 
 # include_router regista todas as rotas definidas em app/routers/auth.py
 # dentro desta aplicação. Sem esta linha, essas rotas existiriam no

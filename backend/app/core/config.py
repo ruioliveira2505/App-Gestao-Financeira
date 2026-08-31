@@ -4,7 +4,8 @@ CONFIGURAÇÃO DA APLICAÇÃO
 
 Este ficheiro é responsável por obter, a partir do exterior do código, os
 valores que variam consoante o computador ou servidor onde a aplicação está
-a correr — neste caso, o endereço de acesso à base de dados.
+a correr — o endereço de acesso à base de dados e o atributo "Secure" do
+cookie de sessão.
 
 Esses valores residem num ficheiro à parte, designado ".env" (não faz parte
 do código-fonte partilhado — cada máquina possui o seu próprio .env, com os
@@ -42,6 +43,18 @@ class Settings(BaseSettings):
     # "= None" nem "= ''") torna este campo obrigatório — se não estiver
     # presente no .env, a criação da configuração falha de forma deliberada.
     database_url: str
+
+    # Controla o atributo "Secure" do cookie de sessão (ver
+    # app/routers/auth.py). Com "Secure", o browser só envia o cookie em
+    # ligações HTTPS — o correcto em produção. Por omissão é True.
+    #
+    # Em desenvolvimento, quando se abre a aplicação noutro dispositivo (um
+    # telemóvel) pelo endereço de rede da máquina, o acesso é por HTTP
+    # simples e num endereço que não é "localhost" — nesse caso o browser
+    # descartaria um cookie "Secure" e a sessão não sobreviveria a um
+    # refresh. Definir COOKIE_SECURE=false no .env local resolve isso.
+    # NUNCA usar false em produção.
+    cookie_secure: bool = True
 
     # Indica à biblioteca onde procurar os valores: no ficheiro ".env",
     # localizado na mesma pasta em que a aplicação é executada.

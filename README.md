@@ -1,4 +1,4 @@
-# App Gestão Financeira
+# Gestão Financeira
 
 ## O que é
 Aplicação de gestão de finanças pessoais que centraliza movimentos de várias contas bancárias e simplifica a análise de receitas e despesas.

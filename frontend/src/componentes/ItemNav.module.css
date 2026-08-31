@@ -1,0 +1,54 @@
+/*
+ * ESTILOS DO ItemNav
+ * ==================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (ItemNav.tsx).
+ */
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  /* Altura fixa: a linha não muda de tamanho quando o rótulo desaparece
+     (modo recolhido), por isso os ícones não "saltam" na vertical ao
+     recolher/expandir a barra. 2.75rem = 44px, o alvo de toque mínimo
+     recomendado. */
+  height: 2.75rem;
+  padding: 0 var(--espaco-3);
+  border-radius: var(--raio-sm);
+  color: var(--cor-texto-2);
+  /* Anula o sublinhado que os <a> têm por omissão (ver src/index.css). */
+  text-decoration: none;
+  /* O rótulo nunca quebra para uma segunda linha durante a animação de
+     largura da barra. */
+  white-space: nowrap;
+}
+
+.item:hover {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto);
+}
+
+/* Item correspondente à rota actual. */
+.ativo {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto);
+  font-weight: 500;
+}
+
+.icone {
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* O modo compacto só tem efeito em ecrã largo. Em ecrã estreito a barra
+   lateral é sempre uma gaveta com os rótulos visíveis, mesmo que a
+   preferência guardada seja "recolhida".
+   Esconde-se apenas o rótulo; o ícone fica na mesma posição (à esquerda),
+   para a transição não parecer um salto. */
+@media (min-width: 769px) {
+  .compacto .rotulo {
+    display: none;
+  }
+}

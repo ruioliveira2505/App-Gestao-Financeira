@@ -1,0 +1,69 @@
+/*
+ * ESTILOS DO Menu
+ * ===============
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (Menu.tsx).
+ */
+
+.raiz {
+  position: relative;
+}
+
+/* O painel do menu. Abre para cima (bottom: 100%), porque o único uso
+   actual é no fundo da barra lateral. Um uso futuro que precise de abrir
+   para baixo acrescentará uma variante.
+   Ancorado à esquerda do gatilho (left: 0, right: auto) e com largura
+   própria (min-width) — assim, mesmo quando o gatilho está numa coluna
+   estreita (barra lateral recolhida, 72px), o menu não fica espremido; sai
+   para a direita. O max-width impede-o de ultrapassar o ecrã. */
+.painel {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: auto;
+  min-width: 15rem;
+  max-width: calc(100vw - var(--espaco-4));
+  margin-bottom: var(--espaco-2);
+
+  background: var(--cor-superficie);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-md);
+  box-shadow: var(--sombra-menu);
+  padding: var(--espaco-1);
+
+  display: flex;
+  flex-direction: column;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  width: 100%;
+  text-align: left;
+
+  padding: var(--espaco-2) var(--espaco-3);
+  border: none;
+  background: none;
+  border-radius: var(--raio-sm);
+  color: var(--cor-texto);
+  font-size: var(--texto-sm);
+}
+
+.item:hover {
+  background: var(--cor-superficie-2);
+}
+
+.cabecalho {
+  padding: var(--espaco-2) var(--espaco-3);
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  margin-bottom: var(--espaco-1);
+
+  /* Um email comprido é cortado com "…" em vez de esticar o menu. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

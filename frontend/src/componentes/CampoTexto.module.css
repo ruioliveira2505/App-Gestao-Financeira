@@ -4,8 +4,8 @@
  *
  * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
  * importa (CampoTexto.tsx). O aspecto do <input> em si vem dos estilos
- * base em src/index.css; aqui trata-se apenas do arranjo do rótulo por
- * cima do campo.
+ * base em src/index.css; aqui trata-se do arranjo do rótulo por cima do
+ * campo e do botão de olho (só quando é uma password).
  */
 
 /* Empilha o rótulo e o campo na vertical, com um pequeno espaço entre
@@ -19,5 +19,37 @@
 .etiqueta {
   font-size: var(--texto-sm);
   font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+/* Envolve o <input> e o botão de olho, para o botão poder ser posicionado
+   sobre o lado direito do campo. */
+.comBotao {
+  position: relative;
+  display: flex;
+}
+
+/* Deixa espaço à direita do texto do campo, para não passar por baixo do
+   botão. */
+.comBotao input {
+  padding-right: calc(var(--espaco-3) + 1.75rem);
+}
+
+.botaoOlho {
+  position: absolute;
+  right: var(--espaco-2);
+  top: 50%;
+  transform: translateY(-50%);
+
+  display: flex;
+  align-items: center;
+  padding: var(--espaco-2);
+  border: none;
+  background: none;
+  color: var(--cor-texto-3);
+  border-radius: var(--raio-sm);
+}
+
+.botaoOlho:hover {
   color: var(--cor-texto-2);
 }
