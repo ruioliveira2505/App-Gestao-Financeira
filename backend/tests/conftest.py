@@ -123,3 +123,21 @@ async def client(db_session):
     # peçam este fixture (ex.: testes futuros que verifiquem o
     # comportamento por omissão de get_db).
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def cliente_autenticado(client):
+    """
+    O mesmo cliente HTTP, mas já com uma sessão iniciada: regista e
+    autentica um utilizador de teste, deixando o cookie de sessão guardado
+    no cliente. Reutilizável por qualquer teste de uma rota protegida, para
+    não repetir o par registo + login em todos eles.
+
+    Como cada teste corre dentro de uma transacção revertida no fim (ver
+    db_session), este utilizador desaparece no final de cada teste — não há
+    colisão de email entre testes.
+    """
+    credenciais = {"email": "teste@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=credenciais)
+    await client.post("/auth/login", json=credenciais)
+    return client
