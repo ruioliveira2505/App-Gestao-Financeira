@@ -2,28 +2,36 @@
  * LayoutApp — MOLDURA DAS PÁGINAS AUTENTICADAS
  * ===========================================
  *
- * Envolve todas as páginas a que só se acede com sessão iniciada. Compõe
- * a barra lateral de navegação (BarraLateral) com a área de conteúdo.
+ * Envolve todas as páginas a que só se acede com sessão iniciada.
  *
- * O <Outlet /> do React Router é o "buraco" onde a rota-filha é
- * renderizada: as rotas "/" (Resumo) e "/contas" (Contas), definidas em
- * src/App.tsx como filhas da rota que usa este layout, aparecem aqui
- * dentro, mantendo a barra lateral sempre presente à volta.
+ * DUAS MOLDURAS, conforme o ecrã:
+ *   - DESKTOP: barra lateral (BarraLateral) à esquerda + área de conteúdo.
+ *     A barra pode estar "recolhida" (só ícones) — preferência guardada no
+ *     localStorage.
+ *   - MOBILE: a barra lateral está escondida. Há uma única barra fixa, a de
+ *     topo (BarraTopoMobile), com:
+ *       · nas páginas principais → o botão ☰, que abre o menu de navegação
+ *         a ecrã inteiro (MenuMobile);
+ *       · nas páginas de detalhe (as que declaram "voltar" no
+ *         <CabecalhoPagina>) → um "‹ voltar".
+ *     Não há barra de separadores no fundo — em Safari, empilhar uma barra
+ *     nossa com o friso do próprio Safari comia demasiado ecrã.
  *
- * Dois estados vivem aqui, no componente que contém tanto os controlos
- * como a barra:
- *   - gavetaAberta: em ecrã estreito, se a barra (que aí é uma gaveta)
- *     está aberta;
- *   - recolhida: em ecrã largo, se a barra está no modo compacto (só
- *     ícones). É guardado no localStorage para persistir entre visitas.
+ * O <Outlet /> do React Router é o "buraco" onde a rota-filha (Início,
+ * Movimentos, Contas, …) é renderizada. O CabecalhoProvider liga o cabeçalho de cada
+ * página à barra de topo mobile (ver CabecalhoContexto); envolve toda a
+ * árvore, mas o LayoutApp em si não o consome — só o fornece.
  */
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { BarraLateral } from './BarraLateral'
-import { IconeFechar, IconeMenu } from './icones'
+import { BarraTopoMobile } from './BarraTopoMobile'
+import { CabecalhoProvider } from './CabecalhoProvider'
+import { MenuMobile } from './MenuMobile'
 import estilos from './LayoutApp.module.css'
 
 // Chave onde a preferência "barra recolhida" fica guardada no browser.
@@ -50,9 +58,21 @@ function guardarRecolhida(valor: boolean): void {
 }
 
 export function LayoutApp() {
-  const [gavetaAberta, setGavetaAberta] = useState(false)
   // Função como valor inicial: lê o localStorage uma só vez, na montagem.
   const [recolhida, setRecolhida] = useState(lerRecolhida)
+  // Estado do menu de navegação em mobile (o painel que o ☰ abre).
+  const [menuAberto, setMenuAberto] = useState(false)
+  const eMobile = useMediaQuery('(max-width: 768px)')
+
+  // O <main> é o único elemento com scroll (ver .module.css). Ao mudar de
+  // página, volta-se ao topo — sem isto, abrir uma conta ou voltar à lista
+  // podia aparecer a meio, na posição de scroll da página anterior.
+  const { pathname } = useLocation()
+  const refConteudo = useRef<HTMLElement>(null)
+  useEffect(() => {
+    // Salto imediato (não suave — suave seria estranho a cada navegação).
+    if (refConteudo.current) refConteudo.current.scrollTop = 0
+  }, [pathname])
 
   function alternarRecolher() {
     setRecolhida((anterior) => {
@@ -63,44 +83,27 @@ export function LayoutApp() {
   }
 
   return (
-    <div className={estilos.layout}>
-      <BarraLateral
-        aberta={gavetaAberta}
-        aoFechar={() => setGavetaAberta(false)}
-        recolhida={recolhida}
-        aoAlternarRecolher={alternarRecolher}
-      />
+    <CabecalhoProvider>
+      <div className={estilos.layout}>
+        <BarraLateral recolhida={recolhida} aoAlternarRecolher={alternarRecolher} />
 
-      <div className={estilos.painel}>
-        {/* Barra de topo: o CSS só a mostra em ecrã estreito. O botão
-            alterna a gaveta (abre e fecha). */}
-        <header className={estilos.barraTopo}>
-          <button
-            type="button"
-            className={estilos.botaoMenu}
-            aria-label={gavetaAberta ? 'Fechar menu' : 'Abrir menu'}
-            aria-controls="barra-lateral"
-            aria-expanded={gavetaAberta}
-            onClick={() => setGavetaAberta((aberta) => !aberta)}
-          >
-            {gavetaAberta ? <IconeFechar tamanho={22} /> : <IconeMenu tamanho={22} />}
-          </button>
-          <span className={estilos.nomeApp}>Gestão Financeira</span>
-        </header>
+        <div className={estilos.painel}>
+          {eMobile && <BarraTopoMobile aoAbrirMenu={() => setMenuAberto(true)} />}
 
-        {/* <main> é o único elemento que faz scroll (overflow-y: auto). A
-            página em si vai dentro de um invólucro com largura máxima.
-            Enquanto a gaveta está aberta, o scroll é congelado. */}
-        <main
-          className={
-            gavetaAberta ? `${estilos.conteudo} ${estilos.travado}` : estilos.conteudo
-          }
-        >
-          <div className={estilos.pagina}>
-            <Outlet />
-          </div>
-        </main>
+          {/* <main> é o único elemento que faz scroll (overflow-y: auto). A
+              página em si vai dentro de um invólucro com largura máxima. */}
+          <main className={estilos.conteudo} ref={refConteudo}>
+            <div className={estilos.pagina}>
+              <Outlet />
+            </div>
+          </main>
+        </div>
+
+        {/* O menu de navegação em mobile: só existe no DOM quando aberto e
+            cobre o ecrã todo; por isso está fora do .painel, ao nível do
+            .layout. */}
+        {eMobile && menuAberto && <MenuMobile aoFechar={() => setMenuAberto(false)} />}
       </div>
-    </div>
+    </CabecalhoProvider>
   )
 }

@@ -1,0 +1,93 @@
+/*
+ * ESTILOS DA BarraTopoMobile
+ * ==========================
+ *
+ * Barra fixa no topo do ecrã (só montada em mobile). Três zonas: ☰ (ou
+ * "‹") à esquerda, o título ao centro (só em páginas de detalhe), as ações
+ * à direita. As zonas laterais têm a mesma largura mínima, para o título
+ * ficar mesmo centrado. Sem cor nem borda próprias — funde-se com o fundo
+ * da página, à maneira do iOS.
+ *
+ * Com "viewport-fit=cover" (ver index.html), o conteúdo passa por baixo da
+ * barra de estado do iPhone — por isso a barra tem um "padding-top" igual
+ * à safe-area do topo, e a sua altura total inclui-a. O conteúdo (título,
+ * botões) fica na faixa de --altura-barra-topo, por baixo da barra de
+ * estado.
+ */
+
+.barra {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(var(--altura-barra-topo) + env(safe-area-inset-top, 0px));
+
+  display: flex;
+  align-items: center;
+  /* Zonas laterais nas pontas; o título (quando existe) ocupa o meio. */
+  justify-content: space-between;
+  gap: var(--espaco-2);
+  padding-left: var(--espaco-4);
+  padding-right: var(--espaco-4);
+
+  /* Mesma cor da página, sem borda — a barra "desaparece" no fundo. Opaca
+     (não transparente) para o conteúdo não transparecer ao rolar por baixo. */
+  background: var(--cor-fundo);
+}
+
+/* Zonas laterais: largura mínima igual, para o título ao centro ficar
+   mesmo centrado. Uma empurra o conteúdo para a esquerda, a outra para a
+   direita. */
+.esquerda,
+.direita {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 2.75rem;
+}
+
+.esquerda {
+  justify-content: flex-start;
+}
+
+.direita {
+  justify-content: flex-end;
+  gap: var(--espaco-2);
+}
+
+/* Círculo BRANCO com sombra suave — um botão que "flutua" sobre a página,
+   à maneira do iOS. O "+" (a ação principal, um <a> preenchido) mantém o
+   seu próprio aspecto. */
+.botao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.botao:active {
+  background: var(--cor-superficie);
+}
+
+/* Título ao centro da barra (páginas de detalhe). Ocupa o espaço entre as
+   duas zonas laterais e centra o texto; encurta com "…" se não couber. */
+.titulo {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

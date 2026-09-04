@@ -1,0 +1,273 @@
+/*
+ * ESTILOS DO Folha
+ * ================
+ *
+ * A concha partilhada dos modais em folha ("sheet"). Um fundo escurecido
+ * que deixa ver o que está por trás, e um painel com UMA ÚNICA FORMA em
+ * telemóvel: cobre o ecrã deixando uma folga no TOPO (a página / o modal
+ * anterior espreita por aí), cantos de cima arredondados, uma "pega", e
+ * ancorado em baixo a toda a largura.
+ *
+ * O que muda com a prop "direcao" é SÓ a animação de entrada — a forma do
+ * painel e o arrasto para descartar (sempre para BAIXO) são iguais:
+ *   - "baixo"   → entra a subir de baixo.
+ *   - "direita" → entra a deslizar na horizontal.
+ *
+ * DESKTOP (>= 769px) — o painel passa a um diálogo centrado no ecrã, todos
+ * os cantos arredondados, sombra à volta, entrada com fade + leve "scale";
+ * sem pega e sem arrasto (são gestos de toque). O fundo passa a ser o
+ * contentor "flex" que centra o diálogo.
+ *
+ * MOVIMENTO: a ENTRADA é uma animação CSS. O ARRASTO e a SAÍDA usam
+ * "transform" (definido em linha, em píxeis, pelo Folha.tsx) com uma
+ * transição — durante o arrasto a transição desliga-se (.painelAArrastar).
+ * Curva das "sheets" do iOS: cubic-bezier(0.32, 0.72, 0, 1).
+ *
+ * "prefers-reduced-motion": o index.css encurta a duração de animações e
+ * transições para ~0 — aparece/desaparece no sítio; a desmontagem (adiada
+ * no Folha.tsx) mantém-se.
+ */
+
+/* --- Fundo escurecido (e, em desktop, o contentor que centra o diálogo) --- */
+
+.fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.4);
+  animation: fundo-entrar 0.3s ease;
+}
+
+.fundoASair {
+  animation: fundo-sair 0.28s ease forwards;
+}
+
+@keyframes fundo-entrar {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes fundo-sair {
+  to {
+    opacity: 0;
+  }
+}
+
+/* --- Painel: forma única (folha ancorada em baixo, folga no topo) --- */
+
+.painel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Para um pouco abaixo do topo — mostra o que está por trás. */
+  top: calc(env(safe-area-inset-top, 0px) + var(--espaco-5));
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  background: var(--cor-fundo);
+  border-radius: 20px 20px 0 0;
+  /* Recorta o conteúdo aos cantos arredondados. Não afeta a sombra
+     própria do painel (essa pinta-se por fora). */
+  overflow: hidden;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.16);
+
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  overscroll-behavior: contain;
+}
+
+/* Enquanto se arrasta, sem transição — o painel segue o dedo. */
+.painelAArrastar {
+  transition: none;
+}
+
+/* A prop "direcao" só troca a animação de entrada. */
+.entraDeBaixo {
+  animation: painel-entrar-baixo 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.entraDaDireita {
+  animation: painel-entrar-direita 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes painel-entrar-baixo {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes painel-entrar-direita {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+/* Saída: a classe põe o "transform" final e a transição do ".painel" (em
+   cima) anima até lá. Para baixo, em qualquer das direções de entrada;
+   para o lado, no recuo de uma folha que entrou da direita. */
+.saiParaBaixo {
+  transform: translateY(100%);
+}
+
+.saiParaLado {
+  transform: translateX(100%);
+}
+
+/* --- Cabeçalho: pega + linha do título. É por aqui que se arrasta. --- */
+
+.cabecalho {
+  flex-shrink: 0;
+  /* Ar por baixo da linha do título, para o cabeçalho não ficar colado
+     ao conteúdo do corpo. */
+  padding-bottom: var(--espaco-2);
+  /* Impede o browser de tratar o gesto como scroll/refresh — os nossos
+     ouvintes de ponteiro tratam do arrasto. */
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.cabecalho:active {
+  cursor: grabbing;
+}
+
+/* A "pega" (grabber) — a dica visual de "arrasta-me para descartar". */
+.pega {
+  display: block;
+  width: 2.25rem;
+  height: 4px;
+  margin: var(--espaco-3) auto var(--espaco-2);
+  border-radius: 999px;
+  background: var(--cor-borda);
+}
+
+.barraTitulo {
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: 0 var(--espaco-4);
+}
+
+.zonaLateral {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* Largura mínima igual dos dois lados, para o título ficar centrado. */
+  min-width: 2.5rem;
+}
+
+.zonaLateral:last-child {
+  justify-content: flex-end;
+}
+
+.titulo {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Botão de fechar do cabeçalho, do tamanho dos da barra de topo (40px).
+   Duas variantes: "circulo" (círculo branco com sombra, como o "X" do
+   modal Nova conta) e "simples" (só o ícone, como o "‹" de uma barra de
+   navegação). */
+.botaoFechar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--cor-texto);
+}
+
+.fecharCirculo {
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+}
+
+.fecharCirculo:active {
+  background: var(--cor-superficie);
+}
+
+.fecharSimples {
+  border-radius: var(--raio-sm);
+  /* Alinha o ícone com a margem do conteúdo. */
+  margin-left: calc(-1 * var(--espaco-2));
+}
+
+.fecharSimples:active {
+  background: var(--cor-superficie);
+}
+
+/* --- Corpo: a zona que rola. --- */
+
+.corpo {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--espaco-2) var(--espaco-4)
+    calc(var(--espaco-6) + env(safe-area-inset-bottom, 0px));
+}
+
+/* ------------------------------------------------------------------ *
+ * DESKTOP (>= 769px) — diálogo centrado                              *
+ * ------------------------------------------------------------------ *
+ * O "sheet" e o arrasto são próprios do toque. No rato/teclado a
+ * convenção (macOS, Windows, a generalidade das apps web) é um cartão
+ * modal ao CENTRO do ecrã, com todos os cantos arredondados e sombra
+ * à volta. A entrada é um fade + leve "scale".
+ */
+@media (min-width: 769px) {
+  .fundo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--espaco-6);
+  }
+
+  .painel {
+    position: relative;
+    inset: auto;
+    width: min(34rem, 100%);
+    max-height: 100%;
+    border-radius: var(--raio-xl);
+    box-shadow: var(--sombra-menu);
+    /* Sem arrasto no desktop — anula a transição de "transform". */
+    transition: none;
+  }
+
+  /* As duas direções entram com o mesmo fade + "scale" no desktop. */
+  .entraDeBaixo,
+  .entraDaDireita {
+    animation: painel-entrar-centro 0.18s ease-out;
+  }
+
+  .pega {
+    display: none;
+  }
+
+  /* Sem a pega, o cabeçalho ganha um "padding" no topo para a linha do
+     título não colar ao rebordo; deixa de ser zona de arrasto. */
+  .cabecalho {
+    padding-top: var(--espaco-4);
+    cursor: default;
+  }
+}
+
+@keyframes painel-entrar-centro {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}

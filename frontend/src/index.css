@@ -49,51 +49,65 @@
 
   /* --- Escala tipográfica ---
      Poucos tamanhos, em "rem" (relativo ao tamanho base do browser, para
-     respeitar quem o tenha aumentado). O corpo é 15px: mais compacto do
-     que o típico 16px, mas confortável e com contraste suficiente. */
-  --texto-xs: 0.6875rem; /* 11px — micro-rótulos em MAIÚSCULAS */
-  --texto-sm: 0.8125rem; /* 13px — rótulos de campo */
-  --texto-base: 0.9375rem; /* 15px — texto corrente e controlos */
-  --texto-md: 1rem; /* 16px — título de cartão ou de modal */
+     respeitar quem o tenha aumentado). O corpo é 16px — o tamanho padrão,
+     confortável, e o mínimo que evita o zoom automático do Safari no iOS
+     ao focar um campo. */
+  --texto-xs: 0.6875rem; /* 11px — legendas mínimas (ex.: eixos de gráfico) */
+  --texto-sm: 0.8125rem; /* 13px — rótulos de campo, texto secundário */
+  --texto-ui: 0.9375rem; /* 15px — interface densa: linhas de lista, fichas de opções, itens de menu (um degrau abaixo do corpo) */
+  --texto-base: 1rem; /* 16px — texto corrente, campos de formulário, botões principais */
+  --texto-md: 1rem; /* 16px — título de barra/cartão/modal (= corpo, distingue-se pelo peso) */
   --texto-lg: 1.25rem; /* 20px — subtítulos */
   --texto-xl: 1.375rem; /* 22px — título de uma página */
   --texto-2xl: 1.5rem; /* 24px — valores em destaque */
+  --texto-3xl: 2rem; /* 32px — o número-herói de uma página (ex.: saldo total) */
 
   /* --- Raios dos cantos arredondados --- */
   --raio-sm: 6px; /* botões, campos, itens de menu */
   --raio-md: 8px; /* dropdowns, toasts */
-  --raio-lg: 10px; /* cartões, tabelas */
+  --raio-lg: 12px; /* cartões, tabelas */
   --raio-xl: 12px; /* modais, cartão de autenticação */
 
   /* --- Larguras máximas de conteúdo ---
-     Para as linhas de texto não se esticarem de lado a lado em ecrãs
-     largos. "--largura-conteudo" é estreita (formulários de login e
-     registo); "--largura-pagina" é a de uma página já autenticada. */
+     Para as linhas não se esticarem de lado a lado em ecrãs largos.
+       --largura-conteudo:   estreita — formulários de login e registo;
+       --largura-formulario: formulários da aplicação (ex.: criar conta);
+       --largura-pagina:     coluna por omissão de uma página autenticada
+                             (lista, detalhe). É larga o suficiente para uma
+                             grelha de cartões respirar em desktop; o
+                             conteúdo lá dentro adapta-se à largura
+                             disponível. Algo mesmo denso (uma tabela de
+                             movimentos) pode ir mais além. */
   --largura-conteudo: 26rem;
-  --largura-pagina: 64rem;
+  --largura-formulario: 32rem;
+  --largura-pagina: 60rem;
 
-  /* Altura da barra de topo que aparece em ecrã estreito (com o botão de
-     menu). Partilhada pelo LayoutApp (a barra e o afastamento do
-     conteúdo) e pela BarraLateral (a gaveta começa por baixo dela). */
-  --altura-barra-topo: 56px;
+  /* Altura da barra de topo em ecrã estreito (BarraTopoMobile: ☰/voltar +
+     título + ação). Usada pelo LayoutApp para afastar o conteúdo dela.
+     60px dá 10px de folga de cada lado aos botões de ícone de 40px. */
+  --altura-barra-topo: 60px;
 
   /* --- Sombra ---
-     Uma única sombra, reservada ao que flutua sobre o resto da interface
-     (menus, popovers, modais). Cartões e tabelas usam borda, não sombra. */
+     Reservada ao que flutua sobre a interface. "--sombra-menu" para
+     popovers e modais; "--sombra-flutuante", mais leve, para botões
+     redondos que assentam sobre a página (barra de topo, à maneira do iOS).
+     Cartões e tabelas usam borda, não sombra. */
   --sombra-menu: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --sombra-flutuante: 0 1px 2px rgba(0, 0, 0, 0.06), 0 3px 10px rgba(0, 0, 0, 0.08);
 
   /* --- CORES (tema claro) ---
      Nomeadas pela função que cumprem, nunca pela cor em si (--cor-acento,
      não --preto): o tema escuro, mais abaixo, troca os valores mantendo o
      significado. */
 
-  /* Neutros, em camadas: fundo da página → superfície (cartões, campos) →
-     superfície-2 (estados subtis: hover de linha, campo desativado). O
-     off-white tem um toque quente, de propósito — um cinzento puro fica
-     inerte. */
-  --cor-fundo: #f7f7f5;
-  --cor-superficie: #ffffff;
-  --cor-superficie-2: #fafaf9;
+  /* Neutros, em camadas. Ao contrário do habitual, o FUNDO da página é
+     branco e as SUPERFÍCIES (campos, pílulas, círculos dos botões) são um
+     cinzento-quente — à maneira do WhatsApp/Definições do iOS, onde a lista
+     assenta directamente no branco, sem cartão. "superfície-2" é o estado
+     subtil (linha tocada). */
+  --cor-fundo: #ffffff;
+  --cor-superficie: #f2f2ef;
+  --cor-superficie-2: #e8e8e4;
 
   /* Texto, em três níveis de contraste. O nível 3 é claro de mais para
      leitura — usar só em ícones, marcas de água (placeholders) e
@@ -132,6 +146,23 @@
   --cor-aviso-border: #e6d3ab;
   --cor-aviso-text: #7c5417;
 
+  /* Paleta dos avatares (círculo com a inicial de uma conta). Seis tons
+     suaves; cada avatar escolhe um de forma determinística a partir do
+     nome. É a única cor "decorativa" da interface. Cada tom tem um fundo
+     ténue (-bg) e um texto da mesma família (-fg). */
+  --avatar-0-bg: #e7ebfb;
+  --avatar-0-fg: #4453c4;
+  --avatar-1-bg: #dff1ee;
+  --avatar-1-fg: #1f7a6e;
+  --avatar-2-bg: #f9eecf;
+  --avatar-2-fg: #9a6a12;
+  --avatar-3-bg: #fae3e6;
+  --avatar-3-fg: #b23a4e;
+  --avatar-4-bg: #f0e6fa;
+  --avatar-4-fg: #7a41b0;
+  --avatar-5-bg: #e3f1de;
+  --avatar-5-fg: #3f7a3a;
+
   /* Informa o browser de que a interface suporta os dois temas — faz os
      controlos nativos (barras de deslocamento, cursor de texto)
      adaptarem-se. */
@@ -145,9 +176,9 @@
    escuras não são preto puro (#000), e o acento inverte para quase-branco. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --cor-fundo: #191919;
-    --cor-superficie: #222222;
-    --cor-superficie-2: #1c1c1c;
+    --cor-fundo: #000000;
+    --cor-superficie: #1c1c1e;
+    --cor-superficie-2: #2c2c2e;
 
     --cor-texto: #ededed;
     --cor-texto-2: #a0a0a0;
@@ -175,7 +206,21 @@
     --cor-aviso-border: #4a3c22;
     --cor-aviso-text: #e6c583;
 
+    --avatar-0-bg: #232a45;
+    --avatar-0-fg: #9aa8e8;
+    --avatar-1-bg: #16302c;
+    --avatar-1-fg: #6fc3b6;
+    --avatar-2-bg: #322a12;
+    --avatar-2-fg: #d9b366;
+    --avatar-3-bg: #331a1f;
+    --avatar-3-fg: #e58a99;
+    --avatar-4-bg: #2a1f38;
+    --avatar-4-fg: #c39ae0;
+    --avatar-5-bg: #1c2d1a;
+    --avatar-5-fg: #85c07e;
+
     --sombra-menu: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --sombra-flutuante: 0 1px 2px rgba(0, 0, 0, 0.5), 0 3px 10px rgba(0, 0, 0, 0.45);
   }
 }
 
@@ -213,6 +258,10 @@ body {
   color: var(--cor-texto);
   background: var(--cor-fundo);
   -webkit-font-smoothing: antialiased;
+  /* Sem o "flash" cinzento do iOS/Android ao tocar num elemento — o
+     feedback de toque é dado pelos estados ":active" que definimos onde
+     faz sentido. */
+  -webkit-tap-highlight-color: transparent;
 }
 
 /* O elemento onde o React monta a aplicação (ver index.html e

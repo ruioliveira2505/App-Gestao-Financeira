@@ -10,9 +10,18 @@
   position: relative;
 }
 
-/* O painel do menu. Abre para cima (bottom: 100%), porque o único uso
-   actual é no fundo da barra lateral. Um uso futuro que precise de abrir
-   para baixo acrescentará uma variante.
+/* Variante "pagina": a raiz NÃO cria contexto de posicionamento próprio
+   ("position: static"), para o painel se ancorar ao antepassado posicionado
+   mais próximo — a barra de topo ("position: fixed"), que abrange a largura
+   da página. Assim o painel pode alinhar-se às margens da página em vez de
+   ao gatilho (que está encostado à direita). */
+.raizPagina {
+  position: static;
+}
+
+/* O painel do menu. Por omissão abre para CIMA (bottom: 100%) — o uso na
+   barra lateral, onde o gatilho está no fundo do ecrã; a variante
+   ".painelBaixo" abre para baixo (menus no topo de uma página).
    Ancorado à esquerda do gatilho (left: 0, right: auto) e com largura
    própria (min-width) — assim, mesmo quando o gatilho está numa coluna
    estreita (barra lateral recolhida, 72px), o menu não fica espremido; sai
@@ -22,18 +31,96 @@
   bottom: 100%;
   left: 0;
   right: auto;
+  /* Acima do conteúdo da página. Sem isto, elementos posicionados que
+     venham depois no DOM (ex.: as linhas da lista de contas, que são
+     "position: relative") pintam POR CIMA do painel e o texto parece
+     atravessá-lo. Fica abaixo das barras fixas (topo: 40, menu: 50). */
+  z-index: 30;
   min-width: 15rem;
   max-width: calc(100vw - var(--espaco-4));
   margin-bottom: var(--espaco-2);
 
-  background: var(--cor-superficie);
-  border: 1px solid var(--cor-borda);
+  /* Painel BRANCO (mesma cor da página), destacado do fundo por um anel
+     fino a toda a volta mais uma sombra difusa — não por um fundo
+     cinzento. É a mesma linguagem dos botões que "flutuam". */
+  background: var(--cor-fundo);
+  border: none;
   border-radius: var(--raio-md);
-  box-shadow: var(--sombra-menu);
+  box-shadow:
+    0 0 0 1px var(--cor-borda),
+    var(--sombra-menu);
   padding: var(--espaco-1);
 
   display: flex;
   flex-direction: column;
+
+  /* Entrada suave: aparece com um leve deslize + fade. Em
+     "prefers-reduced-motion: reduce", a regra global em index.css anula
+     esta animação. */
+  animation: menu-entrar 0.15s ease;
+}
+
+@keyframes menu-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Variante que abre para baixo do gatilho — para um menu no topo de uma
+   página ou numa barra de ferramentas. O uso por omissão (barra lateral)
+   abre para cima. É também mais estreita, porque os itens costumam ser
+   curtos ("Nome", "Maior saldo"). */
+.painelBaixo {
+  top: 100%;
+  bottom: auto;
+  margin-top: var(--espaco-2);
+  margin-bottom: 0;
+  min-width: 11rem;
+}
+
+/* Alinha o painel pela direita do gatilho — para gatilhos encostados à
+   margem direita do ecrã, para o painel abrir para dentro (e não sair
+   para fora, ficando cortado). */
+.painelDireita {
+  left: auto;
+  right: 0;
+}
+
+/* Variante "pagina": o painel abre para baixo, encostado à margem DIREITA
+   da página, e ocupa pouco mais de metade da largura — não chega à margem
+   esquerda (à maneira do menu "⋯" da app Notas do iOS). A margem direita
+   (--espaco-4) coincide com o "padding" lateral do conteúdo, para o painel
+   alinhar com a lista por baixo. (Fundo, borda e sombra vêm de ".painel".)
+   Requer a raiz ".raizPagina" (que não cria contexto de posicionamento),
+   para o "right" ser relativo à barra de topo fixa. */
+.painelPagina {
+  top: 100%;
+  bottom: auto;
+  left: auto;
+  right: var(--espaco-4);
+  width: 58%;
+  min-width: 13rem;
+  max-width: 20rem;
+  margin-top: var(--espaco-1);
+  margin-bottom: 0;
+}
+
+/* Rótulo do item — envolvido para o sufixo (chevron) poder ser empurrado
+   para a direita com "margin-left: auto". */
+.itemRotulo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sufixo à direita do item (ex.: o chevron de "abre submenu"). */
+.itemSufixo {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--cor-texto-3);
 }
 
 .item {
@@ -48,11 +135,43 @@
   background: none;
   border-radius: var(--raio-sm);
   color: var(--cor-texto);
-  font-size: var(--texto-sm);
+  font-size: var(--texto-ui);
 }
 
 .item:hover {
   background: var(--cor-superficie-2);
+}
+
+/* Item de acção destrutiva ("Remover") — rótulo na cor negativa. */
+.itemPerigo {
+  color: var(--cor-negativo);
+}
+
+/* Linha divisória entre grupos de itens (ver MenuSeparador). */
+.separador {
+  height: 1px;
+  margin: var(--espaco-1) 0;
+  background: var(--cor-borda-leve);
+}
+
+/* Rótulo de secção (ver MenuTitulo). */
+.tituloSeccao {
+  padding: var(--espaco-2) var(--espaco-3) var(--espaco-1);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--cor-texto-3);
+}
+
+/* Marca de "escolhido" nos menus de escolha única (ver MenuItem). Largura
+   fixa: reservada mesmo quando o item não está escolhido, para os rótulos
+   ficarem todos alinhados. */
+.itemMarca {
+  display: flex;
+  flex-shrink: 0;
+  width: 1rem;
+  color: var(--cor-texto);
 }
 
 .cabecalho {

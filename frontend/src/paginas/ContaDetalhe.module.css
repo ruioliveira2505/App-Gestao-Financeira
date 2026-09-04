@@ -1,0 +1,258 @@
+/*
+ * ESTILOS DA PÁGINA DE DETALHE DE UMA CONTA
+ * ========================================
+ *
+ * O nome da conta vive ao centro da barra de topo (BarraTopoMobile). Aqui
+ * ficam:
+ *   - um bloco de IDENTIDADE centrado — monograma grande e, por baixo, a
+ *     legenda "SALDO ATUAL" a introduzir o saldo;
+ *   - as secções "Detalhes" e "Reconciliações": cada título tem um traço
+ *     fino por baixo, à largura do conteúdo (funciona igual em mobile e
+ *     em desktop, onde o conteúdo é uma coluna centrada);
+ *   - a lista de "Detalhes" são pares rótulo/valor, sem ficha;
+ *   - as acções (Editar / Remover) num menu "⋯" no cabeçalho.
+ *
+ * Os títulos de secção seguem o estilo dos cabeçalhos de grupo da lista de
+ * Contas (pequenos, em maiúsculas, esbatidos), agora com o traço por baixo.
+ *
+ * A página entra a DESLIZAR da direita, como um "push" do iOS — a mesma
+ * curva do menu de navegação a ecrã inteiro. O invólucro .pagina do
+ * LayoutApp tem "overflow-x: clip", por isso o deslocamento não faz
+ * aparecer barra de scroll horizontal. Com "prefers-reduced-motion" o
+ * index.css encurta a duração para ~0.
+ */
+
+.pagina {
+  animation: entrada 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes entrada {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+/* --- Estado de erro: mensagem + saída para a lista --- */
+
+.erroBloco {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--espaco-3);
+}
+
+.erroVoltar {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+/* --- Bloco de identidade: monograma + legenda + saldo, centrados --- */
+
+.perfil {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Gap pequeno: a legenda e o saldo são um par. O espaço a seguir ao
+     monograma é maior, dado pela margem da legenda. */
+  gap: var(--espaco-1);
+  text-align: center;
+  margin-bottom: var(--espaco-6);
+}
+
+/* Legenda que introduz o saldo — pequena, em maiúsculas, esbatida. A
+   margem separa o bloco do saldo do monograma (dois blocos: identidade e
+   valor). */
+.saldoRotulo {
+  margin-top: var(--espaco-4);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-2);
+}
+
+/* O saldo, o herói da página. */
+.saldo {
+  font-size: var(--texto-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.negativo {
+  color: var(--cor-negativo-text);
+}
+
+/* --- Secções (Detalhes, Reconciliações) --- */
+
+.seccao {
+  margin-bottom: var(--espaco-6);
+}
+
+.seccao:last-child {
+  margin-bottom: 0;
+}
+
+/* Um pouco mais de ar antes de uma secção que venha a seguir a outra
+   (Detalhes → Reconciliações). É "padding" para não colapsar com a margem
+   da secção anterior. */
+.seccao + .seccao {
+  padding-top: var(--espaco-2);
+}
+
+/* Título de secção: pequeno, em maiúsculas, esbatido (como os cabeçalhos
+   de grupo da lista de Contas), com um traço fino por baixo à largura do
+   conteúdo — é o que separa uma secção da seguinte. */
+.seccaoTitulo {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+  padding-bottom: var(--espaco-2);
+  margin-bottom: var(--espaco-2);
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+/* Lista de pares rótulo/valor, sem ficha, à largura do conteúdo. Fechada
+   em baixo por um traço fino (o de cima é o do título da secção). */
+.lista {
+  margin: 0;
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+.par {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espaco-4);
+  padding: var(--espaco-3) 0;
+}
+
+/* Traço fino entre linhas. */
+.par + .par {
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.par dt {
+  flex-shrink: 0;
+  color: var(--cor-texto-2);
+}
+
+.par dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- "Reconciliações": estado "em breve", discreto, sem ficha --- */
+
+.emBreve {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: var(--espaco-6) var(--espaco-4);
+  text-align: center;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+}
+
+.emBreveIcone {
+  display: flex;
+  color: var(--cor-texto-3);
+}
+
+/* --- "Editar" (lápis) no cabeçalho --- */
+
+/* Círculo branco com sombra, igual ao botão "‹" da barra de topo. Ser um
+   círculo do mesmo tamanho que o "‹" faz as duas zonas laterais da barra
+   terem a mesma largura — e assim o nome ao centro fica mesmo centrado. */
+.acaoIcone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+  text-decoration: none;
+}
+
+.acaoIcone:active {
+  background: var(--cor-superficie);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+/* Blocos cinzentos que pulsam devagar, no lugar do conteúdo enquanto a
+   conta não chega. Com "prefers-reduced-motion" o index.css pára o pulsar
+   — ficam blocos estáticos, que é o pretendido. */
+.esq {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Bloco de identidade: círculo + duas barras, centrados. */
+.esqPerfil {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-2);
+  margin-bottom: var(--espaco-6);
+}
+
+.esqAvatar {
+  width: 8rem;
+  height: 8rem;
+  border-radius: 50%;
+}
+
+.esqSaldoBarra {
+  width: 45%;
+  height: 2rem;
+}
+
+.esqCaption {
+  width: 25%;
+  height: 0.75rem;
+  margin-top: var(--espaco-3);
+}
+
+/* Barra no lugar do título "Detalhes". */
+.esqTitulo {
+  width: 30%;
+  height: 0.9rem;
+  margin-bottom: var(--espaco-3);
+}
+
+/* Barras rótulo/valor dentro de cada linha (reaproveita .lista / .par,
+   para o espaçamento e os traços serem os mesmos da lista real). */
+.esqRotulo {
+  width: 35%;
+  height: 0.9rem;
+}
+
+.esqValor {
+  width: 22%;
+  height: 0.9rem;
+}

@@ -1,0 +1,145 @@
+/*
+ * ESTILOS DA Confirmacao — "ACTION SHEET" DO iOS
+ * =============================================
+ *
+ * Telemóvel: uma folha compacta que sobe de baixo, com a ação a VERMELHO
+ * e o "Cancelar" num cartão à parte por baixo (a convenção do iOS). Ecrã
+ * largo: um cartão pequeno ao centro. Fundo escurecido; fecha ao tocar
+ * fora, no "Cancelar", ou com Escape.
+ *
+ * "prefers-reduced-motion": o index.css encurta as animações para ~0.
+ */
+
+.fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: var(--espaco-3);
+  padding-bottom: calc(var(--espaco-3) + env(safe-area-inset-bottom, 0px));
+  gap: var(--espaco-2);
+  background: rgba(0, 0, 0, 0.3);
+  animation: fundo-entrar 0.2s ease;
+}
+
+@keyframes fundo-entrar {
+  from {
+    opacity: 0;
+  }
+}
+
+/* O conjunto (folha + "Cancelar") — é o "diálogo". Sobe de baixo. */
+.grupo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  animation: grupo-subir 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+@keyframes grupo-subir {
+  from {
+    transform: translateY(110%);
+  }
+}
+
+/* Cartão principal: cabeçalho + botão da ação. */
+.folha {
+  background: var(--cor-fundo);
+  border-radius: var(--raio-lg);
+  /* Recorta o fundo de toque do botão aos cantos arredondados. */
+  overflow: hidden;
+}
+
+.cabecalho {
+  padding: var(--espaco-4);
+  text-align: center;
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+.titulo {
+  margin: 0;
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  color: var(--cor-texto-2);
+}
+
+.mensagem {
+  margin-top: var(--espaco-1);
+  font-size: var(--texto-sm);
+  line-height: 1.4;
+  color: var(--cor-texto-3);
+}
+
+/* Cada frase da mensagem numa linha, com um pequeno espaço entre elas. */
+.mensagem p {
+  margin: 0;
+}
+
+.mensagem p + p {
+  margin-top: var(--espaco-1);
+}
+
+/* Botão da ação destrutiva — a toda a largura, texto a vermelho. */
+.botaoAcao {
+  display: block;
+  width: 100%;
+  padding: var(--espaco-4);
+  border: none;
+  background: var(--cor-fundo);
+  color: var(--cor-negativo);
+  font: inherit;
+  font-size: var(--texto-md);
+  font-weight: 500;
+}
+
+.botaoAcao:active {
+  background: var(--cor-superficie-2);
+}
+
+.botaoAcao:disabled {
+  color: var(--cor-texto-3);
+}
+
+/* "Cancelar" — cartão à parte, texto forte. */
+.botaoCancelar {
+  display: block;
+  width: 100%;
+  padding: var(--espaco-4);
+  border: none;
+  border-radius: var(--raio-lg);
+  background: var(--cor-fundo);
+  color: var(--cor-acento);
+  font: inherit;
+  font-size: var(--texto-md);
+  font-weight: 600;
+}
+
+.botaoCancelar:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Ecrã largo — ao centro, mais estreito; entra com um leve fade. */
+@media (min-width: 769px) {
+  .fundo {
+    justify-content: center;
+    align-items: center;
+    padding: var(--espaco-6);
+  }
+
+  .grupo {
+    max-width: 22rem;
+    animation: grupo-fade 0.15s ease-out;
+  }
+}
+
+@keyframes grupo-fade {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}

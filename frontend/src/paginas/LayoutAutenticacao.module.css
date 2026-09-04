@@ -12,7 +12,8 @@
  */
 
 /* Camada que ocupa o ecrã todo e centra o cartão na horizontal e na
-   vertical. */
+   vertical. O fundo é o tom cinzento (superficie-2), para o cartão branco
+   se destacar. */
 .fundo {
   min-height: 100svh;
   display: flex;
@@ -21,10 +22,11 @@
   /* Afastamento das margens do ecrã, para o cartão não encostar aos
      limites em janelas pequenas. */
   padding: var(--espaco-5);
+  background: var(--cor-superficie-2);
 }
 
-/* O cartão em si: uma caixa branca (ou escura, no tema escuro), elevada
-   do fundo por uma sombra subtil. */
+/* O cartão em si: uma caixa branca (cor-fundo) sobre o fundo cinzento,
+   destacada apenas pelo contorno — sem sombra. */
 .cartao {
   width: 100%;
   max-width: var(--largura-conteudo);
@@ -36,7 +38,32 @@
   gap: var(--espaco-5);
 
   padding: var(--espaco-6);
-  background: var(--cor-superficie);
+  background: var(--cor-fundo);
   border: 1px solid var(--cor-borda);
   border-radius: var(--raio-xl);
+}
+
+/* Os campos (email, password): preenchimento BRANCO (não o cinzento
+   por omissão) e sem a "sombra"/bezel que o Safari do iOS põe nos <input>
+   — fica só o contorno limpo. */
+.cartao input {
+  background: var(--cor-fundo);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Ao focar, nada de anel à volta — só o contorno a escurecer (isso vem
+   da regra base "input:focus" em index.css). */
+.cartao input:focus-visible {
+  outline: none;
+}
+
+/* A linha do fundo ("Ainda não tens conta? …" / "Já tens conta? …") —
+   pequena, centrada e esbatida, para se ler como um atalho para o outro
+   ecrã e não como texto do formulário. */
+.cartao > p {
+  margin: 0;
+  font-size: var(--texto-sm);
+  text-align: center;
+  color: var(--cor-texto-2);
 }

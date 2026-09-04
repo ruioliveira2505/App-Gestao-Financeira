@@ -1,0 +1,135 @@
+/*
+ * ESTILOS DO ListaDeOpcoes
+ * ========================
+ *
+ * A lista de opções de um seletor — usada dentro do PainelDeEscolha (folha
+ * em telemóvel) e da divulgação em linha do CampoSelecao (desktop). Fundo
+ * branco, sem caixa: linhas com um traço fino a separá-las e um "✓" à
+ * direita na opção escolhida.
+ *
+ * A última linha pode ser uma acção ("Adicionar banco" / "Adicionar tipo"),
+ * em tom de acento; ao tocar-lhe transforma-se num campo de escrita com um
+ * "✓" para confirmar.
+ */
+
+.lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Cada opção é um <button> a toda a largura, daí anular borda/fundo. O
+   traço fino por baixo separa-a da seguinte; a última não o leva. */
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 3rem;
+  padding: var(--espaco-3) 0;
+  border: none;
+  border-bottom: 1px solid var(--cor-borda-leve);
+  background: none;
+  text-align: left;
+  font-size: var(--texto-md);
+  color: var(--cor-texto);
+}
+
+.lista li:last-child .linha {
+  border-bottom: none;
+}
+
+/* Feedback de toque, como uma linha de lista do iOS. */
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Opção escolhida: um pouco mais de peso; o sinal inequívoco é o "✓". */
+.linhaSelecionada {
+  font-weight: 500;
+}
+
+/* O "✓": único <svg> filho direto da linha. "margin-left: auto" empurra-o
+   para a direita. */
+.linha > svg {
+  margin-left: auto;
+  color: var(--cor-acento);
+}
+
+.rotulo {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "esbatido" (lista em linha do desktop): as opções por onde se escolhe
+   ficam em tinta secundária; a que está escolhida (com o "✓") em tinta
+   plena, para se destacar. A acção "Adicionar…" mantém o tom de acento. */
+.esbatido .linha {
+  color: var(--cor-texto-3);
+}
+
+.esbatido .linhaSelecionada {
+  color: var(--cor-texto);
+}
+
+.esbatido .linhaAcao {
+  color: var(--cor-acento);
+}
+
+/* --- Linha de acção "Adicionar…" e o seu modo de escrita --- */
+
+/* "Adicionar banco" / "Adicionar tipo": em tom de acento, com um "+" à
+   esquerda (o "margin-left: auto" da regra ".linha > svg" é anulado). */
+.linhaAcao {
+  color: var(--cor-acento);
+}
+
+.linhaAcao > svg {
+  margin-left: 0;
+}
+
+/* Modo de escrita: um <li> (não um <button>), sem traço por baixo. */
+.linhaNovo {
+  gap: var(--espaco-2);
+  border-bottom: none;
+}
+
+.novoInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--cor-texto);
+}
+
+.novoInput::placeholder {
+  color: var(--cor-texto-3);
+}
+
+.novoInput:focus-visible {
+  outline: none;
+}
+
+/* "✓" para confirmar o valor escrito. Cinzento e inativo enquanto o
+   campo está vazio. */
+.novoConfirmar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.novoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+}

@@ -1,0 +1,229 @@
+/*
+ * ESTILOS DO MenuMobile
+ * =====================
+ *
+ * Painel de navegação em ecrã estreito. Cobre o ecrã todo e desliza da
+ * esquerda para a direita ao abrir; desliza de volta ao fechar.
+ *
+ * CURVA DE MOVIMENTO: cubic-bezier(0.32, 0.72, 0, 1) — a curva que o iOS
+ * usa nas "sheets": arranca depressa e assenta com suavidade, sem
+ * ressalto. Entrada ~0.30s, saída ~0.25s.
+ *
+ * ASPECTO (o mesmo da barra lateral do desktop): o fundo do painel é o tom
+ * cinzento (--cor-superficie) e as linhas assentam nele, sem cartão. Ao
+ * toque, uma linha ganha um preenchimento um pouco mais escuro
+ * (--cor-superficie-2). As linhas da lista encostam umas às outras e
+ * separam-se por um traço fino recuado (começa onde começa o texto, recua
+ * um pouco à direita); a zona de perfil, no fundo, fica depois de um traço
+ * a toda a largura, tal como na barra lateral.
+ *
+ * As cores vêm todas de tokens de src/index.css, por isso o painel
+ * adapta-se sozinho a tema claro/escuro — não é preciso um bloco
+ * "prefers-color-scheme" aqui.
+ *
+ * "prefers-reduced-motion": o index.css encurta a duração das animações
+ * para ~0; o painel aparece/desaparece no sítio, sem deslizar. A
+ * desmontagem (agendada no MenuMobile.tsx) mantém-se — o menu fecha na
+ * mesma.
+ */
+
+.painel {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 0px) var(--espaco-4)
+    env(safe-area-inset-bottom, 0px);
+  background: var(--cor-superficie);
+
+  animation: deslizar-entrada 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  /* Um scroll dentro do painel não "vaza" para a página por baixo. */
+  overscroll-behavior: contain;
+}
+
+/* Vem depois de ".painel" para lhe ganhar na propriedade "animation". */
+.painelAFechar {
+  animation: deslizar-saida 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes deslizar-entrada {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes deslizar-saida {
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+/* Cabeçalho — mesma geometria da barra de topo: "X" à esquerda entre duas
+   zonas de largura reservada, para o nome ao centro ficar mesmo centrado. */
+.cabecalho {
+  flex-shrink: 0;
+  height: var(--altura-barra-topo);
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+}
+
+.zonaLateral {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 2.75rem;
+}
+
+.titulo {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.botaoFechar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  /* Alinha o "X" com a margem do conteúdo. */
+  margin-left: calc(-1 * var(--espaco-2));
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: var(--raio-sm);
+  color: var(--cor-texto);
+}
+
+.botaoFechar:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Corpo — coluna que ocupa a altura restante. A lista fica em cima; o
+   "margin-top: auto" da zona de perfil empurra-a para o fundo. */
+.corpo {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--espaco-4) 0 var(--espaco-5);
+}
+
+/* A lista de secções: linhas empilhadas, encostadas umas às outras (o
+   traço fino, mais abaixo, é que as separa). */
+.seccoes {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Uma linha — secção ou perfil. Serve tanto <a> como <button>, daí anular
+   borda/fundo/alinhamento por omissão. "position: relative" ancora o
+   traço de separação (::before). */
+.linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 3rem;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: none;
+  border-radius: var(--raio-sm);
+  background: none;
+  text-align: left;
+  font-size: var(--texto-md);
+  color: var(--cor-texto);
+  text-decoration: none;
+}
+
+/* Traço fino entre linhas da lista. À ESQUERDA começa onde o texto começa
+   (a seguir à ranhura do ícone: padding + ícone + gap); à DIREITA recua um
+   pouco da margem. */
+.linha + .linha::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-3) + 1.75rem + var(--espaco-3));
+  right: var(--espaco-3);
+  /* "cor-borda" (não "cor-borda-leve"): o traço leve foi pensado para
+     fundo branco e some sobre o cinzento do painel. Este é o peso normal
+     de borda — nota-se, sem ser preto. */
+  border-top: 1px solid var(--cor-borda);
+}
+
+/* Feedback de toque: preenchimento mais escuro, como um item da barra
+   lateral em desktop ao ser tocado. */
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Secção atual: texto em tinta plena, um pouco mais de peso; o sinal
+   inequívoco é o visto (✓) à direita. */
+.linhaAtiva {
+  font-weight: 500;
+}
+
+.linhaAtiva .icone {
+  color: var(--cor-texto);
+}
+
+/* O visto: é o único <svg> filho direto da linha (o ícone da secção está
+   dentro de ".icone"). "margin-left: auto" empurra-o para a direita. */
+.linha > svg {
+  margin-left: auto;
+  color: var(--cor-acento);
+}
+
+/* Ranhura do ícone, com largura fixa (= a do avatar) para os rótulos de
+   todas as linhas — secções e perfil — alinharem na mesma vertical. */
+.icone {
+  flex-shrink: 0;
+  width: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cor-texto-2);
+}
+
+/* Zona de perfil, no fundo do painel. "margin-top: auto" cola-a ao fundo;
+   o traço por cima separa-a da lista, como na barra lateral do desktop. */
+.perfil {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: var(--espaco-3);
+  border-top: 1px solid var(--cor-borda);
+}
+
+/* O círculo de identidade: 28px, cor de acento, inicial a 13px — igual ao
+   da barra lateral (BarraLateral). */
+.avatar {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+}
+
+.rotulo {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

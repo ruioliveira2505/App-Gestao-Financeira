@@ -1,0 +1,19 @@
+.link {
+  display: inline-block;
+  margin-bottom: var(--espaco-4);
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+  text-decoration: none;
+}
+
+.link:hover {
+  color: var(--cor-texto);
+}
+
+/* Ecrã estreito: a barra de topo já tem um "‹" de regresso — esconde-se
+   esta ligação para não haver dois "voltar" na mesma página. */
+@media (max-width: 768px) {
+  .link {
+    display: none;
+  }
+}

@@ -1,0 +1,74 @@
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+.etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+/* A moldura desenha a borda e os cantos (como um <input> normal); o
+   <input> lá dentro fica sem borda, para o símbolo e o texto parecerem um
+   só campo. */
+.moldura {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+}
+
+.moldura:focus-within {
+  border-color: var(--cor-acento);
+}
+
+.simbolo {
+  padding-left: var(--espaco-3);
+  color: var(--cor-texto-2);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: var(--espaco-2) var(--espaco-3);
+}
+
+.input:focus {
+  /* O foco visível fica na moldura (focus-within, acima). */
+  outline: none;
+}
+
+/* Disposição "linha": rótulo ténue em cima, valor por baixo. Sem contorno
+   e sem símbolo de moeda. Ver CampoTexto.module.css. */
+.linha {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--espaco-1);
+  padding: var(--espaco-2) 0;
+}
+
+.linha .etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 400;
+  color: var(--cor-texto-3);
+}
+
+.linha .input {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.linha .input:focus-visible {
+  outline: none;
+}

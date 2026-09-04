@@ -1,0 +1,48 @@
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.md {
+  width: 40px;
+  height: 40px;
+  font-size: var(--texto-ui);
+}
+
+.xl {
+  width: 8rem;
+  height: 8rem;
+  /* Inicial proporcional ao círculo (maior do que qualquer token de
+     texto). */
+  font-size: 3rem;
+}
+
+.avatar[data-cor='0'] {
+  background: var(--avatar-0-bg);
+  color: var(--avatar-0-fg);
+}
+.avatar[data-cor='1'] {
+  background: var(--avatar-1-bg);
+  color: var(--avatar-1-fg);
+}
+.avatar[data-cor='2'] {
+  background: var(--avatar-2-bg);
+  color: var(--avatar-2-fg);
+}
+.avatar[data-cor='3'] {
+  background: var(--avatar-3-bg);
+  color: var(--avatar-3-fg);
+}
+.avatar[data-cor='4'] {
+  background: var(--avatar-4-bg);
+  color: var(--avatar-4-fg);
+}
+.avatar[data-cor='5'] {
+  background: var(--avatar-5-bg);
+  color: var(--avatar-5-fg);
+}

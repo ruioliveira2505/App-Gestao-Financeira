@@ -4,16 +4,15 @@
  *
  * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
  * importa (BarraLateral.tsx). Os itens de navegação têm estilos próprios
- * em ItemNav.module.css; o menu do perfil, em Menu.module.css.
+ * em ItemNav.module.css; a zona de perfil (uma ligação para /perfil) é
+ * estilada aqui.
  *
- * Modos, decididos por CSS + a classe .recolhida:
+ * Modos:
  *   - Ecrã largo, expandida (por omissão): barra de 220px.
- *   - Ecrã largo, .recolhida: 72px, só ícones (regras dentro do
- *     @media (min-width: 769px)). Só a largura anima e só os rótulos
- *     deixam de aparecer — nada muda de posição.
- *   - Ecrã estreito (<= 768px): a barra é uma gaveta que desliza a partir
- *     da esquerda, começando por baixo da barra de topo; a classe
- *     .recolhida é ignorada aqui.
+ *   - Ecrã largo, .recolhida: 72px, só ícones. Só a largura anima e só os
+ *     rótulos deixam de aparecer — nada muda de posição.
+ *   - Ecrã estreito (<= 768px): a barra fica escondida; a navegação passa
+ *     a ser o menu ☰ da BarraTopoMobile.
  */
 
 .barra {
@@ -83,8 +82,8 @@
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-/* O botão que abre o menu do perfil: avatar + nome, a ocupar a largura
-   toda. */
+/* A ligação para a página de Perfil: avatar + nome, a ocupar a largura
+   toda. É um <a>, daí anular sublinhado e herdar a cor do texto. */
 .gatilhoPerfil {
   display: flex;
   align-items: center;
@@ -95,10 +94,22 @@
   background: none;
   border-radius: var(--raio-sm);
   text-align: left;
+  text-decoration: none;
+  color: inherit;
 }
 
 .gatilhoPerfil:hover {
   background: var(--cor-superficie-2);
+}
+
+/* Quando /perfil é a rota atual: o mesmo preenchimento do estado ativo dos
+   itens de navegação, e o nome passa a tinta plena. */
+.perfilAtivo {
+  background: var(--cor-superficie-2);
+}
+
+.perfilAtivo .nome {
+  color: var(--cor-texto);
 }
 
 .avatar {
@@ -124,12 +135,6 @@
   white-space: nowrap;
 }
 
-/* Fundo escurecido — sem efeito por omissão; só ganha aparência em ecrã
-   estreito, mais abaixo. */
-.backdrop {
-  display: none;
-}
-
 /* Modo recolhido — só em ecrã largo. Muda apenas a largura e esconde os
    textos; nada muda de posição. */
 @media (min-width: 769px) {
@@ -143,45 +148,10 @@
   }
 }
 
+/* Ecrã estreito: a barra lateral não aparece — a navegação é o menu ☰ da
+   BarraTopoMobile. */
 @media (max-width: 768px) {
   .barra {
-    position: fixed;
-    /* top + bottom + "height: auto" fazem a gaveta esticar exactamente
-       entre a barra de topo e o fundo do ecrã — anula o "height: 100%" da
-       regra base, que a fazia mais alta que o ecrã. */
-    top: var(--altura-barra-topo);
-    bottom: 0;
-    height: auto;
-    z-index: 30;
-
-    /* Fechada: totalmente fora do ecrã à esquerda. Uma posição negativa à
-       esquerda nunca provoca scroll horizontal (ao contrário de um
-       "transform", que em alguns browsers móveis provoca). */
-    left: -220px;
-    transition: left 0.2s ease;
-  }
-
-  .barraAberta {
-    left: 0;
-    box-shadow: var(--sombra-menu);
-  }
-
-  /* Em gaveta, o topo (título + botão de recolher) não faz sentido: o
-     título já está na barra de topo, e recolher não se aplica. */
-  .topo {
     display: none;
-  }
-
-  .backdropVisivel {
-    display: block;
-    position: fixed;
-    /* Não cobre a barra de topo. */
-    inset: var(--altura-barra-topo) 0 0 0;
-    z-index: 20;
-    /* Sem escurecimento nem desfoque — o elemento é invisível, existe só
-       para captar o toque fora da gaveta e a fechar. */
-    background: transparent;
-    /* Impede o scroll de "atravessar" para o conteúdo por trás. */
-    touch-action: none;
   }
 }

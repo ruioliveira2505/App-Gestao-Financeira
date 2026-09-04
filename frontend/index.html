@@ -3,8 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Gestão Financeira</title>
+
+    <!-- App instalável ("Adicionar ao ecrã principal"): abre em ecrã
+         inteiro, sem o friso do Safari. -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#f7f7f5" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Finanças" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

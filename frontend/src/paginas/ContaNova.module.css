@@ -1,0 +1,43 @@
+/*
+ * ESTILOS DA ROTA "NOVA CONTA"
+ * ===========================
+ *
+ * A concha do modal (fundo, painel, cabeçalho, animações, arrasto) vive no
+ * Folha.module.css. Aqui ficam só as duas coisas próprias desta rota: a
+ * largura do formulário no corpo e o botão "✓" do cabeçalho.
+ */
+
+/* Constrange o formulário à largura habitual dos formulários da app e
+   centra-o no corpo da folha. */
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+/* "✓" — a acção principal, no canto superior direito do cabeçalho: círculo
+   preenchido com a cor de acento, do tamanho dos botões da barra de topo
+   (40px). */
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+/* Enquanto faltam campos obrigatórios: círculo cinzento, não clicável.
+   Fica com a cor de acento assim que dá para guardar. */
+.botaoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}

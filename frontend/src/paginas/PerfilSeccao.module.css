@@ -1,0 +1,12 @@
+/*
+ * ESTILOS DO SUB-ECRÃ DE UMA SECÇÃO DO PERFIL
+ * ==========================================
+ *
+ * Ficheiro ".module.css": a classe fica limitada ao componente que o
+ * importa (PerfilSeccao.tsx).
+ */
+
+.nota {
+  margin-top: var(--espaco-4);
+  color: var(--cor-texto-2);
+}

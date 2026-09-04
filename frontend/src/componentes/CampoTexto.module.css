@@ -4,12 +4,12 @@
  *
  * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
  * importa (CampoTexto.tsx). O aspecto do <input> em si vem dos estilos
- * base em src/index.css; aqui trata-se do arranjo do rótulo por cima do
- * campo e do botão de olho (só quando é uma password).
+ * base em src/index.css; aqui trata-se do arranjo do rótulo e do campo, e
+ * do botão de olho (só quando é uma password).
  */
 
-/* Empilha o rótulo e o campo na vertical, com um pequeno espaço entre
-   eles. */
+/* --- disposicao="empilhado": rótulo por cima, campo com contorno --- */
+
 .campo {
   display: flex;
   flex-direction: column;
@@ -21,6 +21,43 @@
   font-weight: 500;
   color: var(--cor-texto-2);
 }
+
+/* --- disposicao="linha": rótulo ténue em cima, valor por baixo --- */
+
+.linha {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--espaco-1);
+  padding: var(--espaco-2) 0;
+}
+
+.linha .etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 400;
+  color: var(--cor-texto-3);
+}
+
+.linha input {
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.linha input::placeholder {
+  color: var(--cor-texto-3);
+}
+
+/* Sem contorno nem "linha à volta" ao focar — o campo assenta na lista. */
+.linha input:focus-visible {
+  outline: none;
+}
+
+/* --- Botão de olho (só disposicao="empilhado" + tipo="password") --- */
 
 /* Envolve o <input> e o botão de olho, para o botão poder ser posicionado
    sobre o lado direito do campo. */

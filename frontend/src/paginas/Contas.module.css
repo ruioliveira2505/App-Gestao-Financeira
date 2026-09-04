@@ -2,11 +2,297 @@
  * ESTILOS DA PÁGINA CONTAS
  * ========================
  *
- * Ficheiro ".module.css": a classe fica limitada ao componente que o
- * importa (Contas.tsx).
+ * A lista de contas ocupa a largura do ecrã (sem cartão), com uma linha
+ * por conta separadas por um traço fino recuado (a começar depois do
+ * monograma, alinhado com o texto) — à maneira das listas do WhatsApp e
+ * das Definições do iOS. Os botões que "flutuam" (círculos da barra de
+ * topo, campo de procura) usam sombra suave; o resto assenta no branco.
+ * Tudo em tokens globais (o antigo protótipo de tipografia/raios foi
+ * promovido para src/index.css).
+ *
+ * Esta página está a ser desenhada MOBILE-FIRST. O layout próprio de
+ * desktop é uma ronda futura, à parte.
  */
 
 .nota {
-  margin-top: var(--espaco-3);
   color: var(--cor-texto-2);
+}
+
+/* --- "⋯" na barra de topo (abre o menu ordenar/agrupar) --- */
+
+/* Círculo branco com sombra, igual ao do ☰ na barra de topo (40px, a par
+   do "+" ao lado, que mantém o seu próprio aspecto de círculo preenchido). */
+.acaoIcone {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.acaoIcone:active {
+  background: var(--cor-superficie);
+}
+
+/* Linha "‹ Ordenar por" / "‹ Agrupar por" no topo do submenu — recua para
+   a vista-raiz. Texto um pouco esbatido e a meio peso, para se ler como um
+   cabeçalho de navegação e não como mais uma opção. */
+.menuVoltar {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+/* --- Campo de pesquisa --- */
+
+/* Pílula BRANCA a ocupar a largura toda, no fluxo normal do conteúdo (rola
+   com a lista). Destaca-se pelo CONTORNO — sem sombra e sem anel ao
+   focar; ao focar, o contorno só escurece. */
+.pesquisa {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-height: 2.75rem;
+  margin: var(--espaco-2) 0 var(--espaco-4);
+  padding: 0 var(--espaco-4);
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: 999px;
+}
+
+.pesquisa:focus-within {
+  border-color: var(--cor-acento);
+}
+
+.pesquisaIcone {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+}
+
+.pesquisaInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  /* 16px: abaixo disto o Safari do iPhone dá zoom ao focar o campo. */
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.pesquisaInput::placeholder {
+  color: var(--cor-texto-3);
+}
+
+.pesquisaInput:focus,
+.pesquisaInput:focus-visible {
+  outline: none;
+}
+
+/* O "x" nativo do input[type=search] em alguns browsers — escondido, para
+   o visual ficar consistente. */
+.pesquisaInput::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* --- Grupos (lista agrupada por tipo ou por banco) --- */
+
+/* Invólucro de todos os grupos. Um pouco de ar acima do primeiro
+   cabeçalho de grupo — que é texto pequeno e, sem isto, fica demasiado
+   colado ao campo de procura. É "padding" (não "margin") para não colapsar
+   com o espaço por baixo do campo. */
+.grupos {
+  padding-top: var(--espaco-3);
+}
+
+.grupo {
+  margin-bottom: var(--espaco-5);
+}
+
+.grupo:last-child {
+  margin-bottom: 0;
+}
+
+/* Cabeçalho de grupo, à maneira das listas do iOS: nome do grupo em
+   maiúsculas pequenas à esquerda, contagem de contas à direita, ambos
+   esbatidos. Nunca um subtotal — esta página não agrega saldos. */
+.grupoCabecalho {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  padding: 0 var(--espaco-2);
+  margin-bottom: var(--espaco-2);
+}
+
+/* Traço fino por baixo do nome do grupo. Vai a toda a largura do
+   cabeçalho — alinhado com a margem da página, mais largo do que o texto
+   (que mantém o seu ligeiro recuo). Fica a meio do espaço entre o
+   cabeçalho e a primeira linha, por isso não rouba altura às linhas de
+   conta. */
+.grupoCabecalho::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--espaco-1));
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.grupoNome {
+  min-width: 0;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grupoContagem {
+  flex-shrink: 0;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+/* --- Lista de contas: sem cartão, linhas directas na página --- */
+
+/* Estende-se até às margens do ecrã (anula o padding lateral da página),
+   para o realce de toque de cada linha ir de lado a lado, à maneira do
+   WhatsApp. */
+.lista {
+  margin: 0 calc(-1 * var(--espaco-4));
+}
+
+.cartao {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-3) var(--espaco-4);
+  background: none;
+  text-decoration: none;
+  color: var(--cor-texto);
+  /* O realce do toque aparece de imediato e esbate-se depressa ao levantar
+     o dedo — só a assinalar "passaste por aqui", sem ficar "preso". */
+  transition: background-color 120ms ease-out;
+}
+
+/* No telemóvel só existe ":active" — dura o tempo do toque e limpa-se ao
+   soltar. O ":hover" fica atrás de "@media (hover: hover)" para não "colar"
+   nos ecrãs tácteis (onde, sem isto, o realce persistia até tocar noutro
+   sítio). */
+.cartao:active {
+  background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .cartao:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+/* Traço fino entre linhas, recuado para começar depois do monograma
+   (alinhado com o texto) e com margem à direita — à maneira das listas
+   agrupadas do iOS. 40px = largura do Avatar (tamanho "md"). */
+.cartao + .cartao::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-4) + 40px + var(--espaco-3));
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* Linha de lista, ambos a 16px (o corpo): o NOME a semibold — é a âncora
+   da linha, o que se lê ao varrer — e o SALDO em peso normal. Ocupa o meio
+   da linha e empurra o saldo para a direita; "min-width: 0" deixa o nome
+   encurtar com reticências. */
+.cartaoNome {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--texto-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cartaoSaldo {
+  font-size: var(--texto-base);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.negativo {
+  color: var(--cor-negativo-text);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+/* Blocos cinzentos que pulsam devagar, no lugar do conteúdo enquanto as
+   contas não chegam. Com "prefers-reduced-motion" o index.css pára o
+   pulsar — ficam blocos estáticos, que é o pretendido. */
+.esqueleto {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqueletoAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.esqueletoNome {
+  width: 45%;
+  height: 0.9rem;
+}
+
+/* --- Sem resultados de pesquisa --- */
+
+.semResultados {
+  padding: var(--espaco-5) var(--espaco-4);
+  text-align: center;
+  color: var(--cor-texto-2);
+}
+
+/* --- Estado vazio --- */
+
+.vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-8) var(--espaco-4);
+  color: var(--cor-texto-2);
+  text-align: center;
+}
+
+.vazioTitulo {
+  font-size: var(--texto-lg);
+  font-weight: 600;
+  color: var(--cor-texto);
 }

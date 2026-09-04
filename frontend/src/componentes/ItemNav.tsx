@@ -6,11 +6,11 @@
  * quando a rota que representa é a rota actual (via NavLink, do React
  * Router, que fornece "isActive").
  *
- * Usado pela BarraLateral, um por secção da aplicação.
+ * Usado pela BarraLateral (desktop), um por secção da aplicação.
  *
  * No modo compacto (barra lateral recolhida), o rótulo é escondido por
- * CSS — só em ecrã largo — ficando apenas o ícone, centrado; o texto passa
- * a um "title" (tooltip nativo) para não se perder o significado.
+ * CSS, ficando apenas o ícone, centrado; o texto passa a um "title"
+ * (tooltip nativo) para não se perder o significado.
  */
 
 import type { ReactNode } from 'react'
@@ -33,19 +33,9 @@ type Props = {
   exato?: boolean
   // Modo compacto: só ícone (barra lateral recolhida).
   compacto?: boolean
-  // Chamada ao navegar — a BarraLateral usa isto para fechar a gaveta em
-  // ecrã estreito.
-  aoNavegar?: () => void
 }
 
-export function ItemNav({
-  para,
-  etiqueta,
-  icone,
-  exato = false,
-  compacto = false,
-  aoNavegar,
-}: Props) {
+export function ItemNav({ para, etiqueta, icone, exato = false, compacto = false }: Props) {
   return (
     <NavLink
       to={para}
@@ -57,7 +47,6 @@ export function ItemNav({
           .filter(Boolean)
           .join(' ')
       }
-      onClick={aoNavegar}
     >
       <span className={estilos.icone}>{icone}</span>
       <span className={estilos.rotulo}>{etiqueta}</span>

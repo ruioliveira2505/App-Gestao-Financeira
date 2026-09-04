@@ -1,0 +1,98 @@
+/*
+ * ESTILOS DO CampoSelecao
+ * =======================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (CampoSelecao.tsx).
+ */
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+.etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+.selecao {
+  width: 100%;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-sm);
+  background: var(--cor-superficie);
+}
+
+.selecao:focus {
+  border-color: var(--cor-acento);
+}
+
+/* Disposição "linha": rótulo ténue em cima, e por baixo o botão que abre
+   o seletor — valor à esquerda, ">" encostado à direita. Ver
+   CampoTexto.module.css. */
+.linha {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--espaco-1);
+  padding: var(--espaco-2) 0;
+}
+
+.linha .etiqueta {
+  font-size: var(--texto-sm);
+  font-weight: 400;
+  color: var(--cor-texto-3);
+}
+
+.linha .gatilho {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+/* O valor selecionado — em tinta plena (é a escolha real). */
+.linha .gatilhoValor {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Seta: em TELEMÓVEL fica ">" (o seletor abre uma folha que entra do
+   lado). No DESKTOP aponta para BAIXO ("v" — "abre uma lista aqui") e,
+   com a lista aberta, gira para "^". */
+.linha .gatilhoSeta {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--cor-texto-3);
+  transition: transform 0.15s ease;
+}
+
+.linha .setaDesktop {
+  transform: rotate(90deg);
+}
+
+.linha .setaAberta {
+  transform: rotate(-90deg);
+}
+
+/* Divulgação em linha (desktop): a lista aparece por baixo do campo,
+   dentro da ficha, empurrando o resto. Um traço fino separa-a do valor;
+   altura limitada com scroll interno para listas longas. */
+.painelLinha {
+  margin-top: var(--espaco-2);
+  border-top: 1px solid var(--cor-borda-leve);
+  max-height: 15rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}

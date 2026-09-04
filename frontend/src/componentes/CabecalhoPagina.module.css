@@ -1,0 +1,52 @@
+.cabecalho {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--espaco-3);
+  margin-bottom: var(--espaco-6);
+}
+
+.icone {
+  flex-shrink: 0;
+  /* Alinha o avatar com a linha do título. */
+  margin-top: 2px;
+}
+
+.textos {
+  min-width: 0;
+  /* Ocupa o espaço a meio, empurrando a ação para a direita. */
+  flex: 1;
+}
+
+.subtitulo {
+  margin-top: var(--espaco-1);
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}
+
+/* Subtítulo em mobile, quando o título já foi para a barra de topo e só o
+   subtítulo fica no conteúdo. */
+.subtituloSolto {
+  margin-bottom: var(--espaco-5);
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}
+
+.acao {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  flex-shrink: 0;
+}
+
+/* Título grande no conteúdo (mobile, páginas principais) — estilo "large
+   title" do iOS/WhatsApp. Rola com o conteúdo. */
+.tituloGrande {
+  margin-bottom: var(--espaco-4);
+}
+
+.tituloGrande h1 {
+  font-size: var(--texto-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}

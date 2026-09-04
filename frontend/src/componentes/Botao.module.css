@@ -12,11 +12,21 @@
  */
 
 .botao {
+  /* inline-flex + sem sublinhado: a mesma classe serve um <button> e um
+     <a> (ver LinkBotao.tsx) com o mesmo aspecto. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Altura fixa de 40px — a mesma dos campos de formulário e das fichas
+     de opções, para os controlos alinharem em toda a app. */
+  min-height: 2.5rem;
   padding: var(--espaco-2) var(--espaco-4);
   border: 1px solid transparent;
   border-radius: var(--raio-sm);
   font-size: var(--texto-base);
   font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
@@ -59,4 +69,16 @@
 
 .perigo:hover:not(:disabled) {
   background: var(--cor-negativo-bg);
+}
+
+/* Modificador de forma: botão redondo só com um ícone, sem texto.
+   Combina-se com uma das variantes de cor (ex.: .botao .primario
+   .apenasIcone). Como não há texto visível, quem o usa é obrigado a dar-lhe
+   um nome acessível (aria-label / title) — ver LinkBotao.tsx. */
+.apenasIcone {
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 0;
+  padding: 0;
+  border-radius: 999px;
 }

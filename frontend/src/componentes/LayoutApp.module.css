@@ -40,73 +40,31 @@
   /* Reserva sempre o espaço da barra de scroll, para o conteúdo não
      "saltar" na horizontal quando ela aparece. */
   scrollbar-gutter: stable;
-  transition: opacity 0.2s ease;
 }
 
-/* Enquanto a gaveta está aberta (ecrã estreito), o conteúdo por trás
-   fica congelado (sem scroll) e esbatido — assinala que a gaveta é o
-   foco, sem escurecer nem desfocar. */
-.travado {
-  overflow: hidden;
-  opacity: 0.5;
-}
-
-/* Invólucro da página: largura máxima, centrado, com o respiro à volta. */
+/* Invólucro da página: largura máxima, centrado, com o respiro à volta.
+   "overflow-x: clip" contém animações de entrada que deslocam a página na
+   horizontal (ver ContaDetalhe) sem provocar barra de scroll horizontal;
+   ao contrário de "hidden", não cria um contentor de scroll (o <main>
+   continua a ser o único), por isso não interfere com nada. */
 .pagina {
   max-width: var(--largura-pagina);
   margin: 0 auto;
   padding: var(--espaco-6) var(--espaco-5);
-}
-
-/* Barra de topo com o botão de menu — escondida em ecrã largo. */
-.barraTopo {
-  display: none;
-}
-
-.botaoMenu {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  /* 44px = alvo de toque mínimo recomendado. Uma margem negativa alinha o
-     ícone com a margem da barra apesar da área maior. */
-  min-width: 2.75rem;
-  min-height: 2.75rem;
-  margin-left: calc(-1 * var(--espaco-2));
-  background: none;
-  border: none;
-  padding: var(--espaco-1);
-  color: var(--cor-texto);
-}
-
-.nomeApp {
-  font-size: var(--texto-md);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  overflow-x: clip;
 }
 
 @media (max-width: 768px) {
-  .barraTopo {
-    display: flex;
-    align-items: center;
-    gap: var(--espaco-3);
-
-    /* Fixa no topo do ecrã: continua visível ao rolar a página, por isso
-       o botão de menu está sempre acessível. */
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: var(--altura-barra-topo);
-    z-index: 40;
-
-    padding: 0 var(--espaco-4);
-    background: var(--cor-superficie);
-    border-bottom: 1px solid var(--cor-borda);
-  }
-
   .pagina {
-    /* Afasta o conteúdo para baixo da barra de topo fixa. */
-    padding: calc(var(--altura-barra-topo) + var(--espaco-5)) var(--espaco-4)
-      var(--espaco-5);
+    /* Afasta o conteúdo da única barra fixa em mobile — a de topo
+       (BarraTopoMobile): reserva-se a altura dela mais a safe-area da
+       barra de estado do iPhone. Em baixo, já não há barra nossa — só a
+       safe-area do indicador de home mais o respiro habitual. */
+    padding-top: calc(
+      var(--altura-barra-topo) + env(safe-area-inset-top, 0px) + var(--espaco-3)
+    );
+    padding-right: var(--espaco-4);
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--espaco-5));
+    padding-left: var(--espaco-4);
   }
 }

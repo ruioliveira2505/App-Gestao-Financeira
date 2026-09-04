@@ -1,0 +1,70 @@
+/*
+ * ESTILOS DO ContaFormulario
+ * ==========================
+ *
+ * Um formulário em fichas, ao estilo das listas agrupadas do iOS. Cada
+ * grupo é um cartão branco com CONTORNO (sem sombra); dentro, cada campo é
+ * uma linha com o nome em cima (ténue) e o valor por baixo, e as linhas
+ * separam-se por um traço fino RECUADO (com margem dos dois lados). Os
+ * dois grupos — "Identificação" e a âncora (data + saldo de início) — não
+ * têm título visível: distinguem-se por serem cartões separados.
+ */
+
+/* Pré-visualização do monograma, ao centro, no topo. Mesmo tamanho ("xl")
+   que o monograma na página de detalhe de uma conta. Além do "gap" do
+   <Formulario>, uma margem por baixo para o afastar bem do primeiro
+   cartão. */
+.monograma {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--espaco-4);
+}
+
+/* Um grupo = um cartão. É um <fieldset> sem borda nativa: NÃO leva
+   <legend> (um <legend>, mesmo escondido, faz o Safari reservar-lhe
+   espaço no topo do <fieldset>); o rótulo do grupo é um "aria-label" do
+   <fieldset> (agrupa para o leitor de ecrã). Contorno, sem sombra — sobre
+   fundo branco lê-se pela borda. */
+.grupo {
+  padding: 0;
+  margin: 0;
+
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  /* Recorta o fundo de toque das linhas aos cantos arredondados. */
+  overflow: hidden;
+}
+
+/* Cada linha reganha o respiro lateral do cartão. */
+.grupo > div {
+  padding-left: var(--espaco-4);
+  padding-right: var(--espaco-4);
+}
+
+/* Traço fino a separar linhas dentro do cartão — RECUADO dos dois lados
+   (com margem), acima de cada linha menos a primeira. Feito num
+   pseudo-elemento para poder ter margem lateral (uma "border" ia de ponta
+   a ponta). */
+.grupo > div + div {
+  position: relative;
+}
+
+.grupo > div + div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--espaco-4);
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* Rodapé da âncora: a nota que explica os dois campos, por baixo do
+   cartão, pequena e esbatida — o rodapé de grupo das listas do iOS. O
+   espaço até ao cartão vem do "gap" do <Formulario>. */
+.rodapeGrupo {
+  margin: 0;
+  font-size: var(--texto-sm);
+  line-height: 1.4;
+  color: var(--cor-texto-3);
+}

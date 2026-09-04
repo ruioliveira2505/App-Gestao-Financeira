@@ -1,0 +1,76 @@
+/*
+ * ESTILOS DA ROTA "EDITAR CONTA"
+ * =============================
+ *
+ * A rota é uma folha (o componente Folha, direcao="baixo"), como o "Nova
+ * conta" — sobe de baixo em telemóvel, diálogo ao centro no desktop. A
+ * concha vem toda do Folha.module.css. Aqui ficam: a largura do
+ * formulário no corpo da folha, os estados de carregamento/erro, o "✓" de
+ * guardar e o cartão de eliminar.
+ */
+
+/* Constrange o formulário à largura habitual e centra-o no corpo da
+   folha (igual ao "Nova conta"). */
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+/* "✓" — guardar as alterações, no canto superior direito do cabeçalho da
+   folha. Círculo com a cor de acento, do tamanho dos botões da barra de
+   topo (40px). */
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+.botaoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}
+
+/* Eliminar conta — um cartão próprio, como os do formulário, mas a
+   VERMELHO (borda e texto). Afastado do formulário, por ser uma acção
+   destrutiva. */
+.cartaoEliminar {
+  margin-top: var(--espaco-5);
+  border: 1px solid var(--cor-negativo);
+  border-radius: var(--raio-lg);
+  /* Recorta o fundo de toque aos cantos arredondados. */
+  overflow: hidden;
+}
+
+.linhaEliminar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--espaco-3) var(--espaco-4);
+  border: none;
+  background: var(--cor-fundo);
+  color: var(--cor-negativo);
+  font: inherit;
+  font-weight: 500;
+}
+
+.linhaEliminar:active {
+  background: var(--cor-superficie-2);
+}

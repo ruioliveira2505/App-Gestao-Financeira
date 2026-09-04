@@ -1,0 +1,163 @@
+/*
+ * ESTILOS DA PÁGINA PERFIL
+ * ========================
+ *
+ * Ficheiro ".module.css": as classes ficam limitadas ao componente que o
+ * importa (Perfil.tsx). Todos os valores (cores, espaços, raio) vêm de
+ * tokens de src/index.css, por isso o ecrã adapta-se sozinho a tema
+ * claro/escuro.
+ *
+ * Três blocos, de cima para baixo: identidade (centrada), a lista de
+ * secções (Conta · Segurança · Preferências) e o cartão de "Terminar
+ * sessão".
+ */
+
+/* --- Identidade: avatar grande, nome, email --- */
+
+.identidade {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-2);
+  /* Afasta-se do cabeçalho por cima e da lista por baixo. */
+  margin: var(--espaco-4) 0 var(--espaco-6);
+}
+
+.nome {
+  font-size: var(--texto-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.email {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+/* --- Lista de secções (padrão da lista de contas) --- */
+
+/* Ocupa a largura do ecrã: anula o padding lateral do conteúdo com uma
+   margem negativa, para as linhas irem de rebordo a rebordo. */
+.lista {
+  margin: 0 calc(-1 * var(--espaco-4));
+}
+
+/* Uma linha = um <a> a toda a largura: ícone à esquerda, o texto (título +
+   subtítulo) no meio, o chevron à direita. */
+.item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-3) var(--espaco-4);
+  background: none;
+  text-decoration: none;
+  color: var(--cor-texto);
+  transition: background-color 120ms ease-out;
+}
+
+/* Realce de toque, como nas linhas da lista de contas. O ":hover" fica
+   atrás de "@media (hover: hover)" para não "colar" nos ecrãs tácteis. */
+.item:active {
+  background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .item:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+/* Traço fino entre linhas, recuado para começar depois do ícone (alinhado
+   com o texto) e com margem à direita — igual à lista de contas. 40px =
+   largura do quadrado do ícone. */
+.item + .item::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-4) + 40px + var(--espaco-3));
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* O ícone num quadrado arredondado com preenchimento leve — dá corpo à
+   lista (à maneira do ecrã de Definições do iOS) e ocupa o lugar do
+   monograma da lista de contas. */
+.itemIcone {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--raio-md);
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-2);
+}
+
+/* Título por cima, subtítulo por baixo. "min-width: 0" deixa o texto
+   encurtar com reticências em vez de esticar a linha. */
+.itemTexto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.itemTitulo {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemSubtitulo {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* O chevron ">": encostado à direita, em tinta ténue. */
+.itemSeta {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--cor-texto-3);
+}
+
+/* --- Terminar sessão --- */
+
+/* Cartão isolado, de contorno vermelho — a mesma forma do "Eliminar conta"
+   no fim do formulário de edição de uma conta. Afasta-se bem da lista por
+   cima. */
+.sair {
+  margin-top: var(--espaco-6);
+  border: 1px solid var(--cor-negativo);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+.botaoSair {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--espaco-3) var(--espaco-4);
+  border: none;
+  background: var(--cor-fundo);
+  font: inherit;
+  font-weight: 500;
+  color: var(--cor-negativo);
+}
+
+.botaoSair:active {
+  background: var(--cor-negativo-bg);
+}
+
+.botaoSair:disabled {
+  opacity: 0.6;
+}
