@@ -18,17 +18,24 @@ API da aplicação, escrita em Python com o FastAPI.
   - `core/deps.py` — dependências partilhadas por várias rotas, sobretudo `obter_utilizador_atual` (identifica o utilizador autenticado a partir do cookie de sessão).
   - `db/session.py` — ligação à base de dados.
   - `core/moedas.py` — conjunto fechado de moedas suportadas (código, símbolo, nome).
-  - `models/user.py`, `models/session.py`, `models/conta.py` — tabelas `users`, `sessions` e `contas`.
-  - `schemas/auth.py`, `schemas/contas.py` — formato dos pedidos e respostas dos endpoints.
+  - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py` — tabelas `users`, `sessions`, `contas` e `movimentos`.
+  - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py` — formato dos pedidos e respostas dos endpoints.
   - `routers/auth.py` — endpoints de autenticação (registo, login, logout, "quem sou eu").
   - `routers/contas.py` — endpoints de contas (criar, listar, obter, editar, apagar).
+  - `routers/movimentos.py` — endpoints de movimentos (criar, listar — global ou por conta —, obter, editar, apagar).
+  - `services/contas.py` — verificação de posse de uma conta (partilhada pelos dois routers acima).
+  - `services/sessions.py` — apagar sessões expiradas (ver `scripts/limpar_sessoes.py`, abaixo).
+- `scripts/` — pequenos programas de linha de comandos, à parte da API (correm-se com `uv run python -m scripts.<nome>`):
+  - `limpar_sessoes.py` — apaga da base de dados as sessões cujo prazo já passou.
 - `tests/` — testes automatizados:
   - `conftest.py` — fixtures partilhadas por todos os testes (base de dados de teste, isolamento por transacção, cliente HTTP).
   - `test_auth_registo.py` — testes ao endpoint `POST /auth/registo`.
   - `test_auth_login.py` — testes ao endpoint `POST /auth/login`.
   - `test_auth_logout.py` — testes ao endpoint `POST /auth/logout`.
   - `test_auth_me.py` — testes à rota `GET /auth/me`.
-  - `test_contas.py` — testes aos endpoints de contas (criar, listar, obter, editar, apagar).
+  - `test_contas.py` — testes aos endpoints de contas (criar, listar, obter, editar, apagar; saldo com movimentos; eliminação em cascata).
+  - `test_movimentos.py` — testes aos endpoints de movimentos.
+  - `test_sessions.py` — testes à limpeza de sessões expiradas.
 - `alembic/` — migrações da base de dados; `env.py` liga o Alembic à configuração e aos modelos da aplicação.
 - `alembic.ini` — configuração do Alembic (onde ficam as migrações, o logging).
 - `pyproject.toml` — nome, versão e dependências do projecto (o que o `uv` lê para saber o que instalar); inclui também a configuração do pytest.
@@ -91,7 +98,14 @@ Autenticação concluída — quatro endpoints, todos testados automaticamente:
 
 Contas — CRUD completo, testado, sempre no âmbito do utilizador autenticado:
 - `POST /contas` — cria uma conta (nome, banco, tipo, moeda, data e saldo de âncora). A data de início não pode ser no futuro.
-- `GET /contas` — lista as contas do utilizador, por ordem de nome, com o saldo actual já calculado.
-- `GET /contas/{id}` · `PATCH /contas/{id}` (só campos descritivos) · `DELETE /contas/{id}`. Uma conta de outro utilizador responde 404, não 403.
+- `GET /contas` — lista as contas do utilizador, por ordem de nome, com o **saldo actual** — saldo de âncora + a soma dos seus movimentos.
+- `GET /contas/{id}` · `PATCH /contas/{id}` (campos descritivos; recusa mudar a moeda se a conta já tiver movimentos) · `DELETE /contas/{id}` (apaga também os seus movimentos, em cascata). Uma conta de outro utilizador responde 404, não 403.
 
-A parte de frontend das contas, e depois os movimentos, são os passos seguintes.
+Movimentos — CRUD completo, testado, sempre em contas do utilizador autenticado. Ainda sem categoria (fatia seguinte):
+- `POST /movimentos` — cria um movimento (conta, data, descrição, valor com sinal — positivo é entrada, negativo é saída). A data não pode ser anterior à data-âncora da conta.
+- `GET /movimentos` — lista **global** (todas as contas do utilizador), por data mais recente primeiro; `?conta_id=` filtra para uma só.
+- `GET /movimentos/{id}` · `PATCH /movimentos/{id}` (pode mover o movimento para outra conta do mesmo utilizador) · `DELETE /movimentos/{id}`.
+
+Sessões expiradas — não se apagam sozinhas ao expirar (só um logout explícito remove uma sessão); `uv run python -m scripts.limpar_sessoes` (a partir desta pasta) apaga as que já passaram do prazo. Corre-se à mão por agora; mais tarde agenda-se por cron.
+
+O frontend das contas está feito (ver `../frontend/README.md`). O frontend de movimentos é o passo seguinte; depois, a categorização (manual, e mais tarde automática com um LLM).
