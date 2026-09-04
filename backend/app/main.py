@@ -3,8 +3,8 @@ PONTO DE ENTRADA DA APLICAÇÃO
 ================================
 
 Este ficheiro cria a instância da aplicação FastAPI e liga-lhe as rotas
-definidas nos routers (autenticação e contas). É este ficheiro que o
-servidor (Uvicorn) corre para pôr a API no ar.
+definidas nos routers (autenticação, contas e movimentos). É este ficheiro
+que o servidor (Uvicorn) corre para pôr a API no ar.
 """
 
 # FastAPI é a classe principal da biblioteca: uma instância dela representa
@@ -14,7 +14,7 @@ from fastapi import FastAPI
 # app.routers é o pacote onde vivem os ficheiros de rotas. Importa-se cada
 # módulo inteiro, e não directamente o "router" lá definido, só por
 # preferência de estilo — ambas as formas funcionariam.
-from app.routers import auth, contas
+from app.routers import auth, contas, movimentos
 
 # Cria a aplicação. O parâmetro title aparece na documentação interactiva
 # gerada automaticamente pelo FastAPI (acessível, quando o servidor está a
@@ -27,3 +27,4 @@ app = FastAPI(title="Gestão Financeira")
 # responder a rotas que tenham sido explicitamente incluídas.
 app.include_router(auth.router)
 app.include_router(contas.router)
+app.include_router(movimentos.router)

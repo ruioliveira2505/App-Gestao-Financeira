@@ -14,5 +14,6 @@ existir, ao comparar com o que realmente existe na base de dados.
 """
 
 from app.models.conta import Conta  # noqa: F401
+from app.models.movimento import Movimento  # noqa: F401
 from app.models.session import UserSession  # noqa: F401
 from app.models.user import User  # noqa: F401

@@ -268,3 +268,85 @@ async def test_apagar_conta_de_outro_utilizador_devolve_404(client):
     resposta = await client.delete(f"/contas/{conta_id}")
 
     assert resposta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_apagar_conta_apaga_tambem_os_seus_movimentos(cliente_autenticado):
+    """
+    A eliminação é em cascata ao nível da base de dados (ver
+    ondelete="CASCADE" em app/models/movimento.py) — apagar a conta não
+    deve falhar com um erro de integridade referencial, e os movimentos
+    não devem sobreviver "órfãos".
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+    )
+
+    resposta = await cliente_autenticado.delete(f"/contas/{conta_id}")
+
+    assert resposta.status_code == 204
+    assert (await cliente_autenticado.get("/movimentos")).json() == []
+
+
+# ─── Saldo actual, com movimentos ────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autenticado):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    # saldo_ancora de CONTA_VALIDA é 1000.00.
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Salário", "valor": "1500.00"},
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={"conta_id": conta_id, "data": "2026-02-05", "descricao": "Renda", "valor": "-750.00"},
+    )
+
+    corpo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()
+
+    # 1000.00 (âncora) + 1500.00 - 750.00 = 1750.00. saldo_ancora não muda.
+    assert corpo["saldo_ancora"] == "1000.00"
+    assert corpo["saldo"] == "1750.00"
+
+    # A listagem (que soma os movimentos de forma agrupada, não um a um)
+    # tem de dar o mesmo resultado.
+    contas = (await cliente_autenticado.get("/contas")).json()
+    assert contas[0]["saldo"] == "1750.00"
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_recusa_mudar_moeda_com_movimentos(cliente_autenticado):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+    )
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Conta à ordem", "banco": "BPI", "tipo": "Conta corrente", "moeda": "USD"},
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_permite_manter_a_mesma_moeda_com_movimentos(cliente_autenticado):
+    """A regra é "mudar" a moeda, não "ter" movimentos — reenviar a mesma moeda continua permitido."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+    )
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Novo nome", "banco": "BPI", "tipo": "Conta corrente", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["nome"] == "Novo nome"

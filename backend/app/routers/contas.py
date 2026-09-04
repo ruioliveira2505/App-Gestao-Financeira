@@ -2,10 +2,11 @@
 ROTAS DE CONTAS
 ================
 
-Endpoints para gerir as contas do utilizador autenticado. Nesta fase:
-criar e listar. Cada rota exige autenticação (via obter_utilizador_atual,
-app/core/deps.py) e trabalha sempre no âmbito do utilizador do pedido —
-uma conta de outro utilizador é, para todos os efeitos, inexistente.
+Endpoints para gerir as contas do utilizador autenticado. Cada rota exige
+autenticação (via obter_utilizador_atual, app/core/deps.py) e trabalha
+sempre no âmbito do utilizador do pedido — uma conta de outro utilizador
+é, para todos os efeitos, inexistente (ver
+app/services/contas.py:obter_conta_do_utilizador).
 """
 
 import uuid
@@ -18,14 +19,16 @@ from decimal import Decimal
 # constantes com nome.
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
 from app.db.session import get_db
 from app.models.conta import Conta
+from app.models.movimento import Movimento
 from app.models.user import User
 from app.schemas.contas import ContaCriar, ContaEditar, ContaOut
+from app.services.contas import obter_conta_do_utilizador
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -36,37 +39,58 @@ router = APIRouter(prefix="/contas", tags=["contas"])
 _DUAS_CASAS = Decimal("0.01")
 
 
-async def _obter_conta_do_utilizador(
-    db: AsyncSession, utilizador: User, conta_id: uuid.UUID
-) -> Conta:
+async def _soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
+    """Soma o "valor" (com sinal) de todos os movimentos de uma conta. 0 se não houver nenhum."""
+    resultado = await db.execute(
+        select(func.coalesce(func.sum(Movimento.valor), 0)).where(
+            Movimento.conta_id == conta_id
+        )
+    )
+    return resultado.scalar_one()
+
+
+async def _somas_de_movimentos(
+    db: AsyncSession, conta_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, Decimal]:
     """
-    Devolve a conta com este id, se pertencer ao utilizador. Caso
-    contrário — não existe, ou é de outro utilizador — levanta 404, nunca
-    403: para este utilizador, uma conta que não é sua é, para todos os
-    efeitos, inexistente, e a resposta não deve sequer revelar que o id
-    corresponde a alguma conta.
+    A mesma soma que _soma_movimentos, mas para várias contas de uma vez
+    (uma query, agrupada por conta_id) — usada na listagem, para não
+    repetir uma query por conta (problema "N+1").
+    """
+    if not conta_ids:
+        return {}
+    resultado = await db.execute(
+        select(Movimento.conta_id, func.sum(Movimento.valor))
+        .where(Movimento.conta_id.in_(conta_ids))
+        .group_by(Movimento.conta_id)
+    )
+    return dict(resultado.all())
+
+
+async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
+    """
+    True se a conta tiver pelo menos um movimento. Não é o mesmo que "a
+    soma dos movimentos é diferente de 0" — uma conta pode ter movimentos
+    cujo total dá exactamente 0 (ex.: +50 e -50) e ainda assim ter
+    movimentos. limit(1): só interessa saber se existe algum, não quantos.
     """
     resultado = await db.execute(
-        select(Conta).where(Conta.id == conta_id, Conta.user_id == utilizador.id)
+        select(Movimento.id).where(Movimento.conta_id == conta_id).limit(1)
     )
-    conta = resultado.scalar_one_or_none()
-    if conta is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada."
-        )
-    return conta
+    return resultado.first() is not None
 
 
-def _para_saida(conta: Conta) -> ContaOut:
+def _para_saida(conta: Conta, soma_movimentos: Decimal) -> ContaOut:
     """
     Converte uma linha da tabela "contas" na forma devolvida pela API.
 
     É aqui que os valores decimais passam a texto e que o "saldo actual" é
-    determinado. Sem movimentos, esse saldo é simplesmente o saldo da
-    âncora; quando os movimentos existirem, esta função passará a somar-lhes
-    o total.
+    determinado: saldo_ancora + a soma (com sinal) dos movimentos da
+    conta, já calculada por quem chama (_soma_movimentos /
+    _somas_de_movimentos) — esta função não faz queries, só formata.
     """
     saldo_ancora_texto = f"{conta.saldo_ancora:.2f}"
+    saldo_texto = f"{conta.saldo_ancora + soma_movimentos:.2f}"
     return ContaOut(
         id=conta.id,
         nome=conta.nome,
@@ -75,7 +99,7 @@ def _para_saida(conta: Conta) -> ContaOut:
         moeda=conta.moeda,
         data_ancora=conta.data_ancora,
         saldo_ancora=saldo_ancora_texto,
-        saldo=saldo_ancora_texto,
+        saldo=saldo_texto,
         created_at=conta.created_at,
         updated_at=conta.updated_at,
     )
@@ -116,7 +140,9 @@ async def criar_conta(
     # ela sabe (created_at, updated_at).
     await db.refresh(conta)
 
-    return _para_saida(conta)
+    # Uma conta recém-criada nunca tem movimentos ainda — soma 0, sem
+    # precisar de consultar a tabela de movimentos.
+    return _para_saida(conta, Decimal(0))
 
 
 @router.get("", response_model=list[ContaOut])
@@ -128,7 +154,9 @@ async def listar_contas(
     resultado = await db.execute(
         select(Conta).where(Conta.user_id == utilizador.id).order_by(Conta.nome)
     )
-    return [_para_saida(conta) for conta in resultado.scalars()]
+    contas = list(resultado.scalars())
+    somas = await _somas_de_movimentos(db, [conta.id for conta in contas])
+    return [_para_saida(conta, somas.get(conta.id, Decimal(0))) for conta in contas]
 
 
 @router.get("/{conta_id}", response_model=ContaOut)
@@ -138,8 +166,9 @@ async def obter_conta(
     db: AsyncSession = Depends(get_db),
 ) -> ContaOut:
     """Devolve uma conta do utilizador autenticado. 404 se não for sua ou não existir."""
-    conta = await _obter_conta_do_utilizador(db, utilizador, conta_id)
-    return _para_saida(conta)
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+    soma = await _soma_movimentos(db, conta.id)
+    return _para_saida(conta, soma)
 
 
 @router.patch("/{conta_id}", response_model=ContaOut)
@@ -153,10 +182,17 @@ async def editar_conta(
     Actualiza os campos descritivos de uma conta (nome, banco, tipo,
     moeda). Nunca toca na âncora.
 
-    (Quando os movimentos existirem, mudar a moeda de uma conta que já
-    tenha movimentos deixará de ser permitido — a nota fica aqui.)
+    Mudar a moeda é recusado se a conta já tiver movimentos: estes foram
+    lançados a pensar na moeda antiga, e mudar a moeda por baixo deles
+    mudaria silenciosamente o que os seus valores significam.
     """
-    conta = await _obter_conta_do_utilizador(db, utilizador, conta_id)
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+
+    if dados.moeda != conta.moeda and await _tem_movimentos(db, conta.id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Não é possível mudar a moeda de uma conta com movimentos.",
+        )
 
     conta.nome = dados.nome
     conta.banco = dados.banco
@@ -166,7 +202,8 @@ async def editar_conta(
     await db.commit()
     await db.refresh(conta)
 
-    return _para_saida(conta)
+    soma = await _soma_movimentos(db, conta.id)
+    return _para_saida(conta, soma)
 
 
 @router.delete("/{conta_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -176,12 +213,12 @@ async def apagar_conta(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Elimina uma conta do utilizador autenticado.
-
-    (Quando os movimentos existirem, apagar uma conta com movimentos
-    passará a exigir uma confirmação explícita — hoje não há movimentos,
-    por isso a eliminação é directa.)
+    Elimina uma conta do utilizador autenticado, e com ela todos os seus
+    movimentos (ver ondelete="CASCADE" em app/models/movimento.py — a
+    própria base de dados apaga-os, num só comando). Sem confirmação nem
+    parâmetro "forçar": a interface já pede confirmação antes de chamar
+    este endpoint, e já avisa que os movimentos são apagados com a conta.
     """
-    conta = await _obter_conta_do_utilizador(db, utilizador, conta_id)
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
     await db.delete(conta)
     await db.commit()
