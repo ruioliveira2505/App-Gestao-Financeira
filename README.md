@@ -19,8 +19,10 @@ Acompanhar finanças espalhadas por várias contas bancárias, e categorizar cad
 Pré-requisitos: [uv](https://docs.astral.sh/uv/) e Node.js (com `npm`). Depois, seguir as instruções específicas em `backend/README.md` e `frontend/README.md`.
 
 ## Estado actual
-Stack escolhida e esqueleto do projecto montado (backend e frontend). Autenticação completa de ponta a ponta e testada automaticamente:
-- Backend: registo, login, logout e "quem sou eu" (ver [`backend/README.md`](backend/README.md)).
-- Frontend: ecrãs de registo e início de sessão, área autenticada protegida, logout, e sessão que persiste entre recarregamentos (ver [`frontend/README.md`](frontend/README.md)).
+Autenticação completa de ponta a ponta e testada automaticamente (registo, login, logout, "quem sou eu"; sessão que persiste entre recarregamentos).
 
-A próxima fatia vertical — a primeira do domínio financeiro — ainda não foi decidida.
+A primeira entidade do domínio — as **contas** (bancária, cartão, dinheiro, poupança) — está feita de ponta a ponta:
+- Backend: modelo, migração e endpoints CRUD, com o saldo actual calculado a partir de um saldo-âncora numa data (ver [`backend/README.md`](backend/README.md)).
+- Frontend: listar, ver, criar e editar contas, dentro de uma moldura própria para telemóvel (barra de topo + menu ☰) e para desktop (barra lateral); e uma página de Perfil com os dados da conta e o terminar sessão (ver [`frontend/README.md`](frontend/README.md)).
+
+A próxima fatia vertical é **Movimentos** — registar e, mais tarde, importar transacções de uma conta.
