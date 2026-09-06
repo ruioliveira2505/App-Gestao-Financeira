@@ -52,11 +52,6 @@
   color: var(--cor-texto-3);
 }
 
-/* Sem contorno nem "linha à volta" ao focar — o campo assenta na lista. */
-.linha input:focus-visible {
-  outline: none;
-}
-
 /* --- Botão de olho (só disposicao="empilhado" + tipo="password") --- */
 
 /* Envolve o <input> e o botão de olho, para o botão poder ser posicionado

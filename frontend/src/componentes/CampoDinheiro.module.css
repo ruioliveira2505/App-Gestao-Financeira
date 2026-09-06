@@ -38,11 +38,6 @@
   padding: var(--espaco-2) var(--espaco-3);
 }
 
-.input:focus {
-  /* O foco visível fica na moldura (focus-within, acima). */
-  outline: none;
-}
-
 /* Disposição "linha": rótulo ténue em cima, valor por baixo. Sem contorno
    e sem símbolo de moeda. Ver CampoTexto.module.css. */
 .linha {
@@ -67,8 +62,4 @@
   font: inherit;
   text-align: left;
   color: var(--cor-texto);
-}
-
-.linha .input:focus-visible {
-  outline: none;
 }

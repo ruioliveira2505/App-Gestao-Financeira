@@ -1,0 +1,36 @@
+/*
+ * ESTILOS DA ROTA "NOVO MOVIMENTO"
+ * ================================
+ *
+ * A concha do modal vive no Folha.module.css. Aqui ficam só as duas
+ * coisas próprias desta rota — idênticas às de ContaNova.module.css,
+ * repetidas aqui porque cada rota tem o seu próprio ficheiro de estilos.
+ */
+
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+.botaoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}

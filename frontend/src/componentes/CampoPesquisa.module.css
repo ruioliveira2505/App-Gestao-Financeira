@@ -1,0 +1,72 @@
+/*
+ * ESTILOS DO CampoPesquisa
+ * ========================
+ *
+ * A pílula de procura: branca, a ocupar a largura toda, no fluxo normal do
+ * conteúdo (rola com a lista). Destaca-se pelo CONTORNO — sem sombra e sem
+ * anel ao focar; ao focar, o contorno só escurece. O <input> não tem
+ * contorno próprio (o aspeto base de src/index.css é aqui anulado): o
+ * contorno é o da pílula.
+ */
+
+.campo {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-height: 2.75rem;
+  margin: var(--espaco-2) 0 var(--espaco-4);
+  padding: 0 var(--espaco-4);
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: 999px;
+}
+
+.campo:focus-within {
+  border-color: var(--cor-acento);
+}
+
+.icone {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  /* 16px: abaixo disto o Safari do iPhone dá zoom ao focar o campo. */
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.input::placeholder {
+  color: var(--cor-texto-3);
+}
+
+/* O "x" nativo do input[type=search] em alguns browsers — escondido, para
+   o visual ficar consistente (o nosso "✕" trata disso). */
+.input::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+/* "✕" para limpar — só existe no DOM quando há texto escrito. A margem
+   negativa à direita puxa o ícone para junto da borda da pílula sem comer
+   o "padding" do campo. */
+.limpar {
+  display: flex;
+  flex-shrink: 0;
+  padding: var(--espaco-1);
+  margin-right: calc(-1 * var(--espaco-2));
+  border: none;
+  background: none;
+  color: var(--cor-texto-3);
+  border-radius: 999px;
+}
+
+.limpar:active {
+  color: var(--cor-texto-2);
+}

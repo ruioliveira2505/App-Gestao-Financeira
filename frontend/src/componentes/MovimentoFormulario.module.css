@@ -1,0 +1,58 @@
+/*
+ * ESTILOS DO MovimentoFormulario
+ * ==============================
+ *
+ * A mesma ficha do ContaFormulario (cartão com contorno, sem sombra,
+ * linhas separadas por um traço fino recuado) — aqui só com uma ficha
+ * (não há uma segunda de "ponto de partida": um movimento não tem
+ * âncora).
+ */
+
+/* Um grupo = um cartão. Ver a explicação completa em
+   ContaFormulario.module.css — a mesma forma, repetida aqui porque cada
+   formulário tem o seu próprio ficheiro de estilos. */
+.grupo {
+  padding: 0;
+  margin: 0;
+
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+.grupo > div {
+  padding-left: var(--espaco-4);
+  padding-right: var(--espaco-4);
+}
+
+.grupo > div + div {
+  position: relative;
+}
+
+.grupo > div + div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--espaco-4);
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* --- Sem nenhuma conta: convite a criar uma primeiro --- */
+
+.semContas {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-8) var(--espaco-4);
+  color: var(--cor-texto-2);
+  text-align: center;
+}
+
+.semContasTitulo {
+  font-size: var(--texto-lg);
+  font-weight: 600;
+  color: var(--cor-texto);
+}

@@ -18,16 +18,20 @@
  * casco por fora não fechar).
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import { IconeCheck, IconeMais } from './icones'
 import estilos from './ListaDeOpcoes.module.css'
 
 export type OpcaoLista = {
-  // O valor guardado (ex.: "EUR", ou o próprio nome do banco).
+  // O valor guardado (ex.: "EUR", ou o id de uma conta).
   valor: string
-  // O texto mostrado (ex.: "Euro (€)").
+  // O texto mostrado (ex.: "Euro (€)", ou o nome de uma conta).
   etiqueta: string
+  // Elemento à esquerda da etiqueta — ex.: o monograma (Avatar) de uma
+  // conta, para a identificar de relance. Opcional: moeda/banco/tipo não o
+  // passam.
+  avatar?: ReactNode
 }
 
 type Props = {
@@ -94,6 +98,7 @@ export function ListaDeOpcoes({
               }
               onClick={() => aoEscolher(opcao.valor)}
             >
+              {opcao.avatar && <span className={estilos.avatar}>{opcao.avatar}</span>}
               <span className={estilos.rotulo}>{opcao.etiqueta}</span>
               {selecionada && <IconeCheck tamanho={18} />}
             </button>

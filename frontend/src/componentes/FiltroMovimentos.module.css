@@ -1,0 +1,250 @@
+/*
+ * ESTILOS DO FiltroMovimentos
+ * ===========================
+ *
+ * O botão (funil) na barra de topo, a folha de filtros (uma lista de
+ * linhas-seletor), e as folhas que cada linha abre da direita — lá dentro,
+ * a lista de opções com "✓". As conchas das folhas vêm de Folha.module.css.
+ */
+
+/* --- Botão na barra de topo --- */
+
+/* Círculo branco com sombra, igual ao "⋯" da lista de contas e ao ☰ da
+   barra de topo (40px). "position: relative" ancora o pontinho. */
+.gatilho {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.gatilho:active {
+  background: var(--cor-superficie);
+}
+
+/* "Há filtros ativos" — um pontinho no canto do botão, sem número (o
+   detalhe está na folha; o "aria-label" do botão também muda). */
+.ponto {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  box-shadow: 0 0 0 2px var(--cor-fundo);
+}
+
+/* --- Folha principal: a lista de linhas-seletor --- */
+
+.conteudo {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Cada linha-seletor. As margens negativas puxam os traços de separação
+   até às bordas da folha (o corpo da Folha tem "padding: 0 var(--espaco-4)");
+   o "padding" volta a meter o conteúdo para dentro. */
+.linhaSeletor {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  /* Alarga-se para lá do "padding" horizontal do corpo da Folha (2 ×
+     --espaco-4), e as margens negativas puxam-no de volta — o traço de
+     baixo fica assim de BORDO A BORDO da folha. "width: 100%" sozinho
+     encostava a linha só à esquerda e deixava-a curta à direita. */
+  width: calc(100% + 2 * var(--espaco-4));
+  min-height: 3.25rem;
+  margin: 0 calc(-1 * var(--espaco-4));
+  padding: var(--espaco-3) var(--espaco-4);
+  border: none;
+  border-bottom: 1px solid var(--cor-borda-leve);
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.conteudo > .linhaSeletor:first-child {
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.linhaSeletor:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Filtro ativo: um traço vertical preto encostado à borda esquerda da
+   folha, a toda a altura da linha. */
+.linhaAtiva::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--cor-acento);
+}
+
+.linhaSeletorTitulo {
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+/* Valor atual do filtro, à direita, em tinta ténue. Encurta com
+   reticências antes de espremer o resto. */
+.linhaSeletorResumo {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linhaSeletor > svg {
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+}
+
+/* --- Folha de um seletor (entra da direita) --- */
+
+.painelSeletor {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+/* --- Lista de opções (Contas / Tipo / Datas), dentro do seletor --- */
+
+.lista {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Traço fino entre opções, RECUADO das bordas (o mesmo do ListaDeOpcoes, o
+   seletor dos formulários) — ao contrário das linhas-seletor da folha
+   principal, que vão de bordo a bordo. */
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--espaco-2) 0;
+  border: none;
+  border-bottom: 1px solid var(--cor-borda-leve);
+  background: none;
+  font: inherit;
+  font-size: var(--texto-md);
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.lista .linha:last-child {
+  border-bottom: none;
+}
+
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Monograma (Avatar) da conta, à esquerda da etiqueta — só nas linhas de
+   Contas. */
+.linhaAntes {
+  flex-shrink: 0;
+  display: flex;
+}
+
+/* Escolhida: um pouco mais de peso; o sinal inequívoco é o "✓".
+   "aria-current" nas listas de escolha única (Tipo, Datas), "aria-pressed"
+   na de multi-escolha (Contas). */
+.linha[aria-current='true'],
+.linha[aria-pressed='true'] {
+  font-weight: 500;
+}
+
+/* O "✓": único <svg> filho direto da linha. */
+.linha > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--cor-acento);
+}
+
+.linhaEtiqueta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Datas --- */
+
+/* Mostrador do intervalo resolvido, no topo do seletor de Datas: em
+   cinzento, centrado, com um traço fino por baixo a separá-lo dos
+   atalhos. */
+.intervalo {
+  margin: 0 0 var(--espaco-2);
+  padding-bottom: var(--espaco-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  text-align: center;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Campos revelados por "Mês específico" / "Data personalizada". Entram com
+   um fade + leve descida, para não "saltarem" (o "prefers-reduced-motion"
+   do index.css encurta a animação para ~0). */
+.personalizado {
+  margin-top: var(--espaco-3);
+  animation: revelar-campos 0.18s ease-out;
+}
+
+@keyframes revelar-campos {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.personalizado > * + * {
+  position: relative;
+}
+
+.personalizado > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* --- "Limpar filtros" (aparece só com filtros ativos) --- */
+
+.limpar {
+  align-self: center;
+  min-height: 2.75rem;
+  margin-top: var(--espaco-4);
+  padding: var(--espaco-2) var(--espaco-4);
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 500;
+  color: var(--cor-acento);
+}
+
+.limpar:active {
+  color: var(--cor-acento-hover);
+}

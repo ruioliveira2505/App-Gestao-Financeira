@@ -9,6 +9,9 @@
  *   /           (Início)     ┐
  *   /movimentos (Movimentos) │ as secções de navegação (SECCOES)
  *   /contas     (Contas)     ┘ área autenticada, dentro da moldura da app
+ *   /movimentos/novo         ┐ criar e editar um movimento, cada um como
+ *   /movimentos/:id/editar   ┘ folha sobre a lista (um movimento não tem
+ *                              página de detalhe própria)
  *   /perfil     (Perfil)     → a conta do utilizador: identidade, as
  *                              secções (Conta · Segurança · Preferências),
  *                              terminar sessão; alcançada pela zona de
@@ -36,6 +39,8 @@ import { ContaNova } from './paginas/ContaNova'
 import { Inicio } from './paginas/Inicio'
 import { Login } from './paginas/Login'
 import { Movimentos } from './paginas/Movimentos'
+import { MovimentoEditar } from './paginas/MovimentoEditar'
+import { MovimentoNovo } from './paginas/MovimentoNovo'
 import { Perfil } from './paginas/Perfil'
 import { PerfilSeccao } from './paginas/PerfilSeccao'
 import { Registo } from './paginas/Registo'
@@ -57,6 +62,30 @@ function App() {
       >
         <Route path="/" element={<Inicio />} />
         <Route path="/movimentos" element={<Movimentos />} />
+        {/* Tal como "Nova conta": a folha desenha-se SOBRE a lista de
+            movimentos, para o que está por trás — ao arrastar para
+            descartar — não ser um vazio. */}
+        <Route
+          path="/movimentos/novo"
+          element={
+            <>
+              <Movimentos />
+              <MovimentoNovo />
+            </>
+          }
+        />
+        {/* Editar: também uma folha sobre a lista. Um movimento não tem
+            página de detalhe (ao contrário de uma conta) — tocar numa
+            linha da lista abre diretamente esta edição. */}
+        <Route
+          path="/movimentos/:id/editar"
+          element={
+            <>
+              <Movimentos />
+              <MovimentoEditar />
+            </>
+          }
+        />
         <Route path="/contas" element={<Contas />} />
         {/* O modal "Nova conta" é uma folha sobre a lista de contas: a
             rota rende a lista POR TRÁS e a folha por cima, para que, ao

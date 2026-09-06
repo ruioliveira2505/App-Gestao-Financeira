@@ -226,7 +226,9 @@
  * O "sheet" e o arrasto são próprios do toque. No rato/teclado a
  * convenção (macOS, Windows, a generalidade das apps web) é um cartão
  * modal ao CENTRO do ecrã, com todos os cantos arredondados e sombra
- * à volta. A entrada é um fade + leve "scale".
+ * à volta. Entra e SAI com o mesmo fade + leve "scale" (as classes de
+ * saída ".saiParaBaixo/.saiParaLado" trazem um "transform" de translação
+ * pensado para o telemóvel, que aqui se anula).
  */
 @media (min-width: 769px) {
   .fundo {
@@ -253,6 +255,17 @@
     animation: painel-entrar-centro 0.18s ease-out;
   }
 
+  /* ... e SAEM com o mesmo, espelhado — senão o painel aparecia com
+     animação mas desaparecia de repente (só o fundo é que esbatia). O
+     "transform: none" anula a translação das classes de saída (própria do
+     telemóvel); o "forwards" segura o estado final até o Folha.tsx
+     desmontar. */
+  .saiParaBaixo,
+  .saiParaLado {
+    transform: none;
+    animation: painel-sair-centro 0.18s ease-in forwards;
+  }
+
   .pega {
     display: none;
   }
@@ -267,6 +280,13 @@
 
 @keyframes painel-entrar-centro {
   from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes painel-sair-centro {
+  to {
     opacity: 0;
     transform: scale(0.96);
   }

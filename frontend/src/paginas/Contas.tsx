@@ -35,10 +35,10 @@ import { Link } from 'react-router-dom'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { Avatar } from '../componentes/Avatar'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
+import { CampoPesquisa } from '../componentes/CampoPesquisa'
 import {
   IconeChevronDireita,
   IconeChevronEsquerda,
-  IconeLupa,
   IconeMais,
   IconeReticencias,
 } from '../componentes/icones'
@@ -452,19 +452,12 @@ export function Contas() {
           {/* Campo de procura, a ocupar a linha toda. Está no fluxo normal
               do conteúdo: ao rolar a lista para baixo, sai do ecrã por
               baixo da barra de topo (opaca) e reaparece ao voltar ao topo. */}
-          <div className={estilos.pesquisa}>
-            <span className={estilos.pesquisaIcone} aria-hidden="true">
-              <IconeLupa tamanho={18} />
-            </span>
-            <input
-              type="search"
-              className={estilos.pesquisaInput}
-              placeholder="Procurar conta…"
-              value={pesquisa}
-              onChange={(evento) => setPesquisa(evento.target.value)}
-              aria-label="Procurar conta"
-            />
-          </div>
+          <CampoPesquisa
+            valor={pesquisa}
+            aoMudar={setPesquisa}
+            placeholder="Procurar conta…"
+            rotulo="Procurar conta"
+          />
 
           {resultados.length === 0 ? (
             <p className={estilos.semResultados}>

@@ -344,15 +344,16 @@ input:focus {
   border-color: var(--cor-acento);
 }
 
-/* :focus-visible é a variante de :focus que o browser só activa quando o
-   foco chegou pelo teclado (tecla Tab), e não por um clique do rato —
-   evita um anel permanente à volta de um elemento acabado de clicar, mas
-   mantém-no para quem navega por teclado. */
-input:focus-visible,
-button:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--cor-acento);
-  outline-offset: 2px;
+/* Sem anel de foco. O foco por teclado continua a mover-se normalmente
+   (Tab funciona), mas não se desenha o anel do browser à volta do
+   elemento — uma escolha deliberada para esta app, que é usada sobretudo
+   por toque. Os campos de texto continuam a assinalar o foco de outra
+   forma (a borda escurece — ver "input:focus", acima). Se um dia a
+   navegação por teclado passar a importar, este é o sítio para voltar a
+   pôr um anel. */
+:focus,
+:focus-visible {
+  outline: none;
 }
 
 button {

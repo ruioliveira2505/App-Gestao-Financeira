@@ -50,59 +50,9 @@
   color: var(--cor-texto-2);
 }
 
-/* --- Campo de pesquisa --- */
-
-/* Pílula BRANCA a ocupar a largura toda, no fluxo normal do conteúdo (rola
-   com a lista). Destaca-se pelo CONTORNO — sem sombra e sem anel ao
-   focar; ao focar, o contorno só escurece. */
-.pesquisa {
-  display: flex;
-  align-items: center;
-  gap: var(--espaco-2);
-  min-height: 2.75rem;
-  margin: var(--espaco-2) 0 var(--espaco-4);
-  padding: 0 var(--espaco-4);
-  background: var(--cor-fundo);
-  border: 1px solid var(--cor-borda);
-  border-radius: 999px;
-}
-
-.pesquisa:focus-within {
-  border-color: var(--cor-acento);
-}
-
-.pesquisaIcone {
-  display: flex;
-  flex-shrink: 0;
-  color: var(--cor-texto-3);
-}
-
-.pesquisaInput {
-  flex: 1;
-  min-width: 0;
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  /* 16px: abaixo disto o Safari do iPhone dá zoom ao focar o campo. */
-  font-size: var(--texto-base);
-  color: var(--cor-texto);
-}
-
-.pesquisaInput::placeholder {
-  color: var(--cor-texto-3);
-}
-
-.pesquisaInput:focus,
-.pesquisaInput:focus-visible {
-  outline: none;
-}
-
-/* O "x" nativo do input[type=search] em alguns browsers — escondido, para
-   o visual ficar consistente. */
-.pesquisaInput::-webkit-search-cancel-button {
-  appearance: none;
-}
+/* O campo de pesquisa é o componente partilhado CampoPesquisa (lupa +
+   campo + "✕" para limpar) — os seus estilos vivem em
+   CampoPesquisa.module.css. */
 
 /* --- Grupos (lista agrupada por tipo ou por banco) --- */
 

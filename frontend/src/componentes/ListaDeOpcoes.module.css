@@ -63,6 +63,13 @@
   white-space: nowrap;
 }
 
+/* Monograma (ou ícone) à esquerda da etiqueta — ex.: a conta num seletor
+   de movimento. Só aparece nas opções que trazem "avatar". */
+.avatar {
+  flex-shrink: 0;
+  display: flex;
+}
+
 /* "esbatido" (lista em linha do desktop): as opções por onde se escolhe
    ficam em tinta secundária; a que está escolhida (com o "✓") em tinta
    plena, para se destacar. A acção "Adicionar…" mantém o tom de acento. */
@@ -108,10 +115,6 @@
 
 .novoInput::placeholder {
   color: var(--cor-texto-3);
-}
-
-.novoInput:focus-visible {
-  outline: none;
 }
 
 /* "✓" para confirmar o valor escrito. Cinzento e inativo enquanto o

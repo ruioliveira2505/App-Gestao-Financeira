@@ -1,12 +1,255 @@
 /*
  * ESTILOS DA PÁGINA MOVIMENTOS
- * ===========================
+ * ============================
  *
- * Ficheiro ".module.css": a classe fica limitada ao componente que o
- * importa (Movimentos.tsx).
+ * A mesma linguagem visual da página Contas (lista a toda a largura, sem
+ * cartão, traço fino recuado, o mesmo campo de pesquisa — o componente
+ * partilhado CampoPesquisa). A diferença está na FORMA DE CADA LINHA: aqui
+ * há duas colunas de texto de cada lado (descrição + conta; valor + saldo
+ * remanescente), não uma linha simples; e a lista é agrupada por dia, sem
+ * "⋯" de ordenar/agrupar (é um extrato, vista fixa — ver Movimentos.tsx).
+ *
+ * Esta página está a ser desenhada MOBILE-FIRST, tal como Contas.
  */
 
 .nota {
-  margin-top: var(--espaco-3);
   color: var(--cor-texto-2);
+}
+
+/* O campo de pesquisa é o componente partilhado CampoPesquisa (lupa +
+   campo + "✕" para limpar) — os seus estilos vivem em
+   CampoPesquisa.module.css. */
+
+/* --- Grupos (por dia, por conta, ou nenhum) --- */
+
+.grupos {
+  padding-top: var(--espaco-3);
+}
+
+.grupo {
+  margin-bottom: var(--espaco-5);
+}
+
+.grupo:last-child {
+  margin-bottom: 0;
+}
+
+.grupoCabecalho {
+  position: relative;
+  padding: 0 var(--espaco-2);
+  margin-bottom: var(--espaco-2);
+}
+
+.grupoCabecalho::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(-1 * var(--espaco-1));
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.grupoNome {
+  display: block;
+  min-width: 0;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Lista de movimentos: sem cartão, linhas directas na página --- */
+
+.lista {
+  margin: 0 calc(-1 * var(--espaco-4));
+}
+
+.linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-3) var(--espaco-4);
+  background: none;
+  text-decoration: none;
+  color: var(--cor-texto);
+  transition: background-color 120ms ease-out;
+}
+
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .linha:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+/* Traço fino entre linhas, recuado tal como em Contas (40px = largura do
+   símbolo à esquerda). */
+.linha + .linha::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-4) + 40px + var(--espaco-3));
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* Símbolo à esquerda de cada linha: uma seta na diagonal num círculo
+   cinzento (40px, igual ao avatar que estava aqui). Aponta para
+   cima-direita numa entrada; ".simboloSaida" roda-a 180° (baixo-esquerda)
+   numa saída. Neutro de propósito — o verde/vermelho vive no valor, à
+   direita; a seta só reforça a direção do movimento. */
+.simbolo {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-2);
+}
+
+.simboloSaida svg {
+  transform: rotate(180deg);
+}
+
+/* Coluna do meio: descrição (a âncora da linha, negrito) por cima, nome da
+   conta (esbatido) por baixo. "min-width: 0" deixa as duas encurtar com
+   reticências em vez de espremer a coluna dos valores. */
+.linhaTexto {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.linhaDescricao {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linhaConta {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Coluna da direita: o valor do próprio movimento (a cores) por cima, o
+   saldo remanescente da conta (esbatido) por baixo — o mesmo par
+   negrito/esbatido da coluna do meio, mas alinhado à direita. */
+.linhaValores {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.linhaValor {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* As duas cores semânticas definidas desde a fundação de design, agora
+   com o seu primeiro uso a sério (até aqui só "negativo" tinha uso, nas
+   mensagens de erro dos formulários). */
+.positivo {
+  color: var(--cor-positivo-text);
+}
+
+.negativo {
+  color: var(--cor-negativo-text);
+}
+
+.linhaSaldoApos {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* --- Esqueleto de carregamento --- */
+
+.esqueleto {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqueletoSimbolo {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.esqueletoTexto {
+  width: 55%;
+  height: 0.9rem;
+}
+
+/* --- Sem resultados de pesquisa --- */
+
+.semResultados {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: var(--espaco-5) var(--espaco-4);
+  text-align: center;
+  color: var(--cor-texto-2);
+}
+
+.semResultados p {
+  margin: 0;
+}
+
+.limparFiltros {
+  border: none;
+  background: none;
+  padding: var(--espaco-1) var(--espaco-2);
+  font: inherit;
+  font-weight: 500;
+  color: var(--cor-acento);
+}
+
+/* --- Estado vazio (sem contas, ou sem movimentos) --- */
+
+.vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-8) var(--espaco-4);
+  color: var(--cor-texto-2);
+  text-align: center;
+}
+
+.vazioTitulo {
+  font-size: var(--texto-lg);
+  font-weight: 600;
+  color: var(--cor-texto);
 }

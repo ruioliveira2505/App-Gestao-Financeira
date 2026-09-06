@@ -184,6 +184,7 @@ describe('Moldura da aplicação', () => {
     servidorMsw.use(
       http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
       http.get('/api/contas', () => HttpResponse.json([])),
+      http.get('/api/movimentos', () => HttpResponse.json([])),
     )
     montar('/contas')
     await screen.findByText('Ainda não tens contas.')
@@ -196,10 +197,12 @@ describe('Moldura da aplicação', () => {
         ).not.toBeInTheDocument(),
       )
 
-    // Toda a navegação entre secções é pelo menu ☰.
+    // Toda a navegação entre secções é pelo menu ☰. Sem contas nenhumas
+    // (mockado acima), a página de Movimentos pede primeiro para criar uma
+    // conta — é o estado vazio que se aplica aqui.
     await userEvent.click(screen.getByRole('button', { name: 'Abrir menu' }))
     await userEvent.click(within(menu()).getByRole('link', { name: 'Movimentos' }))
-    expect(await screen.findByText(/Em breve: os teus movimentos/)).toBeInTheDocument()
+    expect(await screen.findByText('Precisas de uma conta primeiro.')).toBeInTheDocument()
     await esperarMenuFechado()
 
     await userEvent.click(screen.getByRole('button', { name: 'Abrir menu' }))

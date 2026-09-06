@@ -1,0 +1,69 @@
+/*
+ * ESTILOS DA ROTA "EDITAR MOVIMENTO"
+ * =================================
+ *
+ * A rota é uma folha (o componente Folha, direcao="baixo"), como o "Novo
+ * movimento". A concha vem toda do Folha.module.css. Aqui ficam: a
+ * largura do formulário, os estados de carregamento/erro, o "✓" de
+ * guardar e o cartão de eliminar. É a mesma folha de estilos de
+ * ContaEditar.module.css, repetida porque cada rota tem o seu ficheiro.
+ */
+
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+.botaoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}
+
+/* Eliminar movimento — um cartão próprio, a VERMELHO (borda e texto),
+   afastado do formulário por ser uma acção destrutiva. */
+.cartaoEliminar {
+  margin-top: var(--espaco-5);
+  border: 1px solid var(--cor-negativo);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+.linhaEliminar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--espaco-3) var(--espaco-4);
+  border: none;
+  background: var(--cor-fundo);
+  color: var(--cor-negativo);
+  font: inherit;
+  font-weight: 500;
+}
+
+.linhaEliminar:active {
+  background: var(--cor-superficie-2);
+}

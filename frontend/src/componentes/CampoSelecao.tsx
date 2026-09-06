@@ -133,6 +133,11 @@ export function CampoSelecao({
           aria-expanded={!eMobile && aberto}
           onClick={() => setAberto((a) => !a)}
         >
+          {/* O campo já preenchido mostra só o TEXTO da opção — mesmo quando
+              a opção traz um "avatar" (ex.: o monograma de uma conta no
+              seletor de movimento). O avatar aparece só nas linhas da lista,
+              a ajudar a escolher; depois de escolhida, o formulário fica uma
+              ficha de linhas de texto, sem um círculo colorido a destoar. */}
           <span className={estilos.gatilhoValor}>{textoValor}</span>
           <span
             className={[

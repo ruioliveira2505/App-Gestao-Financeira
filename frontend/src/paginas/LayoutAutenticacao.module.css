@@ -52,12 +52,6 @@
   -webkit-appearance: none;
 }
 
-/* Ao focar, nada de anel à volta — só o contorno a escurecer (isso vem
-   da regra base "input:focus" em index.css). */
-.cartao input:focus-visible {
-  outline: none;
-}
-
 /* A linha do fundo ("Ainda não tens conta? …" / "Já tens conta? …") —
    pequena, centrada e esbatida, para se ler como um atalho para o outro
    ecrã e não como texto do formulário. */

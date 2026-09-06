@@ -36,9 +36,10 @@ type Props = {
   // evento do DOM).
   aoMudar: (valor: string) => void
   // Tipo do <input>. "password" esconde o que é escrito e acrescenta um
-  // botão para revelar/ocultar; "email" e "date" ajustam o teclado e o
-  // seletor em telemóvel. Por omissão, "text".
-  tipo?: 'text' | 'email' | 'password' | 'date'
+  // botão para revelar/ocultar; "email", "date" e "month" ajustam o teclado
+  // e o seletor em telemóvel (o "month" abre a roda mês/ano no iPhone). Por
+  // omissão, "text".
+  tipo?: 'text' | 'email' | 'password' | 'date' | 'month'
   // Marca o campo como de preenchimento obrigatório.
   obrigatorio?: boolean
   // Valores propostos por completação (<datalist>). O campo continua de

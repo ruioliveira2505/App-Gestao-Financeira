@@ -164,55 +164,13 @@ export function IconeChevronEsquerda(props: PropsIcone) {
   )
 }
 
-// Etiqueta — o nome de uma conta.
-export function IconeEtiqueta(props: PropsIcone) {
+// Seta na diagonal, a apontar para cima-direita. Na lista de movimentos:
+// assim para uma ENTRADA (dinheiro a entrar) e rodada 180° (para
+// baixo-esquerda) para uma SAÍDA.
+export function IconeSetaDiagonal(props: PropsIcone) {
   return (
     <Svg {...props}>
-      <path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2a2 2 0 0 0 .6 1.4l8.7 8.7a2.4 2.4 0 0 0 3.4 0l6.6-6.6a2.4 2.4 0 0 0 0-3.4z" />
-      <circle cx="7.5" cy="7.5" r="1.25" fill="currentColor" stroke="none" />
-    </Svg>
-  )
-}
-
-// Edifício com colunas — o banco de uma conta.
-export function IconeBanco(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <path d="M3 21h18" />
-      <path d="m12 3 9 5H3z" />
-      <path d="M5 21v-9M9.5 21v-9M14.5 21v-9M19 21v-9" />
-    </Svg>
-  )
-}
-
-// Círculo com um "€" — a moeda de uma conta.
-export function IconeMoeda(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M15.5 8.7a4 4 0 1 0 0 6.6" />
-      <path d="M7.5 11h6M7.5 13.5h5" />
-    </Svg>
-  )
-}
-
-// Calendário — a data de início dos movimentos.
-export function IconeCalendario(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="4.5" width="18" height="16.5" rx="2" />
-      <path d="M8 2.5v4M16 2.5v4M3 9.5h18" />
-    </Svg>
-  )
-}
-
-// Carteira — o saldo de uma conta.
-export function IconeCarteira(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="6" width="18" height="14" rx="2.5" />
-      <path d="M3 10h18" />
-      <circle cx="16.5" cy="15" r="1.25" fill="currentColor" stroke="none" />
+      <path d="M7 17 17 7M7 7h10v10" />
     </Svg>
   )
 }
@@ -223,40 +181,6 @@ export function IconeLupa(props: PropsIcone) {
     <Svg {...props}>
       <circle cx="11" cy="11" r="7" />
       <path d="m21 21-4.35-4.35" />
-    </Svg>
-  )
-}
-
-// Dois blocos empilhados — agrupar a lista em secções.
-export function IconeAgrupar(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <rect x="3" y="3" width="18" height="7" rx="1.5" />
-      <rect x="3" y="14" width="18" height="7" rx="1.5" />
-    </Svg>
-  )
-}
-
-// Setas para cima e para baixo — ordenar.
-export function IconeOrdenar(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <path d="m3 8 4-4 4 4" />
-      <path d="M7 4v16" />
-      <path d="m21 16-4 4-4-4" />
-      <path d="M17 20V4" />
-    </Svg>
-  )
-}
-
-// Lista com vistos — entrar em modo de seleção.
-export function IconeSelecionar(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <path d="m3 7 2 2 4-4" />
-      <path d="m3 17 2 2 4-4" />
-      <path d="M13 6h8" />
-      <path d="M13 18h8" />
     </Svg>
   )
 }
@@ -343,6 +267,15 @@ export function IconeAjustes(props: PropsIcone) {
       <line x1="14" x2="14" y1="2" y2="6" />
       <line x1="8" x2="8" y1="10" y2="14" />
       <line x1="16" x2="16" y1="18" y2="22" />
+    </Svg>
+  )
+}
+
+// Funil — filtrar uma lista.
+export function IconeFunil(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
     </Svg>
   )
 }
