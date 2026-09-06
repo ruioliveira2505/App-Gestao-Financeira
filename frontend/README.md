@@ -18,14 +18,16 @@ Interface da aplicação, escrita em React com TypeScript, construída e servida
     - `AuthProvider.tsx` — mantém o estado "há sessão iniciada?"; verifica-o no arranque com `GET /auth/me`.
     - `useAuth.ts` — hook que dá a qualquer componente acesso a esse estado e às acções de registo/login/logout.
     - `RotaProtegida.tsx` — guarda de rota: mostra o conteúdo só se houver sessão, senão reencaminha para `/login`.
-  - `lib/` — lógica sem interface: `api.ts` (cliente HTTP: registar/login/logout/utilizador), `http.ts` (o `fetch` envolvido e a excepção `ErroApi`), `contas.ts` (chamadas ao CRUD de contas e utilitários de sugestões), `moedas.ts` (conjunto de moedas, símbolos e formatação de dinheiro — espelha o backend), `datas.ts` (formatação de datas), `seccoes.ts` (a lista única das secções de navegação), `nomeUtilizador.ts` (o "nome" derivado do email).
+  - `lib/` — lógica sem interface: `api.ts` (cliente HTTP: registar/login/logout/utilizador), `http.ts` (o `fetch` envolvido e a excepção `ErroApi`), `contas.ts` (chamadas ao CRUD de contas e utilitários de sugestões), `movimentos.ts` (chamadas ao CRUD de movimentos), `filtrosMovimentos.ts` (o modelo dos filtros da lista de movimentos: ler/escrever no URL, aplicar no cliente, atalhos de datas), `moedas.ts` (conjunto de moedas, símbolos e formatação de dinheiro — espelha o backend), `datas.ts` (formatação de datas: "Hoje"/"Ontem", mês por extenso, intervalos), `seccoes.ts` (a lista única das secções de navegação), `nomeUtilizador.ts` (o "nome" derivado do email).
   - `hooks/` — `useMediaQuery.ts` (responder a uma media query em JavaScript, para montar molduras diferentes em mobile e desktop).
   - `paginas/` — os ecrãs, cada um com o seu `.module.css` ao lado:
     - `Login.tsx`, `Registo.tsx` — dentro da moldura `LayoutAutenticacao.tsx`.
-    - `Inicio.tsx`, `Movimentos.tsx` — marcadores de posição, por agora.
+    - `Inicio.tsx` — marcador de posição, por agora.
     - `Contas.tsx` — lista de contas, com procura e um menu de ordenar/agrupar (preferências guardadas no browser).
     - `ContaDetalhe.tsx` — o detalhe de uma conta (`/contas/:id`).
     - `ContaNova.tsx` / `ContaEditar.tsx` — criar e editar, como folha (modal) sobre a página de trás; `ContaFormulario.tsx` é o formulário partilhado pelas duas.
+    - `Movimentos.tsx` — lista global de movimentos, agrupada por dia (vista fixa — é um extrato, não uma lista a configurar); com procura, filtros (o botão funil) e o saldo remanescente de cada conta por linha.
+    - `MovimentoNovo.tsx` / `MovimentoEditar.tsx` — criar e editar, como folha sobre a lista (um movimento não tem página de detalhe); `MovimentoFormulario.tsx` é o formulário partilhado.
     - `Perfil.tsx` — a conta do utilizador: identidade, secções de definições e terminar sessão; `PerfilSeccao.tsx` é o sub-ecrã ("Em breve") de cada secção.
   - `componentes/` — peças de interface reutilizáveis, cada uma com o seu `.module.css`:
     - `LayoutApp.tsx` — a moldura das páginas autenticadas; escolhe, por `useMediaQuery`, entre a barra lateral (desktop) e a barra de topo + menu ☰ (mobile).
@@ -34,7 +36,9 @@ Interface da aplicação, escrita em React com TypeScript, construída e servida
     - `CabecalhoPagina.tsx` + `CabecalhoProvider.tsx` / `useCabecalho.ts` — cada página declara o seu título/acção/"voltar"; a barra de topo (mobile) ou o conteúdo (desktop) mostram-nos.
     - `Folha.tsx` (+ `contextoFolha.ts`) — a base de todos os modais: folha que sobe de baixo em mobile, diálogo centrado em desktop.
     - `Confirmacao.tsx` — *action sheet* para confirmar acções destrutivas.
-    - `CampoSelecao.tsx` / `PainelDeEscolha.tsx` / `ListaDeOpcoes.tsx` — o seletor (moeda, banco, tipo): folha em mobile, lista em linha em desktop.
+    - `CampoSelecao.tsx` / `PainelDeEscolha.tsx` / `ListaDeOpcoes.tsx` — o seletor (moeda, banco, tipo da conta, conta e tipo de um movimento): folha em mobile, lista em linha em desktop.
+    - `FiltroMovimentos.tsx` — o botão funil e a folha de filtros da lista de movimentos (linhas-seletor Contas · Tipo · Datas, cada uma a abrir a sua folha da direita; estado no URL).
+    - `CampoPesquisa.tsx` — a pílula de procura (lupa + campo + "✕" para limpar), partilhada por Contas e Movimentos.
     - `Avatar.tsx` — círculo com a inicial, cor determinística a partir do nome.
     - `Menu.tsx` — menu flutuante reutilizável (`Menu` / `MenuItem` / `MenuCabecalho`), usado no "⋯" da lista de contas.
     - `icones.tsx` — ícones da aplicação como componentes `<svg>` (estilo "Feather"/"Lucide"), sem biblioteca.
@@ -95,8 +99,13 @@ Tudo o que se segue tem testes automáticos.
 - `/contas/:id` — detalhe: identidade, saldo actual e os campos da conta.
 - `/contas/nova` e `/contas/:id/editar` — criar e editar num modal (folha em mobile, diálogo em desktop); é no fim do formulário de edição que se elimina a conta, com confirmação em *action sheet*.
 
+**Movimentos** (segunda entidade do domínio, de ponta a ponta):
+- `/movimentos` — lista global (todas as contas), vista fixa: agrupada por dia, da data mais recente para a mais antiga (é um extrato, não uma lista a configurar). Cada linha tem um símbolo neutro (seta para cima-direita numa entrada, baixo-esquerda numa saída), a descrição e a conta, o valor a cores (verde entrada, vermelho saída) e o saldo da conta logo a seguir a esse movimento. Por cima: uma barra de procura (por descrição/conta) e o botão **funil**.
+- **Filtros** (o funil) — uma folha com três linhas-seletor: Contas (multi-escolha, com "Todas"), Tipo (Todos / Entradas / Saídas) e Datas (atalhos de janela — 7/30/90 dias —, mês específico ou intervalo à medida). Cada linha abre a sua folha da direita; o estado vive no URL e aplica-se no cliente. Sem filtro de valor por agora (as contas podem estar em moedas diferentes).
+- `/movimentos/novo` e `/movimentos/:id/editar` — criar e editar num modal (folha). A conta e o tipo (Saída / Entrada) escolhem-se no mesmo seletor; o valor é sempre positivo e o sinal resolve-se ao guardar. Tocar numa linha da lista abre diretamente a edição (sem página de detalhe); o "eliminar" está no fim do formulário de edição, com confirmação em *action sheet*.
+
 **Perfil** (`/perfil`) — identidade (avatar, nome, email), as secções Conta · Segurança · Preferências (ainda marcadores "Em breve") e o terminar sessão.
 
-**Início** e **Movimentos** são marcadores de posição. **Movimentos** é a próxima fatia.
+**Início** é um marcador de posição.
 
 Sobre a base: fundação de design minimalista (neutros com acento monocromático, tema claro/escuro pelo sistema operativo, tokens em `index.css` + CSS Modules por componente).

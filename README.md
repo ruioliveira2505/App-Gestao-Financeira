@@ -25,4 +25,8 @@ A primeira entidade do domínio — as **contas** (bancária, cartão, dinheiro,
 - Backend: modelo, migração e endpoints CRUD, com o saldo actual calculado a partir de um saldo-âncora numa data (ver [`backend/README.md`](backend/README.md)).
 - Frontend: listar, ver, criar e editar contas, dentro de uma moldura própria para telemóvel (barra de topo + menu ☰) e para desktop (barra lateral); e uma página de Perfil com os dados da conta e o terminar sessão (ver [`frontend/README.md`](frontend/README.md)).
 
-A segunda — os **movimentos** (entradas e saídas de dinheiro numa conta, ainda sem categoria) — tem o backend feito: modelo, migração e endpoints CRUD, com o saldo de cada conta a somar os movimentos reais (ver [`backend/README.md`](backend/README.md)). O frontend é a próxima fatia vertical; depois, a categorização — primeiro manual, depois automática com um modelo de linguagem — e, mais tarde, a importação por Open Banking.
+A segunda — os **movimentos** (entradas e saídas de dinheiro numa conta, ainda sem categoria) — está feita de ponta a ponta:
+- Backend: modelo, migração e endpoints CRUD; o saldo de cada conta passa a somar os movimentos reais (ver [`backend/README.md`](backend/README.md)).
+- Frontend: uma lista global tipo extrato (agrupada por dia, mais recente primeiro), com procura, filtros (conta, tipo, datas) e criar/editar/eliminar num modal (ver [`frontend/README.md`](frontend/README.md)).
+
+A seguir: a **categorização** dos movimentos — primeiro uma tabela de categorias com CRUD manual, depois a atribuição automática com um modelo de linguagem; e, mais tarde, a importação por **Open Banking** e o scroll infinito no histórico.
