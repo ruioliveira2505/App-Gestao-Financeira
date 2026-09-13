@@ -18,15 +18,19 @@ API da aplicação, escrita em Python com o FastAPI.
   - `core/deps.py` — dependências partilhadas por várias rotas, sobretudo `obter_utilizador_atual` (identifica o utilizador autenticado a partir do cookie de sessão).
   - `db/session.py` — ligação à base de dados.
   - `core/moedas.py` — conjunto fechado de moedas suportadas (código, símbolo, nome).
-  - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py` — tabelas `users`, `sessions`, `contas` e `movimentos`.
-  - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py` — formato dos pedidos e respostas dos endpoints.
+  - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py`, `models/categoria.py` — tabelas `users`, `sessions`, `contas`, `movimentos` e `categorias`.
+  - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py`, `schemas/categorias.py` — formato dos pedidos e respostas dos endpoints.
   - `routers/auth.py` — endpoints de autenticação (registo, login, logout, "quem sou eu").
   - `routers/contas.py` — endpoints de contas (criar, listar, obter, editar, apagar).
   - `routers/movimentos.py` — endpoints de movimentos (criar, listar — global ou por conta —, obter, editar, apagar).
-  - `services/contas.py` — verificação de posse de uma conta (partilhada pelos dois routers acima).
+  - `routers/categorias.py` — endpoints de categorias (árvore, criar, editar, eliminar — com a regra de migração obrigatória de movimentos, ver "Estado actual").
+  - `services/contas.py` — verificação de posse de uma conta (partilhada pelos routers de contas e movimentos).
+  - `services/categorias.py` — verificação de posse de uma categoria (partilhada pelos routers de categorias e movimentos).
+  - `services/categorias_seed.py` — a árvore de categorias por omissão (`ARVORE_PADRAO`) e a função que a semeia para um utilizador, chamada no registo.
   - `services/sessions.py` — apagar sessões expiradas (ver `scripts/limpar_sessoes.py`, abaixo).
 - `scripts/` — pequenos programas de linha de comandos, à parte da API (correm-se com `uv run python -m scripts.<nome>`):
   - `limpar_sessoes.py` — apaga da base de dados as sessões cujo prazo já passou.
+  - `semear_dados.py` — repõe um conjunto realista de contas e movimentos (categorizados) para um utilizador, determinístico e seguro de correr várias vezes; usado em desenvolvimento, nunca em produção.
 - `tests/` — testes automatizados:
   - `conftest.py` — fixtures partilhadas por todos os testes (base de dados de teste, isolamento por transacção, cliente HTTP).
   - `test_auth_registo.py` — testes ao endpoint `POST /auth/registo`.
@@ -35,6 +39,7 @@ API da aplicação, escrita em Python com o FastAPI.
   - `test_auth_me.py` — testes à rota `GET /auth/me`.
   - `test_contas.py` — testes aos endpoints de contas (criar, listar, obter, editar, apagar; saldo com movimentos; eliminação em cascata).
   - `test_movimentos.py` — testes aos endpoints de movimentos.
+  - `test_categorias.py` — testes aos endpoints de categorias (árvore semeada, criar, editar, eliminar — incluindo a migração obrigatória de movimentos).
   - `test_sessions.py` — testes à limpeza de sessões expiradas.
 - `alembic/` — migrações da base de dados; `env.py` liga o Alembic à configuração e aos modelos da aplicação.
 - `alembic.ini` — configuração do Alembic (onde ficam as migrações, o logging).
@@ -101,11 +106,18 @@ Contas — CRUD completo, testado, sempre no âmbito do utilizador autenticado:
 - `GET /contas` — lista as contas do utilizador, por ordem de nome, com o **saldo actual** — saldo de âncora + a soma dos seus movimentos.
 - `GET /contas/{id}` · `PATCH /contas/{id}` (campos descritivos; recusa mudar a moeda se a conta já tiver movimentos) · `DELETE /contas/{id}` (apaga também os seus movimentos, em cascata). Uma conta de outro utilizador responde 404, não 403.
 
-Movimentos — CRUD completo, testado, sempre em contas do utilizador autenticado. Ainda sem categoria (fatia seguinte):
-- `POST /movimentos` — cria um movimento (conta, data, descrição, valor com sinal — positivo é entrada, negativo é saída). A data não pode ser anterior à data-âncora da conta.
+Movimentos — CRUD completo, testado, sempre em contas do utilizador autenticado. Todo o movimento tem uma categoria (obrigatória, nunca "sem categoria" — ver Categorias, abaixo):
+- `POST /movimentos` — cria um movimento (conta, categoria, data, descrição, valor com sinal — positivo é entrada, negativo é saída). A data não pode ser anterior à data-âncora da conta; a categoria tem de ser do utilizador e a sua direção (entrada/saída) tem de corresponder ao sinal do valor.
 - `GET /movimentos` — lista **global** (todas as contas do utilizador), por data mais recente primeiro; `?conta_id=` filtra para uma só.
-- `GET /movimentos/{id}` · `PATCH /movimentos/{id}` (pode mover o movimento para outra conta do mesmo utilizador) · `DELETE /movimentos/{id}`.
+- `GET /movimentos/{id}` · `PATCH /movimentos/{id}` (pode mover o movimento para outra conta, ou recategorizá-lo) · `DELETE /movimentos/{id}`.
+
+Categorias — CRUD completo, testado, sempre no âmbito do utilizador autenticado. Uma só tabela, com `parent_id` auto-referencial (grupo → subcategoria, dois níveis); todo o utilizador novo nasce com uma árvore por omissão (18 grupos — 6 de entrada, organizados por origem do dinheiro; 12 de saída, organizados por área de vida, com quatro excepções por tipo de encargo financeiro: Seguros, Impostos e Encargos, Compra de Ativos, Transferências):
+- `GET /categorias/arvore` — todos os grupos do utilizador com as subcategorias aninhadas, por ordem alfabética.
+- `POST /categorias` — cria um grupo (com `direcao`) ou uma subcategoria (com `parent_id`, herda a `direcao` do grupo).
+- `PATCH /categorias/{id}` — renomeia; uma subcategoria pode também mover-se para outro grupo, sempre da mesma `direcao`.
+- `DELETE /categorias/{id}` — elimina um grupo (com as suas subcategorias, em cascata) ou uma subcategoria. Se algum movimento ficasse sem categoria com esta eliminação, o pedido tem de indicar `migrar_para_id` — nunca há uma reatribuição automática, nem um caminho para apagar movimentos.
+- Duas subcategorias, uma por direção ("Outras Entradas"/"Outras Saídas" → "Outros"), são protegidas: nunca se editam nem se apagam — são o destino garantido de qualquer movimento sem categoria mais específica.
 
 Sessões expiradas — não se apagam sozinhas ao expirar (só um logout explícito remove uma sessão); `uv run python -m scripts.limpar_sessoes` (a partir desta pasta) apaga as que já passaram do prazo. Corre-se à mão por agora; mais tarde agenda-se por cron.
 
-O frontend das contas está feito (ver `../frontend/README.md`). O frontend de movimentos é o passo seguinte; depois, a categorização (manual, e mais tarde automática com um LLM).
+O frontend de contas e de movimentos está feito (ver `../frontend/README.md`). O frontend de categorias é o passo seguinte; depois, a categorização automática de movimentos com um LLM.
