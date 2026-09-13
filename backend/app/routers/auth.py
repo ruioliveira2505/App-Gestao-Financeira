@@ -44,6 +44,7 @@ from app.db.session import get_db
 from app.models.session import UserSession
 from app.models.user import User
 from app.schemas.auth import UserLogin, UserPublico, UserRegisto
+from app.services.categorias_seed import semear_categorias
 
 # APIRouter agrupa rotas relacionadas entre si; é depois incluído na
 # aplicação principal (app/main.py). prefix="/auth" faz com que todas as
@@ -106,12 +107,23 @@ async def registar(dados: UserRegisto, db: AsyncSession = Depends(get_db)) -> Us
         password_hash=hash_password(dados.password),
     )
 
-    # db.add() marca o objecto para ser inserido; db.commit() é o que de
-    # facto grava essa alteração na base de dados de forma permanente.
-    # db.refresh() volta a ler o objecto a partir da base de dados depois
-    # do commit, preenchendo campos que só a base de dados sabe (como
-    # created_at, calculado pela própria PostgreSQL).
+    # db.add() marca o objecto para ser inserido; db.flush() envia esse
+    # INSERT à base de dados sem terminar a transacção, só para resolver o
+    # id do novo utilizador (gerado por omissão, ver app/models/user.py) —
+    # é esse id que semear_categorias precisa para associar a árvore de
+    # categorias por omissão (app/services/categorias_seed.py) a este
+    # utilizador. As duas operações — criar o utilizador e semear-lhe as
+    # categorias — ficam na mesma transacção: se a segunda falhar a meio,
+    # o commit não chega a acontecer e a primeira é desfeita também, em
+    # vez de deixar um utilizador registado sem árvore de categorias.
     db.add(novo_utilizador)
+    await db.flush()
+    await semear_categorias(db, novo_utilizador.id)
+
+    # commit() é o que de facto grava tudo na base de dados de forma
+    # permanente. refresh() volta a ler o utilizador a partir da base de
+    # dados depois do commit, preenchendo campos que só a própria base de
+    # dados sabe (como created_at, calculado pela PostgreSQL).
     await db.commit()
     await db.refresh(novo_utilizador)
 

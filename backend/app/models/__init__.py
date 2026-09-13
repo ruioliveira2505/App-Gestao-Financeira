@@ -13,6 +13,7 @@ todos os modelos existentes fiquem registados de uma vez. É nesta lista
 existir, ao comparar com o que realmente existe na base de dados.
 """
 
+from app.models.categoria import Categoria  # noqa: F401
 from app.models.conta import Conta  # noqa: F401
 from app.models.movimento import Movimento  # noqa: F401
 from app.models.session import UserSession  # noqa: F401

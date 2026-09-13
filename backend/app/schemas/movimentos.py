@@ -14,7 +14,11 @@ pedir um valor sempre positivo — é só a forma de apresentação; a conversã
 para um valor com sinal faz-se no próprio formulário, antes do pedido
 chegar aqui.
 
-Ainda sem "categoria" — ver a nota em app/models/movimento.py.
+CATEGORIA OBRIGATÓRIA: categoria_id é um campo próprio, não opcional — ver
+a nota CATEGORIA OBRIGATÓRIA em app/models/movimento.py. A rota
+(app/routers/movimentos.py) confirma que a categoria indicada pertence ao
+utilizador e que a sua direcao (entrada/saida) é coerente com o sinal do
+valor — tal como para conta_id, este schema só valida a FORMA dos dados.
 
 Os campos são os mesmos na criação e na edição (ao contrário de Conta, uma
 edição de movimento pode mexer em tudo, incluindo mudar a conta a que
@@ -37,6 +41,14 @@ class _CamposMovimento(BaseModel):
     # movimentos.py), não aqui: este schema só sabe validar a FORMA dos
     # dados, não se um determinado id existe ou é deste utilizador.
     conta_id: uuid.UUID
+
+    # A categoria atribuída a este movimento. Tem de pertencer ao
+    # utilizador autenticado, e a sua direcao tem de corresponder ao sinal
+    # de "valor" (uma categoria de entrada não serve para uma saída) —
+    # verificado na rota, pela mesma razão de conta_id: este schema só
+    # valida a forma dos dados, não se um determinado id existe, é deste
+    # utilizador, ou é coerente com o resto do pedido.
+    categoria_id: uuid.UUID
 
     data: date
 
@@ -77,6 +89,7 @@ class MovimentoOut(BaseModel):
 
     id: uuid.UUID
     conta_id: uuid.UUID
+    categoria_id: uuid.UUID
     data: date
     descricao: str
 

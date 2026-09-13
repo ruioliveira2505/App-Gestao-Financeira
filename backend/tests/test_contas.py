@@ -8,6 +8,10 @@ utilizador (um utilizador nunca vê contas de outro).
 """
 
 import pytest
+from sqlalchemy import select
+
+from app.models.categoria import Categoria
+from app.models.user import User
 
 # Corpo mínimo válido para criar uma conta, reutilizado e ajustado nos
 # testes.
@@ -19,6 +23,25 @@ CONTA_VALIDA = {
     "data_ancora": "2026-01-01",
     "saldo_ancora": "1000.00",
 }
+
+
+async def _categoria_id(db_session, email: str, direcao: str) -> str:
+    """
+    Devolve o id de uma subcategoria qualquer, com esta direcao, da árvore
+    semeada automaticamente no registo deste utilizador (ver
+    app/services/categorias_seed.py) — os testes deste ficheiro são sobre
+    contas e saldos, não sobre categorias; só precisam de um id real e
+    coerente com o sinal do movimento lançado para preparar cada cenário.
+    """
+    utilizador = await db_session.scalar(select(User).where(User.email == email))
+    categoria = await db_session.scalar(
+        select(Categoria).where(
+            Categoria.user_id == utilizador.id,
+            Categoria.direcao == direcao,
+            Categoria.parent_id.is_not(None),
+        )
+    )
+    return str(categoria.id)
 
 
 @pytest.mark.asyncio
@@ -271,7 +294,7 @@ async def test_apagar_conta_de_outro_utilizador_devolve_404(client):
 
 
 @pytest.mark.asyncio
-async def test_apagar_conta_apaga_tambem_os_seus_movimentos(cliente_autenticado):
+async def test_apagar_conta_apaga_tambem_os_seus_movimentos(cliente_autenticado, db_session):
     """
     A eliminação é em cascata ao nível da base de dados (ver
     ondelete="CASCADE" em app/models/movimento.py) — apagar a conta não
@@ -279,9 +302,16 @@ async def test_apagar_conta_apaga_tambem_os_seus_movimentos(cliente_autenticado)
     não devem sobreviver "órfãos".
     """
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     await cliente_autenticado.post(
         "/movimentos",
-        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+        json={
+            "conta_id": conta_id,
+            "categoria_id": categoria_id,
+            "data": "2026-02-01",
+            "descricao": "Compras",
+            "valor": "-10.00",
+        },
     )
 
     resposta = await cliente_autenticado.delete(f"/contas/{conta_id}")
@@ -294,16 +324,30 @@ async def test_apagar_conta_apaga_tambem_os_seus_movimentos(cliente_autenticado)
 
 
 @pytest.mark.asyncio
-async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autenticado):
+async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    categoria_entrada_id = await _categoria_id(db_session, "teste@example.com", "entrada")
+    categoria_saida_id = await _categoria_id(db_session, "teste@example.com", "saida")
     # saldo_ancora de CONTA_VALIDA é 1000.00.
     await cliente_autenticado.post(
         "/movimentos",
-        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Salário", "valor": "1500.00"},
+        json={
+            "conta_id": conta_id,
+            "categoria_id": categoria_entrada_id,
+            "data": "2026-02-01",
+            "descricao": "Salário",
+            "valor": "1500.00",
+        },
     )
     await cliente_autenticado.post(
         "/movimentos",
-        json={"conta_id": conta_id, "data": "2026-02-05", "descricao": "Renda", "valor": "-750.00"},
+        json={
+            "conta_id": conta_id,
+            "categoria_id": categoria_saida_id,
+            "data": "2026-02-05",
+            "descricao": "Renda",
+            "valor": "-750.00",
+        },
     )
 
     corpo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()
@@ -319,11 +363,18 @@ async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autent
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_recusa_mudar_moeda_com_movimentos(cliente_autenticado):
+async def test_editar_conta_recusa_mudar_moeda_com_movimentos(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     await cliente_autenticado.post(
         "/movimentos",
-        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+        json={
+            "conta_id": conta_id,
+            "categoria_id": categoria_id,
+            "data": "2026-02-01",
+            "descricao": "Compras",
+            "valor": "-10.00",
+        },
     )
 
     resposta = await cliente_autenticado.patch(
@@ -335,12 +386,19 @@ async def test_editar_conta_recusa_mudar_moeda_com_movimentos(cliente_autenticad
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_permite_manter_a_mesma_moeda_com_movimentos(cliente_autenticado):
+async def test_editar_conta_permite_manter_a_mesma_moeda_com_movimentos(cliente_autenticado, db_session):
     """A regra é "mudar" a moeda, não "ter" movimentos — reenviar a mesma moeda continua permitido."""
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     await cliente_autenticado.post(
         "/movimentos",
-        json={"conta_id": conta_id, "data": "2026-02-01", "descricao": "Compras", "valor": "-10.00"},
+        json={
+            "conta_id": conta_id,
+            "categoria_id": categoria_id,
+            "data": "2026-02-01",
+            "descricao": "Compras",
+            "valor": "-10.00",
+        },
     )
 
     resposta = await cliente_autenticado.patch(

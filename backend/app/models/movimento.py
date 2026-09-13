@@ -15,13 +15,28 @@ directamente ao saldo. O formulário do frontend pode continuar a pedir
 apresenta ao utilizador; a conversão para um único valor com sinal
 acontece no próprio formulário, antes de chegar aqui.
 
-Ainda sem "categoria": esta fatia entrega só o registo do movimento em si
-(conta, data, descrição, valor). A categorização — primeiro manual, depois
-automática com um modelo de linguagem — é a fatia seguinte, e vai
-acrescentar uma coluna categoria_id (chave estrangeira para uma tabela
-categorias, não texto livre: o valor de uma categoria está em ser
-referenciável e ter identidade estável quando é renomeada, ao contrário de
-"banco"/"tipo" da conta, que são só rótulos descritivos).
+CATEGORIA OBRIGATÓRIA, nunca "nenhuma": a coluna categoria_id é NOT NULL —
+todo o movimento tem sempre uma categoria (chave estrangeira para a
+tabela categorias — ver app/models/categoria.py —, não texto livre: o
+valor de uma categoria está em ser referenciável e ter identidade estável
+quando é renomeada, ao contrário de "banco"/"tipo" da conta, que são só
+rótulos descritivos), e pode apontar tanto para uma subcategoria (ex.:
+"Supermercado") como directamente para um grupo de topo — a estrutura não
+obriga uma categoria a ter subcategorias, mesmo que a árvore por omissão
+(app/services/categorias_seed.py) dê sempre pelo menos um "Outros" a cada
+grupo. Um movimento criado sem escolha explícita fica com a
+categoria-refúgio da sua direcção ("Outras Entradas" ou "Outras Saídas" —
+ver a nota PROTEGIDA em app/models/categoria.py), nunca sem nenhuma: dessa
+forma, uma soma ou um agrupamento por categoria (nas estatísticas, ou na
+futura categorização automática por modelo de linguagem) nunca precisa de
+tratar "sem categoria" como um caso especial à parte.
+
+Esta obrigatoriedade tem uma consequência do lado da eliminação de
+categorias: apagar uma categoria que ainda tenha movimentos (dela ou de
+subcategorias que caiam com ela em cascata) exige que o serviço
+(app/services/categorias.py) receba explicitamente para onde esses
+movimentos migram — nunca uma reatribuição silenciosa à categoria-refúgio,
+e nunca a eliminação dos próprios movimentos.
 """
 
 import uuid
@@ -80,6 +95,30 @@ class Movimento(Base):
     # mesma razão das colunas monetárias da conta (saldo_ancora): erros de
     # arredondamento são inaceitáveis em dinheiro.
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+
+    # Categoria atribuída a este movimento — obrigatória, ver a nota
+    # CATEGORIA OBRIGATÓRIA no topo do ficheiro. index=True pela mesma
+    # razão de conta_id: os filtros por categoria (a acrescentar no
+    # frontend) e as estatísticas agrupadas por categoria vão consultar
+    # por este campo.
+    #
+    # Sem ondelete explícito (o que o Postgres chama NO ACTION): a base de
+    # dados recusa apagar uma categoria enquanto este movimento ainda
+    # apontar para ela — o que nunca deveria acontecer, porque o serviço
+    # (app/services/categorias.py) reatribui sempre os movimentos antes de
+    # apagar uma categoria, mas serve de rede de segurança caso essa regra
+    # alguma vez falhe. Note-se o contraste com conta_id (acima,
+    # ondelete="CASCADE") e com parent_id em app/models/categoria.py
+    # (também CASCADE): aqueles dois representam relações onde a linha
+    # "filha" deixa de fazer sentido sem a "pai" e deve desaparecer com
+    # ela; aqui é o oposto — um movimento nunca deve desaparecer por causa
+    # de uma categoria que se apagou.
+    categoria_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("categorias.id"),
+        nullable=False,
+        index=True,
+    )
 
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(

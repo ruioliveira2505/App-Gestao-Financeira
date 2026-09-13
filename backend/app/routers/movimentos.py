@@ -27,10 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
 from app.db.session import get_db
+from app.models.categoria import Categoria
 from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
 from app.schemas.movimentos import MovimentoCriar, MovimentoEditar, MovimentoOut
+from app.services.categorias import obter_categoria_do_utilizador
 from app.services.contas import obter_conta_do_utilizador
 
 router = APIRouter(prefix="/movimentos", tags=["movimentos"])
@@ -83,11 +85,28 @@ def _validar_data(data_movimento: date, conta: Conta) -> None:
         )
 
 
+def _validar_direcao(valor: Decimal, categoria: Categoria) -> None:
+    """
+    A direcao da categoria (ver app/models/categoria.py) tem de
+    corresponder ao sinal do valor: uma categoria de "entrada" (ex.:
+    "Salário") não faz sentido num movimento negativo, e vice-versa. Sem
+    esta verificação, nada impediria uma incoerência que passaria
+    despercebida em qualquer soma ou gráfico organizado por categoria.
+    """
+    direcao_esperada = "entrada" if valor > 0 else "saida"
+    if categoria.direcao != direcao_esperada:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A categoria escolhida não corresponde ao tipo do movimento (entrada/saída).",
+        )
+
+
 def _para_saida(movimento: Movimento) -> MovimentoOut:
     """Converte uma linha da tabela "movimentos" na forma devolvida pela API."""
     return MovimentoOut(
         id=movimento.id,
         conta_id=movimento.conta_id,
+        categoria_id=movimento.categoria_id,
         data=movimento.data,
         descricao=movimento.descricao,
         valor=f"{movimento.valor:.2f}",
@@ -107,15 +126,20 @@ async def criar_movimento(
 
     O corpo do pedido já chega validado pelo schema MovimentoCriar
     (descrição não vazia, valor diferente de 0). Fica a cargo desta rota
-    confirmar que a conta é do utilizador (404 caso contrário) e a única
-    regra de negócio própria: a data não pode ser anterior à âncora da
-    conta (ver _validar_data).
+    confirmar que a conta e a categoria são do utilizador (404 caso
+    contrário) e as regras de negócio próprias: a data não pode ser
+    anterior à âncora da conta (ver _validar_data), e a direcao da
+    categoria tem de ser coerente com o sinal do valor (ver
+    _validar_direcao).
     """
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
     _validar_data(dados.data, conta)
+    categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
+    _validar_direcao(dados.valor, categoria)
 
     movimento = Movimento(
         conta_id=conta.id,
+        categoria_id=categoria.id,
         data=dados.data,
         descricao=dados.descricao,
         valor=dados.valor.quantize(_DUAS_CASAS),
@@ -177,14 +201,18 @@ async def editar_movimento(
 ) -> MovimentoOut:
     """
     Actualiza um movimento por completo — incluindo, se for o caso, a
-    conta a que pertence ("mover" o movimento para outra conta). A conta
-    de destino (dados.conta_id) tem também de pertencer ao utilizador.
+    conta a que pertence ("mover" o movimento para outra conta) ou a
+    categoria (recategorizá-lo). A conta e a categoria de destino têm
+    também de pertencer ao utilizador.
     """
     movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
     _validar_data(dados.data, conta)
+    categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
+    _validar_direcao(dados.valor, categoria)
 
     movimento.conta_id = conta.id
+    movimento.categoria_id = categoria.id
     movimento.data = dados.data
     movimento.descricao = dados.descricao
     movimento.valor = dados.valor.quantize(_DUAS_CASAS)
