@@ -27,6 +27,16 @@ não para viver lá) — e comprar a própria casa (o valor do imóvel, ou a
 entrada inicial) fica em Compra de Ativos (é um evento de capital pontual,
 não uma despesa recorrente de viver nela).
 
+A ORDEM DESTA LISTA É A ORDEM DE APRESENTAÇÃO: a coluna ordem (ver a nota
+ORDEM em app/models/categoria.py) grava, para cada grupo e cada
+subcategoria, a sua posição AQUI NESTA LISTA — os grupos de entrada antes
+dos de saída, dentro das saídas as áreas de vida antes das quatro
+excepções, e "Outros" sempre no fim de cada grupo. Uma ordenação
+alfabética (a forma inicialmente escolhida, antes de se ter guardado a
+posição) apagava esta organização na apresentação — "Habitação" ficava
+espremida entre "Entretenimento" e "Impostos e Encargos", e as quatro
+excepções espalhavam-se pelo meio da lista em vez de aparecerem juntas.
+
 CADA GRUPO TEM O SEU PRÓPRIO "OUTROS": além do "Outros" de cada grupo
 normal (uma subcategoria comum, tão editável ou apagável como qualquer
 outra — serve só de destino óbvio para "sei a área, não quero detalhar
@@ -130,8 +140,10 @@ async def semear_categorias(db: AsyncSession, user_id: uuid.UUID) -> None:
     if ja_tem_categorias is not None:
         return
 
-    for nome_grupo, direcao, subcategorias in ARVORE_PADRAO:
-        grupo = Categoria(user_id=user_id, parent_id=None, nome=nome_grupo, direcao=direcao)
+    for ordem_grupo, (nome_grupo, direcao, subcategorias) in enumerate(ARVORE_PADRAO):
+        grupo = Categoria(
+            user_id=user_id, parent_id=None, nome=nome_grupo, direcao=direcao, ordem=ordem_grupo
+        )
         db.add(grupo)
         # Tal como em backend/scripts/semear_dados.py: o "default=uuid.uuid4"
         # da coluna id só é resolvido no INSERT — um flush força-o agora,
@@ -140,7 +152,7 @@ async def semear_categorias(db: AsyncSession, user_id: uuid.UUID) -> None:
         # esta função).
         await db.flush()
 
-        for entrada in subcategorias:
+        for ordem_subcategoria, entrada in enumerate(subcategorias):
             # Uma subcategoria vem como só o nome (o caso comum, protegida
             # fica no valor por omissão da coluna, False) ou como um par
             # (nome, protegida) — só usado nos dois "Outros" descritos na
@@ -157,5 +169,10 @@ async def semear_categorias(db: AsyncSession, user_id: uuid.UUID) -> None:
                     nome=nome_subcategoria,
                     direcao=direcao,
                     protegida=protegida,
+                    # A posição DENTRO DO GRUPO (não da lista toda) —
+                    # reinicia em 0 a cada grupo, porque as subcategorias de
+                    # grupos diferentes nunca aparecem umas ao lado das
+                    # outras na interface.
+                    ordem=ordem_subcategoria,
                 )
             )

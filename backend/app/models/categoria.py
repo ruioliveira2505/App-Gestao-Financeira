@@ -30,6 +30,16 @@ formulário de um movimento mostrar só as categorias do lado certo (só as
 de saída para uma saída, só as de entrada para uma entrada) sem ter de
 percorrer a árvore a cada pedido.
 
+ORDEM: cada categoria guarda a sua posição entre os irmãos (mesmo
+user_id, mesmo parent_id) — não é alfabética. A árvore por omissão
+(app/services/categorias_seed.py) organiza deliberadamente os grupos por
+área de vida primeiro e por tipo de encargo financeiro depois (ver a nota
+nesse ficheiro); ordenar por nome apagaria essa organização na
+apresentação. Uma categoria criada à mão entra sempre no fim dos seus
+irmãos (a maior ordem entre eles, mais um) — não há, nesta fatia, uma
+forma de o utilizador reordenar à mão (arrastar-e-largar); só a posição
+inicial é deliberada.
+
 SEM COR NEM ÍCONE nesta tabela: por agora, a cor mostrada junto de uma
 categoria é calculada no frontend a partir do nome do grupo (a mesma ideia
 já usada no avatar das contas) — não há nada para guardar aqui. Se um dia
@@ -71,7 +81,7 @@ oposta (CASCADE, em app/models/movimento.py).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -130,6 +140,12 @@ class Categoria(Base):
     # duas categorias-refúgio semeadas automaticamente ("Outras Entradas",
     # "Outras Saídas") nascem com este valor a True.
     protegida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Ver a nota ORDEM no topo do ficheiro. Sem valor por omissão de
+    # propósito: quem cria uma categoria (a semente, ou o serviço ao criar
+    # uma nova) tem sempre de decidir explicitamente a posição — nunca um
+    # 0 silencioso que colidiria com outra categoria já nessa posição.
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(

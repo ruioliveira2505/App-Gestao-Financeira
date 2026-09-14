@@ -11,8 +11,6 @@ se elimina se o pedido indicar, em migrar_para_id, para onde esses
 movimentos passam.
 """
 
-import unicodedata
-
 import pytest
 
 CONTA_VALIDA = {
@@ -33,21 +31,6 @@ def _grupo(arvore: list[dict], nome: str) -> dict:
 def _subcategoria(grupo: dict, nome: str) -> dict:
     """Devolve a subcategoria com este nome, dentro de um grupo da árvore."""
     return next(s for s in grupo["subcategorias"] if s["nome"] == nome)
-
-
-def _chave_alfabetica(nome: str) -> str:
-    """
-    Chave de ordenação que trata uma letra acentuada como a sua letra base
-    (ex.: "Água" ordena-se como "Agua", antes de "Bens...") — a mesma
-    noção de "ordem alfabética" que a colação da base de dados aplica no
-    ORDER BY da rota (app/routers/categorias.py), e que sorted() do Python
-    NÃO reproduz sozinho: comparando por posição Unicode, uma maiúscula
-    acentuada como "Á" tem um código muito mais alto do que qualquer letra
-    ASCII, e ficaria sempre no fim de uma ordenação ingénua, nunca junto
-    dos outros nomes começados por "A".
-    """
-    sem_acentos = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
-    return sem_acentos.casefold()
 
 
 async def _criar_conta_e_movimento(cliente, categoria_id: str, **overrides) -> str:
@@ -88,14 +71,53 @@ async def test_arvore_tem_a_semente_por_omissao(cliente_autenticado):
 
 
 @pytest.mark.asyncio
-async def test_arvore_ordena_grupos_e_subcategorias_alfabeticamente(cliente_autenticado):
+async def test_arvore_segue_a_ordem_deliberada_da_semente_no_a_alfabetica(cliente_autenticado):
+    """A ordem é a de ARVORE_PADRAO (área de vida antes das exceções por
+    tipo de encargo; "Outros" sempre no fim do seu grupo) — não a ordem
+    alfabética, que dispersaria essa organização (ver a nota ORDEM em
+    app/models/categoria.py)."""
     arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
 
     nomes_grupos = [g["nome"] for g in arvore]
-    assert nomes_grupos == sorted(nomes_grupos, key=_chave_alfabetica)
+    # "Habitação" (área de vida) vem antes de "Impostos e Encargos"
+    # (exceção por tipo de encargo) — o oposto do que a ordem alfabética
+    # daria. As quatro exceções (Seguros, Impostos e Encargos, Compra de
+    # Ativos, Transferências) ficam juntas no fim das saídas.
+    assert nomes_grupos.index("Habitação") < nomes_grupos.index("Impostos e Encargos")
+    assert nomes_grupos[-5:] == [
+        "Seguros",
+        "Impostos e Encargos",
+        "Compra de Ativos",
+        "Transferências",
+        "Outras Saídas",
+    ]
 
     nomes_subcategorias = [s["nome"] for s in _grupo(arvore, "Habitação")["subcategorias"]]
-    assert nomes_subcategorias == sorted(nomes_subcategorias, key=_chave_alfabetica)
+    assert nomes_subcategorias == [
+        "Prestação",
+        "Renda",
+        "Água, Eletricidade e Gás",
+        "Telecomunicações",
+        "Bens Mobiliários",
+        "Segurança",
+        "Condomínio",
+        "Serviços Domésticos",
+        "Outros",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_criar_categoria_entra_no_fim_dos_irmaos(cliente_autenticado):
+    arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
+    grupo_id = _grupo(arvore, "Alimentação")["id"]
+
+    await cliente_autenticado.post("/categorias", json={"nome": "Bebidas", "parent_id": grupo_id})
+
+    arvore_depois = (await cliente_autenticado.get("/categorias/arvore")).json()
+    nomes_subcategorias = [s["nome"] for s in _grupo(arvore_depois, "Alimentação")["subcategorias"]]
+    # As subcategorias originais mantêm a sua ordem relativa; a nova entra
+    # a seguir a todas elas, nunca no meio.
+    assert nomes_subcategorias[-1] == "Bebidas"
 
 
 @pytest.mark.asyncio
@@ -320,6 +342,19 @@ async def test_eliminar_categoria_protegida_e_recusado(cliente_autenticado):
     protegida_id = _subcategoria(_grupo(arvore, "Outras Entradas"), "Outros")["id"]
 
     resposta = await cliente_autenticado.delete(f"/categorias/{protegida_id}")
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_eliminar_grupo_que_contem_categoria_protegida_e_recusado(cliente_autenticado):
+    """Apagar "Outras Entradas" (o GRUPO, não o "Outros" em si) levaria o
+    seu "Outros" protegido consigo, em cascata — tem de ser recusado tal
+    como apagar o "Outros" diretamente."""
+    arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
+    grupo_id = _grupo(arvore, "Outras Entradas")["id"]
+
+    resposta = await cliente_autenticado.delete(f"/categorias/{grupo_id}")
 
     assert resposta.status_code == 400
 

@@ -74,6 +74,21 @@ async def _nome_duplicado(
     return resultado.first() is not None
 
 
+async def _proxima_ordem(db: AsyncSession, utilizador: User, parent_id: uuid.UUID | None) -> int:
+    """
+    A posição livre a seguir à última entre os irmãos (mesmo parent_id) —
+    uma categoria criada ou movida à mão entra sempre no FIM, nunca antes
+    de outra (ver a nota ORDEM em app/models/categoria.py). Sem
+    arrastar-e-largar nesta fatia, não há como o utilizador escolher outra
+    posição.
+    """
+    condicao_parent = Categoria.parent_id.is_(None) if parent_id is None else Categoria.parent_id == parent_id
+    maior = await db.scalar(
+        select(func.max(Categoria.ordem)).where(Categoria.user_id == utilizador.id, condicao_parent)
+    )
+    return (maior + 1) if maior is not None else 0
+
+
 def _para_saida(categoria: Categoria) -> CategoriaOut:
     """Converte uma linha da tabela "categorias" na forma devolvida pela API."""
     return CategoriaOut(
@@ -96,14 +111,15 @@ async def arvore_categorias(
     (filtros, formulário de movimento) precisam, para não terem de montar
     a árvore a partir de uma lista plana.
 
-    Ordem alfabética em ambos os níveis: não há uma coluna "ordem" nesta
-    fatia (ver a nota em app/services/categorias_seed.py) — se a
-    ordenação manual vier a fazer falta, é uma mudança à parte.
+    Ordenados por "ordem" (ver a nota em app/models/categoria.py), não por
+    nome — a árvore por omissão organiza-se deliberadamente por área de
+    vida e por tipo de encargo financeiro, e uma ordenação alfabética
+    apagaria essa organização.
     """
     categorias = list(
         (
             await db.scalars(
-                select(Categoria).where(Categoria.user_id == utilizador.id).order_by(Categoria.nome)
+                select(Categoria).where(Categoria.user_id == utilizador.id).order_by(Categoria.ordem)
             )
         ).all()
     )
@@ -157,7 +173,10 @@ async def criar_categoria(
             detail="Já existe uma categoria com este nome no mesmo grupo.",
         )
 
-    categoria = Categoria(user_id=utilizador.id, parent_id=parent_id, nome=dados.nome, direcao=direcao)
+    ordem = await _proxima_ordem(db, utilizador, parent_id)
+    categoria = Categoria(
+        user_id=utilizador.id, parent_id=parent_id, nome=dados.nome, direcao=direcao, ordem=ordem
+    )
     db.add(categoria)
     await db.commit()
     await db.refresh(categoria)
@@ -227,6 +246,11 @@ async def editar_categoria(
             detail="Já existe uma categoria com este nome no mesmo grupo.",
         )
 
+    # Só recalcula a ordem se o grupo mudou de facto — um simples
+    # renomear (o caso mais comum) mantém a posição que já tinha entre os
+    # irmãos, em vez de saltar sempre para o fim.
+    if novo_parent_id != categoria.parent_id:
+        categoria.ordem = await _proxima_ordem(db, utilizador, novo_parent_id)
     categoria.nome = dados.nome
     categoria.parent_id = novo_parent_id
 
@@ -267,12 +291,28 @@ async def eliminar_categoria(
 
     # As subcategorias que caem em cascata com este grupo (lista vazia se
     # categoria for, ela própria, uma subcategoria).
-    subcategorias_id = list(
+    subcategorias = list(
         (
-            await db.scalars(select(Categoria.id).where(Categoria.parent_id == categoria.id))
+            await db.scalars(select(Categoria).where(Categoria.parent_id == categoria.id))
         ).all()
     )
-    ids_a_desaparecer = [categoria.id, *subcategorias_id]
+
+    # Um grupo não se apaga se isso levasse consigo, em cascata, uma
+    # subcategoria protegida (o "Outros" de "Outras Entradas"/"Outras
+    # Saídas") — a própria categoria.protegida, verificada acima, só cobre
+    # a categoria pedida directamente; sem esta verificação seria possível
+    # apagar "Outras Entradas" (o grupo) e levar o seu "Outros" protegido
+    # com ele, sem aviso nenhum.
+    if any(sub.protegida for sub in subcategorias):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Este grupo tem uma subcategoria necessária para o funcionamento da "
+                "aplicação e não pode ser eliminado."
+            ),
+        )
+
+    ids_a_desaparecer = [categoria.id, *[sub.id for sub in subcategorias]]
 
     n_movimentos = await db.scalar(
         select(func.count()).select_from(Movimento).where(Movimento.categoria_id.in_(ids_a_desaparecer))
