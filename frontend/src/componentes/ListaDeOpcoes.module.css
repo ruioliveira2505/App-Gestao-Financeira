@@ -18,6 +18,22 @@
   padding: 0;
 }
 
+/* Cabeçalho de grupo (ex.: o nome do grupo de uma subcategoria, no
+   seletor de categoria) — só rótulo, não tocável. Separa visualmente as
+   opções em secções quando há muitas, espalhadas por vários grupos. */
+.cabecalhoGrupo {
+  padding: var(--espaco-6) 0 var(--espaco-1);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  color: var(--cor-texto-3);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cabecalhoGrupo:first-child {
+  padding-top: 0;
+}
+
 /* Cada opção é um <button> a toda a largura, daí anular borda/fundo. O
    traço fino por baixo separa-a da seguinte; a última não o leva. */
 .linha {

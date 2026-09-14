@@ -44,6 +44,7 @@ function movimento(sobrepor: Record<string, unknown> = {}) {
   return {
     id: 'm1',
     conta_id: 'c1',
+    categoria_id: 'cat1',
     data: isoData(),
     descricao: 'Compras',
     valor: '-50.00',
@@ -53,6 +54,35 @@ function movimento(sobrepor: Record<string, unknown> = {}) {
   }
 }
 
+// Árvore com dois grupos de saída (o segundo com duas subcategorias, para
+// testar o toque no cabeçalho do grupo) e um de entrada — dá para testar o
+// agrupamento, a multi-escolha e a restrição por Tipo do filtro de
+// Categorias, além de dar à página de onde tirar a cor do ponto de cada
+// linha (a cor vem do nome do GRUPO — ver PontoCategoria.tsx).
+const ARVORE = [
+  {
+    id: 'g1',
+    nome: 'Alimentação',
+    direcao: 'saida',
+    subcategorias: [{ id: 'cat1', nome: 'Supermercado', protegida: false }],
+  },
+  {
+    id: 'g2',
+    nome: 'Transportes',
+    direcao: 'saida',
+    subcategorias: [
+      { id: 'cat2', nome: 'Combustível', protegida: false },
+      { id: 'cat3', nome: 'Portagens', protegida: false },
+    ],
+  },
+  {
+    id: 'g3',
+    nome: 'Trabalho',
+    direcao: 'entrada',
+    subcategorias: [{ id: 'cat4', nome: 'Salário', protegida: false }],
+  },
+]
+
 function usar(contas: unknown[], movimentos: unknown[]) {
   servidorMsw.use(
     http.get('/api/contas', () => HttpResponse.json(contas)),
@@ -61,6 +91,9 @@ function usar(contas: unknown[], movimentos: unknown[]) {
 }
 
 function montar(entrada = '/movimentos') {
+  // Registado aqui, não em "usar": toda a montagem da página precisa da
+  // árvore de categorias, tal como precisa de contas e movimentos.
+  servidorMsw.use(http.get('/api/categorias/arvore', () => HttpResponse.json(ARVORE)))
   return render(
     <MemoryRouter initialEntries={[entrada]}>
       <Movimentos />
@@ -89,14 +122,14 @@ async function fecharFiltros() {
 /** A partir da folha de filtros, abre o seletor de um filtro (uma folha
  *  que entra da direita) e devolve o "dialog" dele. O nome acessível da
  *  linha é "Contas: Todas", "Tipo: Saídas", etc. */
-async function abrirSeletor(titulo: 'Contas' | 'Tipo' | 'Datas') {
+async function abrirSeletor(titulo: 'Contas' | 'Tipo' | 'Categorias' | 'Datas') {
   await userEvent.click(screen.getByRole('button', { name: new RegExp(`^${titulo}:`) }))
   return screen.findByRole('dialog', { name: titulo })
 }
 
 /** Fecha um seletor de filtro (o "‹ Voltar" do cabeçalho) e espera que
  *  desmonte, deixando a folha de filtros à vista outra vez. */
-async function fecharSeletor(titulo: 'Contas' | 'Tipo' | 'Datas') {
+async function fecharSeletor(titulo: 'Contas' | 'Tipo' | 'Categorias' | 'Datas') {
   await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
   await waitFor(() =>
     expect(screen.queryByRole('dialog', { name: titulo })).not.toBeInTheDocument(),
@@ -303,6 +336,7 @@ describe('Página Movimentos', () => {
     let chamada = 0
     servidorMsw.use(
       http.get('/api/contas', () => HttpResponse.json([conta()])),
+      http.get('/api/categorias/arvore', () => HttpResponse.json(ARVORE)),
       http.get('/api/movimentos', () => {
         chamada += 1
         return HttpResponse.json(chamada === 1 ? [] : [movimento({ descricao: 'Recém-criado' })])
@@ -444,6 +478,123 @@ describe('Página Movimentos', () => {
     expect(within(folha).queryByRole('button', { name: /^Contas:/ })).not.toBeInTheDocument()
     expect(within(folha).getByRole('button', { name: /^Tipo:/ })).toBeInTheDocument()
     expect(within(folha).getByRole('button', { name: /^Datas:/ })).toBeInTheDocument()
+  })
+
+  it('o seletor de Categorias mostra as subcategorias agrupadas, e filtra por elas', async () => {
+    usar(
+      [conta()],
+      [
+        movimento({ id: 'a', categoria_id: 'cat1', descricao: 'Do supermercado' }),
+        movimento({ id: 'b', categoria_id: 'cat2', descricao: 'Da bomba de gasolina' }),
+      ],
+    )
+    montar()
+    await screen.findByRole('link', { name: /Do supermercado/ })
+
+    await abrirFiltros()
+    const seletor = await abrirSeletor('Categorias')
+    // Os cabeçalhos de grupo aparecem, e cada subcategoria por baixo do seu.
+    expect(within(seletor).getByText('Alimentação')).toBeInTheDocument()
+    expect(within(seletor).getByText('Transportes')).toBeInTheDocument()
+    await userEvent.click(within(seletor).getByRole('button', { name: 'Supermercado' }))
+    await fecharSeletor('Categorias')
+    await fecharFiltros()
+
+    expect(await screen.findByRole('link', { name: /Do supermercado/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Da bomba de gasolina/ })).not.toBeInTheDocument()
+  })
+
+  it('marcar todos os grupos (tocando nos cabeçalhos) colapsa de volta para "Todas"', async () => {
+    usar(
+      [conta()],
+      [movimento({ id: 'a', categoria_id: 'cat1', descricao: 'Do supermercado' })],
+    )
+    montar()
+    await screen.findByRole('link', { name: /Do supermercado/ })
+
+    await abrirFiltros()
+    const seletor = await abrirSeletor('Categorias')
+    await userEvent.click(within(seletor).getByRole('button', { name: 'Alimentação' }))
+    await userEvent.click(within(seletor).getByRole('button', { name: 'Transportes' }))
+    await userEvent.click(within(seletor).getByRole('button', { name: 'Trabalho' }))
+
+    expect(within(seletor).getByRole('button', { name: 'Todas' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await fecharSeletor('Categorias')
+    await fecharFiltros()
+    expect(screen.getByRole('button', { name: 'Filtros' })).toBeInTheDocument()
+  })
+
+  it('tocar no cabeçalho de um grupo marca todas as suas subcategorias de uma vez', async () => {
+    usar(
+      [conta()],
+      [
+        movimento({ id: 'a', categoria_id: 'cat2', descricao: 'Combustível' }),
+        movimento({ id: 'b', categoria_id: 'cat3', descricao: 'Portagens' }),
+        movimento({ id: 'c', categoria_id: 'cat1', descricao: 'Supermercado' }),
+      ],
+    )
+    montar()
+    await screen.findByRole('link', { name: /Combustível/ })
+
+    await abrirFiltros()
+    const seletor = await abrirSeletor('Categorias')
+    await userEvent.click(within(seletor).getByRole('button', { name: 'Transportes' }))
+    // As duas subcategorias de Transportes ficam marcadas, sem lhes tocar.
+    expect(within(seletor).getByRole('button', { name: 'Combustível' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    expect(within(seletor).getByRole('button', { name: 'Portagens' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    await fecharSeletor('Categorias')
+
+    // O resumo da linha mostra o nome do grupo, não "2 categorias".
+    expect(screen.getByRole('button', { name: /^Categorias: Transportes$/ })).toBeInTheDocument()
+    await fecharFiltros()
+
+    expect(await screen.findByRole('link', { name: /Combustível/ })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /Portagens/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Supermercado/ })).not.toBeInTheDocument()
+  })
+
+  it('definir o Tipo restringe as opções de Categorias, e tira da escolha as que já não batem certo', async () => {
+    usar(
+      [conta()],
+      [
+        movimento({ id: 'a', categoria_id: 'cat4', valor: '1500.00', descricao: 'Salário' }),
+        movimento({ id: 'b', categoria_id: 'cat1', valor: '-30.00', descricao: 'Supermercado' }),
+      ],
+    )
+    montar()
+    await screen.findByRole('link', { name: /Salário/ })
+
+    // Escolhe "Salário" (entrada) em Categorias, com Tipo ainda em "Todos".
+    await abrirFiltros()
+    const seletorCategorias = await abrirSeletor('Categorias')
+    await userEvent.click(within(seletorCategorias).getByRole('button', { name: 'Salário' }))
+    await fecharSeletor('Categorias')
+
+    // Muda o Tipo para "Saídas" — só grupos de saída ficam visíveis em
+    // Categorias, e "Salário" (que já não bate certo) sai da escolha.
+    const seletorTipo = await abrirSeletor('Tipo')
+    await userEvent.click(within(seletorTipo).getByRole('button', { name: 'Saídas' }))
+    await fecharSeletor('Tipo')
+
+    const seletorCategorias2 = await abrirSeletor('Categorias')
+    expect(within(seletorCategorias2).queryByText('Trabalho')).not.toBeInTheDocument()
+    expect(within(seletorCategorias2).getByText('Alimentação')).toBeInTheDocument()
+    await fecharSeletor('Categorias')
+    await fecharFiltros()
+
+    // A lista já só mostra a saída — "Salário" saiu de Categorias, e o
+    // Tipo="Saídas" também a excluiria de qualquer forma.
+    expect(await screen.findByRole('link', { name: /Supermercado/ })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /Salário/ })).not.toBeInTheDocument()
   })
 
   it('filtra por uma janela de data ("Últimos 90 dias")', async () => {

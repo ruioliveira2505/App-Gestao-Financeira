@@ -52,6 +52,9 @@ describe('Moldura da aplicação', () => {
     expect(screen.getByRole('link', { name: 'Início' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Movimentos' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Contas' })).toBeInTheDocument()
+    // Categorias não é uma secção da navegação principal — vive em
+    // /perfil (ver a nota em src/lib/seccoes.ts).
+    expect(screen.queryByRole('link', { name: 'Categorias' })).not.toBeInTheDocument()
     // A zona de perfil é uma ligação para /perfil, com o nome derivado do
     // email (parte antes do "@") como nome acessível.
     expect(screen.getByRole('link', { name: 'ana' })).toBeInTheDocument()
@@ -104,6 +107,79 @@ describe('Moldura da aplicação', () => {
       await screen.findByRole('heading', { name: 'Segurança' }),
     ).toBeInTheDocument()
     expect(screen.getByText('Em breve.')).toBeInTheDocument()
+  })
+
+  it('a secção "Categorias" do Perfil leva à página real de gestão, não a "Em breve"', async () => {
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.get('/api/categorias/arvore', () => HttpResponse.json([])),
+    )
+    montar('/perfil')
+
+    await screen.findByRole('heading', { name: 'Perfil' })
+    const definicoes = within(screen.getByRole('navigation', { name: 'Definições' }))
+    await userEvent.click(definicoes.getByRole('link', { name: /Categorias/ }))
+
+    expect(await screen.findByRole('heading', { name: 'Categorias' })).toBeInTheDocument()
+    expect(screen.queryByText('Em breve.')).not.toBeInTheDocument()
+  })
+
+  it('em mobile, "‹ voltar" de uma secção do Perfil anima antes de navegar', async () => {
+    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+    definirEcraMobile(true)
+    montar('/perfil')
+
+    await screen.findByRole('heading', { name: 'Perfil' })
+    const definicoes = within(screen.getByRole('navigation', { name: 'Definições' }))
+    await userEvent.click(definicoes.getByRole('link', { name: /Segurança/ }))
+    await screen.findByText('Em breve.')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    // A navegação não acontece de imediato: PaginaDeslizante atrasa-a até a
+    // sua própria animação de saída terminar — por isso a secção ainda
+    // está montada logo a seguir ao toque.
+    expect(screen.getByText('Em breve.')).toBeInTheDocument()
+
+    // Terminada a animação, a navegação segue e volta-se à lista do Perfil.
+    await waitFor(() => expect(screen.queryByText('Em breve.')).not.toBeInTheDocument())
+    expect(await screen.findByRole('heading', { name: 'Perfil' })).toBeInTheDocument()
+  })
+
+  it('em mobile, "‹ voltar" do detalhe de uma conta anima antes de navegar', async () => {
+    definirEcraMobile(true)
+    const conta = {
+      id: 'a',
+      nome: 'À ordem',
+      banco: 'BPI',
+      tipo: 'Conta corrente',
+      moeda: 'EUR',
+      data_ancora: '2026-01-01',
+      saldo_ancora: '100.00',
+      saldo: '100.00',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    }
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.get('/api/contas', () => HttpResponse.json([conta])),
+      http.get('/api/contas/:id', () => HttpResponse.json(conta)),
+    )
+    montar('/contas')
+
+    await userEvent.click(await screen.findByRole('link', { name: /À ordem/ }))
+    await screen.findByText('Saldo atual')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    // A navegação não acontece de imediato: PaginaDeslizante atrasa-a até a
+    // sua própria animação de saída terminar — o detalhe ainda está
+    // montado logo a seguir ao toque.
+    expect(screen.getByText('Saldo atual')).toBeInTheDocument()
+
+    // Terminada a animação, a navegação segue e volta-se à lista de contas.
+    await waitFor(() => expect(screen.queryByText('Saldo atual')).not.toBeInTheDocument())
+    expect(await screen.findByRole('link', { name: /À ordem/ })).toBeInTheDocument()
   })
 
   it('termina a sessão na página de Perfil (a partir da barra lateral)', async () => {
@@ -185,6 +261,7 @@ describe('Moldura da aplicação', () => {
       http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
       http.get('/api/contas', () => HttpResponse.json([])),
       http.get('/api/movimentos', () => HttpResponse.json([])),
+      http.get('/api/categorias/arvore', () => HttpResponse.json([])),
     )
     montar('/contas')
     await screen.findByText('Ainda não tens contas.')

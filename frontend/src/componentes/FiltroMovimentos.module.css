@@ -132,6 +132,36 @@
   flex-direction: column;
 }
 
+/* Cabeçalho de grupo (categorias) — ao contrário do ListaDeOpcoes.module.css
+   (o seletor de categoria dos formulários, onde é só rótulo), aqui é um
+   <button>: toca-se para marcar/desmarcar o grupo inteiro de uma vez. Fica
+   em tinta de acento quando todas as suas subcategorias estão marcadas
+   ("aria-pressed"), tal como as opções normais, mas sem o "✓" — o
+   cabeçalho já se distingue por estar em maiúsculas. */
+.cabecalhoGrupo {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--espaco-6) 0 var(--espaco-1);
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  text-align: left;
+  color: var(--cor-texto-3);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cabecalhoGrupo[aria-pressed='true'] {
+  color: var(--cor-acento);
+}
+
+.lista > .cabecalhoGrupo:first-child {
+  padding-top: 0;
+}
+
 /* Traço fino entre opções, RECUADO das bordas (o mesmo do ListaDeOpcoes, o
    seletor dos formulários) — ao contrário das linhas-seletor da folha
    principal, que vão de bordo a bordo. */

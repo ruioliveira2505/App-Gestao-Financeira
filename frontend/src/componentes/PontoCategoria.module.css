@@ -1,0 +1,38 @@
+.ponto {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.sm {
+  width: 10px;
+  height: 10px;
+}
+
+/* Mesma dimensão do Avatar "md" — o símbolo da linha de um movimento
+   ocupa o mesmo espaço que antes, só muda a cor. */
+.md {
+  width: 40px;
+  height: 40px;
+}
+
+/* Mesma paleta e os mesmos seis tons do Avatar (ver Avatar.module.css) —
+   só o fundo interessa aqui, não há letra a precisar de contraste. */
+.ponto[data-cor='0'] {
+  background: var(--avatar-0-bg);
+}
+.ponto[data-cor='1'] {
+  background: var(--avatar-1-bg);
+}
+.ponto[data-cor='2'] {
+  background: var(--avatar-2-bg);
+}
+.ponto[data-cor='3'] {
+  background: var(--avatar-3-bg);
+}
+.ponto[data-cor='4'] {
+  background: var(--avatar-4-bg);
+}
+.ponto[data-cor='5'] {
+  background: var(--avatar-5-bg);
+}

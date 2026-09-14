@@ -4,24 +4,16 @@
  *
  * Um círculo colorido com a primeira letra de um nome. A cor é escolhida
  * de forma determinística a partir do nome (o mesmo nome dá sempre a mesma
- * cor), de uma paleta de seis tons definida em src/index.css.
+ * cor — ver src/lib/corDeterministica.ts), de uma paleta de seis tons
+ * definida em src/index.css.
  *
  * Usado por conta na lista e no detalhe — dá identidade visual e ajuda a
- * varrer a lista de contas.
+ * varrer a lista de contas. O PontoCategoria (categorias) usa a mesma
+ * paleta e a mesma lógica de cor, só sem a inicial.
  */
 
+import { indiceDeCor } from '../lib/corDeterministica'
 import estilos from './Avatar.module.css'
-
-const N_CORES = 6
-
-// Hash simples e estável de uma string para um índice de cor.
-function indiceDeCor(chave: string): number {
-  let acumulador = 0
-  for (let i = 0; i < chave.length; i++) {
-    acumulador = (acumulador * 31 + chave.charCodeAt(i)) >>> 0
-  }
-  return acumulador % N_CORES
-}
 
 type Props = {
   // O texto de onde saem a inicial e a cor (ex.: o nome do banco ou da

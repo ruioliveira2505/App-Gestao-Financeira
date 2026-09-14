@@ -27,6 +27,12 @@ export type Cabecalho = {
   // Quando definido, a barra de topo mostra "‹ voltar" (para este caminho)
   // em vez do menu ☰ — padrão de páginas de detalhe.
   voltar?: string
+  // Quando definido, a barra de topo NÃO navega logo ao tocar em "‹" — em
+  // vez disso entrega-lhe a navegação por fazer ("navegarDeFacto"), e é a
+  // própria página quem decide QUANDO ela acontece (ver PaginaDeslizante:
+  // normalmente depois de uma animação de saída, não antes). Sem
+  // "aoRecuar", a barra de topo navega de imediato, como sempre fez.
+  aoRecuar?: (navegarDeFacto: () => void) => void
 }
 
 export type DefinirCabecalho = (cabecalho: Cabecalho | null) => void

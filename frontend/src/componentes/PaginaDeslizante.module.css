@@ -1,0 +1,50 @@
+/*
+ * ESTILOS DE PaginaDeslizante
+ * ===========================
+ *
+ * Duas animações, uma por sentido — "entrada" e "aSair" nunca estão activas
+ * ao mesmo tempo (ver PaginaDeslizante.tsx). As duas deslocam o invólucro
+ * inteiro na horizontal, 100% da sua própria largura — ao contrário da
+ * entrada subtil de ContaDetalhe.tsx (que só desloca 24px, um "nudge"), esta
+ * é a transição de página inteira ("push"/"pop") do iOS.
+ *
+ * "animation-fill-mode: both" em cada uma: a entrada começa já deslocada
+ * (sem "saltar" de posição no primeiro fotograma) e a saída fica na posição
+ * final (fora do ecrã) até a navegação de facto acontecer, sem voltar a
+ * saltar para o sítio original entretanto.
+ *
+ * Sem "prefers-reduced-motion" aqui: a regra global em index.css já reduz a
+ * duração de qualquer animação/transição para ~0 quando o sistema o pede,
+ * incluindo estas.
+ *
+ * O invólucro do LayoutApp (.pagina) tem "overflow-x: clip" (ver o
+ * comentário em LayoutApp.module.css e em ContaDetalhe.module.css) — por
+ * isso o deslocamento de 100% não faz aparecer barra de scroll horizontal.
+ */
+
+.envolucro {
+  animation-duration: 0.28s;
+  animation-fill-mode: both;
+}
+
+.aEntrar {
+  animation-name: entrar-da-direita;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.aSair {
+  animation-name: sair-para-a-direita;
+  animation-timing-function: ease-in;
+}
+
+@keyframes entrar-da-direita {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes sair-para-a-direita {
+  to {
+    transform: translateX(100%);
+  }
+}

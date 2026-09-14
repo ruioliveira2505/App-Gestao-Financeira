@@ -15,21 +15,35 @@
  * Cada linha mostra o filtro e o seu valor atual; tocá-la abre uma folha
  * que entra DA DIREITA com as opções desse filtro (o mesmo padrão do campo
  * "Conta" no formulário de movimento). Assim a folha principal fica só com
- * duas ou três linhas limpas (a de Contas não aparece com uma só conta).
- * Uma linha com filtro ATIVO ganha um traço vertical preto no lado
- * esquerdo. O seletor de Datas mostra sempre no topo
- * o intervalo a que a escolha atual dá; "Mês específico" e "Data
- * personalizada" revelam os seus campos, os outros atalhos não.
+ * linhas limpas (a de Contas não aparece com uma só conta). Uma linha com
+ * filtro ATIVO ganha um traço vertical preto no lado esquerdo. O seletor
+ * de Datas mostra sempre no topo o intervalo a que a escolha atual dá;
+ * "Mês específico" e "Data personalizada" revelam os seus campos, os
+ * outros atalhos não. O de CATEGORIAS mostra as subcategorias agrupadas
+ * por grupo com um cabeçalho — como o seletor do formulário de movimento,
+ * mas em multi-escolha (como Contas): escolher TODAS as subcategorias,
+ * uma a uma, colapsa de volta para "Todas"; TOCAR NO CABEÇALHO de um grupo
+ * marca/desmarca de uma vez todas as suas subcategorias (em vez de uma a
+ * uma), e o resumo da linha reconhece esse caso e mostra o nome do grupo.
+ *
+ * TIPO RESTRINGE CATEGORIAS, nunca ao contrário: com Tipo="Saída", o
+ * seletor de Categorias só mostra os grupos de saída (a mesma restrição
+ * do seletor do formulário de movimento) — e "Todas", aí, refere-se só às
+ * categorias visíveis. Mudar de Tipo tira da escolha qualquer categoria
+ * que já lá estivesse e deixe de bater certo com a nova direção. Não há
+ * regra na direção inversa (Categorias nunca muda o Tipo): sendo
+ * Categorias multi-escolha, uma seleção mista (entrada + saída) é válida
+ * e não haveria um único Tipo para onde "colapsar" — mas nunca se chega a
+ * uma seleção mista senão com Tipo="Todos" (só aí as duas direções estão
+ * visíveis ao mesmo tempo), por isso o problema nunca chega a existir.
  *
  * Tal como "Nova conta" / "Novo movimento", a folha principal fornece o
  * ContextoFolha: arrastar um desses seletores PARA BAIXO desce as duas
  * folhas juntas e, passado o limiar, fecha os filtros por completo.
  *
- * (Quando existir a fatia de CATEGORIAS — lista longa —, entra aqui como
- * mais uma linha-seletor, igual a Contas.)
- *
- * A ordem (contas → tipo → datas) acompanha a do formulário de adicionar/
- * editar um movimento, para o modelo mental ser o mesmo nos dois sítios.
+ * A ordem (contas → tipo → categorias → datas) acompanha a do formulário
+ * de adicionar/editar um movimento (conta → tipo → categoria → …), para o
+ * modelo mental ser o mesmo nos dois sítios.
  *
  * NÃO há filtro por VALOR: as contas podem estar em moedas diferentes (ver
  * a nota em src/lib/filtrosMovimentos.ts). Volta com uma moeda base.
@@ -40,13 +54,15 @@
  * filtros vêm sempre de fora.
  */
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 
 import { Avatar } from './Avatar'
 import { CampoTexto } from './CampoTexto'
 import { ContextoFolha } from './contextoFolha'
 import { Folha } from './Folha'
 import { IconeCheck, IconeChevronDireita, IconeFechar, IconeFunil } from './icones'
+import { PontoCategoria } from './PontoCategoria'
+import { direcaoDaCategoria, type GrupoArvore } from '../lib/categorias'
 import type { Conta } from '../lib/contas'
 import { formatarData, formatarIntervalo, rotuloMes } from '../lib/datas'
 import {
@@ -67,9 +83,10 @@ type Props = {
   filtros: Filtros
   aoMudar: (filtros: Filtros) => void
   contas: Conta[]
+  arvore: GrupoArvore[]
 }
 
-export function FiltroMovimentos({ filtros, aoMudar, contas }: Props) {
+export function FiltroMovimentos({ filtros, aoMudar, contas, arvore }: Props) {
   const [aberto, setAberto] = useState(false)
   const ativos = contarFiltrosAtivos(filtros)
 
@@ -91,6 +108,7 @@ export function FiltroMovimentos({ filtros, aoMudar, contas }: Props) {
           filtros={filtros}
           aoMudar={aoMudar}
           contas={contas}
+          arvore={arvore}
           ativos={ativos}
           aoFechar={() => setAberto(false)}
         />
@@ -112,6 +130,7 @@ function FolhaFiltros({
   filtros,
   aoMudar,
   contas,
+  arvore,
   ativos,
   aoFechar,
 }: Props & { ativos: number; aoFechar: () => void }) {
@@ -165,7 +184,15 @@ function FolhaFiltros({
               resumo={resumoTipo(filtros)}
               ativa={filtros.tipo !== null}
             >
-              <ListaTipo filtros={filtros} aoMudar={aoMudar} />
+              <ListaTipo filtros={filtros} aoMudar={aoMudar} arvore={arvore} />
+            </LinhaSeletor>
+
+            <LinhaSeletor
+              titulo="Categorias"
+              resumo={resumoCategorias(filtros, arvore)}
+              ativa={filtros.categorias.length > 0}
+            >
+              <ListaCategorias filtros={filtros} aoMudar={aoMudar} arvore={arvore} />
             </LinhaSeletor>
 
             <LinhaSeletor
@@ -253,6 +280,28 @@ function resumoTipo(filtros: Filtros): string {
   if (filtros.tipo === 'entrada') return 'Entradas'
   if (filtros.tipo === 'saida') return 'Saídas'
   return 'Todos'
+}
+
+function resumoCategorias(filtros: Filtros, arvore: GrupoArvore[]): string {
+  const n = filtros.categorias.length
+  if (n === 0) return 'Todas'
+  // Reconhece quando a seleção é exatamente um grupo inteiro (feito com o
+  // toque no cabeçalho, ou subcategoria a subcategoria — dá no mesmo) e
+  // mostra o nome do grupo, em vez de "N categorias".
+  for (const grupo of arvore) {
+    const ids = grupo.subcategorias.map((sub) => sub.id)
+    if (ids.length > 0 && ids.length === n && ids.every((id) => filtros.categorias.includes(id))) {
+      return grupo.nome
+    }
+  }
+  if (n === 1) {
+    for (const grupo of arvore) {
+      const sub = grupo.subcategorias.find((s) => s.id === filtros.categorias[0])
+      if (sub) return sub.nome
+    }
+    return '1 categoria'
+  }
+  return `${n} categorias`
 }
 
 function resumoDatas(filtros: Filtros): string {
@@ -348,14 +397,26 @@ function ListaContas({ filtros, aoMudar, contas }: SubProps & { contas: Conta[] 
 }
 
 /** TIPO — escolha única: Todos / Entradas / Saídas. "Todos" = sem filtro
- *  (tipo a null). */
-function ListaTipo({ filtros, aoMudar }: SubProps) {
+ *  (tipo a null). Mudar de Tipo tira da escolha de Categorias qualquer
+ *  subcategoria que já lá estivesse e deixe de bater certo com a nova
+ *  direção (ver a nota TIPO RESTRINGE CATEGORIAS no topo do ficheiro) —
+ *  sem isto, uma categoria "escolhida" mas já invisível no seu próprio
+ *  seletor continuaria, silenciosamente, a filtrar a lista. */
+function ListaTipo({ filtros, aoMudar, arvore }: SubProps & { arvore: GrupoArvore[] }) {
   const atual = filtros.tipo ?? 'todos'
   const opcoes: { valor: 'todos' | 'entrada' | 'saida'; etiqueta: string }[] = [
     { valor: 'todos', etiqueta: 'Todos' },
     { valor: 'entrada', etiqueta: 'Entradas' },
     { valor: 'saida', etiqueta: 'Saídas' },
   ]
+
+  function escolher(valor: 'todos' | 'entrada' | 'saida') {
+    const novoTipo = valor === 'todos' ? null : valor
+    const categorias = novoTipo
+      ? filtros.categorias.filter((id) => direcaoDaCategoria(arvore, id) === novoTipo)
+      : filtros.categorias
+    aoMudar({ ...filtros, tipo: novoTipo, categorias })
+  }
 
   return (
     <div className={estilos.lista}>
@@ -364,14 +425,85 @@ function ListaTipo({ filtros, aoMudar }: SubProps) {
           key={opcao.valor}
           etiqueta={opcao.etiqueta}
           selecionada={atual === opcao.valor}
-          aoTocar={() =>
-            aoMudar({
-              ...filtros,
-              tipo: opcao.valor === 'todos' ? null : opcao.valor,
-            })
-          }
+          aoTocar={() => escolher(opcao.valor)}
         />
       ))}
+    </div>
+  )
+}
+
+/** CATEGORIAS — multi-escolha, como Contas, mas com um cabeçalho de grupo
+ *  antes da primeira subcategoria de cada grupo — a mesma ideia do
+ *  seletor de categoria no formulário de movimento (ver
+ *  MovimentoFormulario.tsx e a nota OPÇÕES AGRUPADAS em ListaDeOpcoes.tsx),
+ *  só que aqui em multi-escolha. Restringido pelo Tipo já escolhido (ver a
+ *  nota TIPO RESTRINGE CATEGORIAS no topo do ficheiro): com Tipo="Todos",
+ *  mostra os grupos das duas direções; caso contrário, só os da direção
+ *  escolhida — e é sobre essas opções VISÍVEIS que "Todas" e o colapso
+ *  automático (marcar tudo, uma a uma, volta a "Todas") se aplicam.
+ *
+ *  O CABEÇALHO DE CADA GRUPO é ele próprio tocável: marca ou desmarca de
+ *  uma vez todas as subcategorias desse grupo (fica em tinta de acento
+ *  quando estão todas marcadas), para não obrigar a marcar uma a uma um
+ *  grupo inteiro (ex.: as 8 subcategorias de Habitação). As subcategorias
+ *  continuam escolhíveis à parte, para quem quiser só algumas. */
+function ListaCategorias({ filtros, aoMudar, arvore }: SubProps & { arvore: GrupoArvore[] }) {
+  const gruposVisiveis = filtros.tipo ? arvore.filter((grupo) => grupo.direcao === filtros.tipo) : arvore
+  const todosOsIds = gruposVisiveis.flatMap((grupo) => grupo.subcategorias.map((sub) => sub.id))
+
+  function aplicar(proximas: string[]) {
+    const todas = todosOsIds.length > 0 && todosOsIds.every((id) => proximas.includes(id))
+    aoMudar({ ...filtros, categorias: todas ? [] : proximas })
+  }
+
+  function alternar(id: string) {
+    const escolhidas = filtros.categorias
+    aplicar(
+      escolhidas.includes(id) ? escolhidas.filter((outro) => outro !== id) : [...escolhidas, id],
+    )
+  }
+
+  function alternarGrupo(grupo: GrupoArvore) {
+    const idsGrupo = grupo.subcategorias.map((sub) => sub.id)
+    const grupoTodoMarcado = idsGrupo.length > 0 && idsGrupo.every((id) => filtros.categorias.includes(id))
+    const semEsteGrupo = filtros.categorias.filter((id) => !idsGrupo.includes(id))
+    aplicar(grupoTodoMarcado ? semEsteGrupo : [...semEsteGrupo, ...idsGrupo])
+  }
+
+  return (
+    <div className={estilos.lista}>
+      <LinhaOpcao
+        multi
+        etiqueta="Todas"
+        selecionada={filtros.categorias.length === 0}
+        aoTocar={() => aoMudar({ ...filtros, categorias: [] })}
+      />
+      {gruposVisiveis.map((grupo) => {
+        const idsGrupo = grupo.subcategorias.map((sub) => sub.id)
+        const grupoTodoMarcado = idsGrupo.length > 0 && idsGrupo.every((id) => filtros.categorias.includes(id))
+        return (
+          <Fragment key={grupo.id}>
+            <button
+              type="button"
+              className={estilos.cabecalhoGrupo}
+              aria-pressed={grupoTodoMarcado}
+              onClick={() => alternarGrupo(grupo)}
+            >
+              {grupo.nome}
+            </button>
+            {grupo.subcategorias.map((sub) => (
+              <LinhaOpcao
+                key={sub.id}
+                multi
+                etiqueta={sub.nome}
+                antes={<PontoCategoria nomeGrupo={grupo.nome} />}
+                selecionada={filtros.categorias.includes(sub.id)}
+                aoTocar={() => alternar(sub.id)}
+              />
+            ))}
+          </Fragment>
+        )
+      })}
     </div>
   )
 }

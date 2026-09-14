@@ -22,12 +22,13 @@ import { pedido } from './http'
  *     positivo — a conversão para um valor com sinal faz-se no próprio
  *     formulário, antes de chamar criarMovimento/editarMovimento.
  *   - "data" / created_at / updated_at são strings ISO.
- *   - Ainda sem "categoria" — ver a nota em app/models/movimento.py, no
- *     backend.
+ *   - "categoria_id" é sempre obrigatório — nunca "sem categoria" (ver a
+ *     nota CATEGORIA OBRIGATÓRIA em app/models/movimento.py, no backend).
  */
 export type Movimento = {
   id: string
   conta_id: string
+  categoria_id: string
   data: string
   descricao: string
   valor: string
@@ -39,6 +40,7 @@ export type Movimento = {
  *  / MovimentoEditar — a mesma forma nas duas, ao contrário de Conta). */
 export type MovimentoDados = {
   conta_id: string
+  categoria_id: string
   data: string
   descricao: string
   valor: string

@@ -16,9 +16,18 @@
  * automático; confirmar (Enter ou o "✓") chama "aoAdicionar(texto)".
  * O Escape no campo cancela a escrita (e faz "stopPropagation", para o
  * casco por fora não fechar).
+ *
+ * OPÇÕES AGRUPADAS. Quando uma opção traz "grupo" (ex.: o seletor de
+ * categoria, onde dezenas de subcategorias se repartem por vários grupos),
+ * aparece um cabeçalho não-tocável antes da primeira opção de cada grupo —
+ * como as secções da app Definições do iOS. As opções já vêm ordenadas de
+ * quem as passa (a API devolve-as alfabeticamente); esta lista só repara
+ * quando "grupo" muda de uma opção para a seguinte, nunca reordena nada.
+ * Uma lista sem nenhuma opção com "grupo" fica exactamente como antes,
+ * sem cabeçalhos.
  */
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 import { IconeCheck, IconeMais } from './icones'
 import estilos from './ListaDeOpcoes.module.css'
@@ -32,6 +41,10 @@ export type OpcaoLista = {
   // conta, para a identificar de relance. Opcional: moeda/banco/tipo não o
   // passam.
   avatar?: ReactNode
+  // O grupo a que esta opção pertence (ex.: o nome do grupo de uma
+  // subcategoria) — ver a nota OPÇÕES AGRUPADAS no topo do ficheiro.
+  // Opcional: a maioria dos seletores (moeda, conta, tipo) não agrupa.
+  grupo?: string
 }
 
 type Props = {
@@ -84,25 +97,34 @@ export function ListaDeOpcoes({
 
   return (
     <ul className={esbatido ? `${estilos.lista} ${estilos.esbatido}` : estilos.lista}>
-      {opcoes.map((opcao) => {
+      {opcoes.map((opcao, indice) => {
         const selecionada = opcao.valor === valor
+        // Cabeçalho de grupo: só quando "grupo" está presente e é
+        // diferente do da opção anterior (a primeira opção de um grupo
+        // sempre o mostra, porque não há "anterior" com esse valor).
+        const mostrarCabecalho = opcao.grupo !== undefined && opcao.grupo !== opcoes[indice - 1]?.grupo
         return (
-          <li key={opcao.valor}>
-            <button
-              type="button"
-              aria-current={selecionada ? 'true' : undefined}
-              className={
-                selecionada
-                  ? `${estilos.linha} ${estilos.linhaSelecionada}`
-                  : estilos.linha
-              }
-              onClick={() => aoEscolher(opcao.valor)}
-            >
-              {opcao.avatar && <span className={estilos.avatar}>{opcao.avatar}</span>}
-              <span className={estilos.rotulo}>{opcao.etiqueta}</span>
-              {selecionada && <IconeCheck tamanho={18} />}
-            </button>
-          </li>
+          <Fragment key={opcao.valor}>
+            {mostrarCabecalho && (
+              <li className={estilos.cabecalhoGrupo}>{opcao.grupo}</li>
+            )}
+            <li>
+              <button
+                type="button"
+                aria-current={selecionada ? 'true' : undefined}
+                className={
+                  selecionada
+                    ? `${estilos.linha} ${estilos.linhaSelecionada}`
+                    : estilos.linha
+                }
+                onClick={() => aoEscolher(opcao.valor)}
+              >
+                {opcao.avatar && <span className={estilos.avatar}>{opcao.avatar}</span>}
+                <span className={estilos.rotulo}>{opcao.etiqueta}</span>
+                {selecionada && <IconeCheck tamanho={18} />}
+              </button>
+            </li>
+          </Fragment>
         )
       })}
 

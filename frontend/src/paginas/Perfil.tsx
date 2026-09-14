@@ -14,11 +14,17 @@
  *   - IDENTIDADE: o avatar com a inicial, o nome e o email. Na falta de um
  *     campo de nome verdadeiro (o registo só recolhe o email), o "nome" é
  *     a parte do email antes do "@" — a mesma regra usada na navegação.
- *   - SECÇÕES: Conta, Segurança e Preferências. Cada uma é uma linha de
- *     uma lista ao estilo da lista de contas — um ícone à esquerda (num
- *     quadrado arredondado), o título, um subtítulo com o que lá vive, e
- *     um chevron ">". Tocar leva ao sub-ecrã (/perfil/conta, etc.), que
- *     por agora é só um marcador "Em breve".
+ *   - SECÇÕES: Conta, Segurança, Preferências — e Categorias. As três
+ *     primeiras são cada uma uma linha de uma lista ao estilo da lista de
+ *     contas — um ícone à esquerda (num quadrado arredondado), o título,
+ *     um subtítulo com o que lá vive, e um chevron ">". Tocar leva ao
+ *     sub-ecrã (/perfil/conta, etc.), que por agora é só um marcador "Em
+ *     breve". CATEGORIAS é a excepção: não é uma secção da navegação
+ *     principal (Início/Movimentos/Contas são entidades reais do dia a
+ *     dia; uma categoria é só uma classificação — ver a nota em
+ *     src/lib/seccoes.ts), mas é uma página REAL, já construída
+ *     (/categorias) — a linha leva lá directamente, não a um marcador "Em
+ *     breve".
  *   - TERMINAR SESSÃO: em baixo, isolado, num cartão de contorno vermelho
  *     — a mesma forma do "Eliminar conta" no fim do formulário de edição
  *     de uma conta. Fecha a sessão no servidor (POST /auth/logout, tratado
@@ -38,6 +44,7 @@ import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import {
   IconeAjustes,
   IconeCadeado,
+  IconeCategorias,
   IconeChevronDireita,
   IconePessoa,
 } from '../componentes/icones'
@@ -71,6 +78,15 @@ const SECCOES_PERFIL: SeccaoPerfil[] = [
     titulo: 'Preferências',
     subtitulo: 'Tema da aplicação',
     Icone: IconeAjustes,
+  },
+  {
+    // Ao contrário das três de cima, leva a uma página REAL — não a um
+    // marcador "Em breve" (ver a nota no topo do ficheiro sobre porque
+    // Categorias vive aqui e não na navegação principal).
+    para: '/categorias',
+    titulo: 'Categorias',
+    subtitulo: 'Grupos e subcategorias dos movimentos',
+    Icone: IconeCategorias,
   },
 ]
 

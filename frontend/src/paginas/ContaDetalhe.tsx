@@ -22,6 +22,12 @@
  * (barras cinzentas). Se o pedido falhar, uma mensagem e uma saída para a
  * lista de contas. O "‹" da barra está presente desde o início (o
  * <CabecalhoPagina> é sempre montado), por isso há sempre como voltar.
+ *
+ * <PaginaDeslizante>: em mobile, entra a deslizar da direita e sai a
+ * deslizar de volta para lá, ao estilo do "push"/"pop" do iOS — a mesma
+ * transição das secções do Perfil (ver a nota em PaginaDeslizante.tsx);
+ * em desktop não muda nada. O "aoRecuar" que recebe por render-prop
+ * passa-se directamente ao <CabecalhoPagina>.
  */
 
 import { useEffect, useState } from 'react'
@@ -32,6 +38,7 @@ import { Avatar } from '../componentes/Avatar'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { IconeGrafico, IconeLapis } from '../componentes/icones'
 import { LinkVoltar } from '../componentes/LinkVoltar'
+import { PaginaDeslizante } from '../componentes/PaginaDeslizante'
 import { obterConta, type Conta } from '../lib/contas'
 import { formatarData } from '../lib/datas'
 import { ErroApi } from '../lib/http'
@@ -90,96 +97,101 @@ export function ContaDetalhe() {
   const rotuloMoeda = conta ? etiquetaMoeda(conta.moeda) : ''
 
   return (
-    <div className={estilos.pagina}>
-      <LinkVoltar para="/contas">Contas</LinkVoltar>
+    <PaginaDeslizante>
+      {(aoRecuar) => (
+        <div>
+          <LinkVoltar para="/contas">Contas</LinkVoltar>
 
-      {/* Montado sempre — mesmo a carregar ou em erro — para o "‹" da barra
-          estar lá desde o início. O título e a acção só entram quando a
-          conta chega. */}
-      <CabecalhoPagina
-        titulo={conta?.nome ?? ''}
-        voltar="/contas"
-        acao={
-          conta ? (
-            <Link
-              to={`/contas/${conta.id}/editar`}
-              className={estilos.acaoIcone}
-              aria-label="Editar"
-            >
-              <IconeLapis tamanho={20} />
-            </Link>
-          ) : undefined
-        }
-      />
+          {/* Montado sempre — mesmo a carregar ou em erro — para o "‹" da
+              barra estar lá desde o início. O título e a acção só entram
+              quando a conta chega. */}
+          <CabecalhoPagina
+            titulo={conta?.nome ?? ''}
+            voltar="/contas"
+            aoRecuar={aoRecuar}
+            acao={
+              conta ? (
+                <Link
+                  to={`/contas/${conta.id}/editar`}
+                  className={estilos.acaoIcone}
+                  aria-label="Editar"
+                >
+                  <IconeLapis tamanho={20} />
+                </Link>
+              ) : undefined
+            }
+          />
 
-      {erro ? (
-        <div className={estilos.erroBloco}>
-          <p role="alert" className={estilos.nota}>
-            {erro}
-          </p>
-          <Link to="/contas" className={estilos.erroVoltar}>
-            Voltar às contas
-          </Link>
-        </div>
-      ) : !conta ? (
-        <Esqueleto />
-      ) : (
-        <>
-          {/* Bloco de identidade: monograma grande e, por baixo, a legenda
-              "SALDO ATUAL" a introduzir o saldo. */}
-          <div className={estilos.perfil}>
-            <Avatar nome={conta.banco || conta.nome} tamanho="xl" />
-            <span className={estilos.saldoRotulo}>Saldo atual</span>
-            <span
-              className={
-                negativo ? `${estilos.saldo} ${estilos.negativo}` : estilos.saldo
-              }
-            >
-              {formatarDinheiro(conta.saldo, conta.moeda)}
-            </span>
-          </div>
-
-          <section className={estilos.seccao}>
-            <h2 className={estilos.seccaoTitulo}>Detalhes</h2>
-            <dl className={estilos.lista}>
-              {conta.banco && (
-                <div className={estilos.par}>
-                  <dt>Banco</dt>
-                  <dd>{conta.banco}</dd>
-                </div>
-              )}
-              {conta.tipo && (
-                <div className={estilos.par}>
-                  <dt>Tipo de conta</dt>
-                  <dd>{conta.tipo}</dd>
-                </div>
-              )}
-              <div className={estilos.par}>
-                <dt>Moeda</dt>
-                <dd>{rotuloMoeda}</dd>
-              </div>
-              <div className={estilos.par}>
-                <dt>Início dos movimentos</dt>
-                <dd>{formatarData(conta.data_ancora)}</dd>
-              </div>
-              <div className={estilos.par}>
-                <dt>Saldo de início</dt>
-                <dd>{formatarDinheiro(conta.saldo_ancora, conta.moeda)}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <section className={estilos.seccao}>
-            <h2 className={estilos.seccaoTitulo}>Reconciliações</h2>
-            <div className={estilos.emBreve}>
-              <span className={estilos.emBreveIcone} aria-hidden="true">
-                <IconeGrafico tamanho={20} />
-              </span>
-              <p>As reconciliações de saldo desta conta vão aparecer aqui.</p>
+          {erro ? (
+            <div className={estilos.erroBloco}>
+              <p role="alert" className={estilos.nota}>
+                {erro}
+              </p>
+              <Link to="/contas" className={estilos.erroVoltar}>
+                Voltar às contas
+              </Link>
             </div>
-          </section>
-        </>
+          ) : !conta ? (
+            <Esqueleto />
+          ) : (
+            <>
+              {/* Bloco de identidade: monograma grande e, por baixo, a
+                  legenda "SALDO ATUAL" a introduzir o saldo. */}
+              <div className={estilos.perfil}>
+                <Avatar nome={conta.banco || conta.nome} tamanho="xl" />
+                <span className={estilos.saldoRotulo}>Saldo atual</span>
+                <span
+                  className={
+                    negativo ? `${estilos.saldo} ${estilos.negativo}` : estilos.saldo
+                  }
+                >
+                  {formatarDinheiro(conta.saldo, conta.moeda)}
+                </span>
+              </div>
+
+              <section className={estilos.seccao}>
+                <h2 className={estilos.seccaoTitulo}>Detalhes</h2>
+                <dl className={estilos.lista}>
+                  {conta.banco && (
+                    <div className={estilos.par}>
+                      <dt>Banco</dt>
+                      <dd>{conta.banco}</dd>
+                    </div>
+                  )}
+                  {conta.tipo && (
+                    <div className={estilos.par}>
+                      <dt>Tipo de conta</dt>
+                      <dd>{conta.tipo}</dd>
+                    </div>
+                  )}
+                  <div className={estilos.par}>
+                    <dt>Moeda</dt>
+                    <dd>{rotuloMoeda}</dd>
+                  </div>
+                  <div className={estilos.par}>
+                    <dt>Início dos movimentos</dt>
+                    <dd>{formatarData(conta.data_ancora)}</dd>
+                  </div>
+                  <div className={estilos.par}>
+                    <dt>Saldo de início</dt>
+                    <dd>{formatarDinheiro(conta.saldo_ancora, conta.moeda)}</dd>
+                  </div>
+                </dl>
+              </section>
+
+              <section className={estilos.seccao}>
+                <h2 className={estilos.seccaoTitulo}>Reconciliações</h2>
+                <div className={estilos.emBreve}>
+                  <span className={estilos.emBreveIcone} aria-hidden="true">
+                    <IconeGrafico tamanho={20} />
+                  </span>
+                  <p>As reconciliações de saldo desta conta vão aparecer aqui.</p>
+                </div>
+              </section>
+            </>
+          )}
+        </div>
       )}
-    </div>
+    </PaginaDeslizante>
   )
 }

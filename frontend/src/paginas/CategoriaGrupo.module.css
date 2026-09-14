@@ -1,0 +1,191 @@
+/*
+ * ESTILOS DO MODAL DE UM GRUPO DE CATEGORIAS
+ * =============================================
+ *
+ * A concha (fundo, cabeçalho, arrasto) vem toda do Folha.module.css — este
+ * ficheiro só trata do CORPO da folha: a largura do formulário (igual a
+ * ContaEditar/MovimentoEditar), a lista de subcategorias sem cartão com
+ * traço fino recuado, e o "⋯" do cabeçalho (ver a nota AÇÕES DO GRUPO em
+ * CategoriaGrupo.tsx). O modo de renomear em linha (o nome vira um campo
+ * de texto) usa a mesma forma do "Adicionar…" do ListaDeOpcoes (input +
+ * botão "✓" de acento).
+ */
+
+/* Constrange o conteúdo à largura habitual e centra-o no corpo da folha
+   (igual a ContaEditar/MovimentoEditar). */
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+/* "⋯" do cabeçalho — mesmo círculo branco com sombra usado nas outras
+   páginas (Contas, ContaDetalhe). Só um gatilho, não dois botões: com dois
+   ícones lado a lado nesta zona, o título deixava de ficar centrado (ver
+   a nota AÇÕES DO GRUPO em CategoriaGrupo.tsx). */
+.acaoIcone {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.acaoIcone:active {
+  background: var(--cor-superficie);
+}
+
+/* --- Lista de subcategorias --- */
+
+.lista {
+  margin: var(--espaco-3) calc(-1 * var(--espaco-4)) 0;
+}
+
+.linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  min-height: 3.5rem;
+  padding: var(--espaco-3) var(--espaco-4);
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  color: var(--cor-texto);
+}
+
+.lista > .linha + .linha {
+  position: relative;
+}
+
+.lista > .linha + .linha::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-4) + 40px + var(--espaco-3));
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.linhaNome {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--texto-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "⋯" de cada linha — mais discreto do que o do cabeçalho (sem fundo nem
+   sombra, só um alvo de toque). */
+.acaoIconeLinha {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  margin-right: calc(-1 * var(--espaco-2));
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--cor-texto-3);
+}
+
+.acaoIconeLinha:active {
+  background: var(--cor-superficie-2);
+}
+
+/* "Adicionar subcategoria" — em tom de acento, "+" à esquerda (como as
+   linhas de acção do ListaDeOpcoes). */
+.linhaAcao {
+  color: var(--cor-acento);
+  cursor: pointer;
+}
+
+.linhaAcao:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Modo de escrita — tanto "Adicionar subcategoria" como renomear em linha:
+   um campo de texto e um "✓" de acento a confirmar. */
+.linhaNova {
+  gap: var(--espaco-2);
+}
+
+.novoInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--cor-texto);
+}
+
+.novoInput::placeholder {
+  color: var(--cor-texto-3);
+}
+
+.novoConfirmar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.novoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+}
+
+/* --- Folha "Renomear grupo" --- */
+
+.botaoGuardar {
+  width: 100%;
+  margin-top: var(--espaco-4);
+  padding: var(--espaco-3);
+  border: none;
+  border-radius: var(--raio-md);
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font: inherit;
+  font-weight: 600;
+}
+
+.botaoGuardar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+}
+
+/* --- Folha "Para onde migram os movimentos?" --- */
+
+.migracao {
+  display: flex;
+  flex-direction: column;
+}
+
+.migracaoMensagem {
+  margin: 0 0 var(--espaco-3);
+  padding-bottom: var(--espaco-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}

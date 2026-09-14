@@ -15,23 +15,10 @@
  * Os títulos de secção seguem o estilo dos cabeçalhos de grupo da lista de
  * Contas (pequenos, em maiúsculas, esbatidos), agora com o traço por baixo.
  *
- * A página entra a DESLIZAR da direita, como um "push" do iOS — a mesma
- * curva do menu de navegação a ecrã inteiro. O invólucro .pagina do
- * LayoutApp tem "overflow-x: clip", por isso o deslocamento não faz
- * aparecer barra de scroll horizontal. Com "prefers-reduced-motion" o
- * index.css encurta a duração para ~0.
+ * A entrada/saída a deslizar (o "push"/"pop" do iOS, em mobile) já não é
+ * feita aqui — vem de fora, do <PaginaDeslizante> que envolve esta página
+ * (ver a nota em ContaDetalhe.tsx e em PaginaDeslizante.tsx).
  */
-
-.pagina {
-  animation: entrada 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-
-@keyframes entrada {
-  from {
-    opacity: 0;
-    transform: translateX(24px);
-  }
-}
 
 .nota {
   color: var(--cor-texto-2);

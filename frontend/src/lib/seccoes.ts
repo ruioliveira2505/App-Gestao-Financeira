@@ -6,6 +6,13 @@
  * Contas. É pura navegação — o mesmo conjunto de destinos que uma barra de
  * separadores nativa mostraria.
  *
+ * CATEGORIAS NÃO É UMA SECÇÃO: ao contrário de Contas e Movimentos —
+ * entidades REAIS do dia a dia financeiro —, uma categoria é uma
+ * classificação, uma ferramenta de organização, não uma coisa que exista
+ * por si. Vive antes como mais uma linha em /perfil (ver SECCOES_PERFIL,
+ * em Perfil.tsx), junto de Conta/Segurança/Preferências — alcançável, mas
+ * sem o mesmo estatuto das secções do dia a dia.
+ *
  * Está tudo aqui, num só sítio, para as várias navegações nunca
  * divergirem:
  *   - em DESKTOP, a barra lateral (BarraLateral) desenha um item por

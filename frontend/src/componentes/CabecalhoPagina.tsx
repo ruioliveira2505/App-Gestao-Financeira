@@ -24,6 +24,11 @@
  * topo, a página mostra o seu próprio <LinkVoltar> no conteúdo (que em
  * mobile fica escondido, para não duplicar o "‹" da barra).
  *
+ * "aoRecuar": só as páginas envolvidas em <PaginaDeslizante> a passam —
+ * atrasa a navegação do "‹" para dar tempo à animação de saída (ver a nota
+ * em PaginaDeslizante.tsx e em BarraTopoMobile.tsx). Sem ela, "‹" navega de
+ * imediato, como sempre.
+ *
  * "icone": desenha-se à esquerda do título, no cabeçalho do conteúdo
  * (desktop, ou páginas principais). Não vai para a barra de topo.
  */
@@ -40,21 +45,22 @@ type Props = {
   icone?: ReactNode
   acao?: ReactNode
   voltar?: string
+  aoRecuar?: (navegarDeFacto: () => void) => void
 }
 
-export function CabecalhoPagina({ titulo, subtitulo, icone, acao, voltar }: Props) {
+export function CabecalhoPagina({ titulo, subtitulo, icone, acao, voltar, aoRecuar }: Props) {
   const eMobile = useMediaQuery('(max-width: 768px)')
   const definir = useDefinirCabecalho()
 
   useEffect(() => {
     if (!definir) return
-    definir({ titulo, acao, voltar })
+    definir({ titulo, acao, voltar, aoRecuar })
     // "definir" é estável (ver cabecalhoContexto). "acao" entra nas
     // dependências porque muda dentro da mesma página — ex.: no detalhe de
     // uma conta, só existe depois de a conta carregar. Não há ciclo: este
     // componente só re-renderiza quando a sua página re-renderiza (não
     // consome o contexto que muda a cada "definir").
-  }, [definir, titulo, acao, voltar])
+  }, [definir, titulo, acao, voltar, aoRecuar])
 
   // Mobile dentro da moldura.
   if (eMobile && definir) {

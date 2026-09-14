@@ -34,12 +34,24 @@ const CONTA = {
 const MOVIMENTO = {
   id: 'm1',
   conta_id: 'c1',
+  categoria_id: 'sub3',
   data: '2026-02-10',
   descricao: 'Compras',
   valor: '-50.00',
   created_at: '2026-02-10T10:00:00Z',
   updated_at: '2026-02-10T10:00:00Z',
 }
+
+// Árvore mínima, com o "Outros" protegido dos dois lados — é para lá que
+// o formulário pré-preenche a categoria por omissão (ver categoriaRefugio,
+// src/lib/categorias.ts) sempre que se muda de Tipo para um lado sem
+// categoria escolhida; "sub3" é a categoria original do MOVIMENTO acima.
+const ARVORE = [
+  { id: 'g1', nome: 'Trabalho', direcao: 'entrada', subcategorias: [{ id: 'sub1', nome: 'Salário', protegida: false }] },
+  { id: 'g2', nome: 'Outras Entradas', direcao: 'entrada', subcategorias: [{ id: 'sub2', nome: 'Outros', protegida: true }] },
+  { id: 'g3', nome: 'Alimentação', direcao: 'saida', subcategorias: [{ id: 'sub3', nome: 'Supermercado', protegida: false }] },
+  { id: 'g4', nome: 'Outras Saídas', direcao: 'saida', subcategorias: [{ id: 'sub4', nome: 'Outros', protegida: true }] },
+]
 
 function usarBase(extra: HttpHandler[] = []) {
   servidorMsw.use(
@@ -50,6 +62,10 @@ function usarBase(extra: HttpHandler[] = []) {
 }
 
 function montar() {
+  // Registado aqui, não em usarBase: assim cobre também o teste que monta
+  // com o seu próprio servidorMsw.use (o de mobile, mais abaixo), sem
+  // precisar de o repetir lá.
+  servidorMsw.use(http.get('/api/categorias/arvore', () => HttpResponse.json(ARVORE)))
   return render(
     <MemoryRouter initialEntries={['/movimentos/m1/editar']}>
       <Routes>

@@ -30,21 +30,21 @@
  * poucos campos, todos já visíveis na própria linha, e nada mais para
  * "detalhar".
  *
- * FILTROS (contas, tipo, datas): vivem no URL (ver
+ * FILTROS (contas, tipo, categorias, datas): vivem no URL (ver
  * src/lib/filtrosMovimentos.ts), aplicam-se no cliente por agora, e toda a
  * interface deles é a folha do FiltroMovimentos. A página em si NÃO os
  * mostra — só um pontinho no funil avisa que há um subconjunto à vista.
  * Não se põe aqui uma contagem de resultados: mudaria a cada tecla e
  * fazia a barra de procura "saltar"; o caso sem resultados já tem a sua
- * própria mensagem. (Categorias: quando a fatia existir. Valor: precisa de
- * uma moeda base — as contas podem estar em moedas diferentes.)
+ * própria mensagem. (Falta o filtro de Valor: precisa de uma moeda base —
+ * as contas podem estar em moedas diferentes.)
  *
- * Cada linha mostra, à esquerda, um SÍMBOLO NEUTRO — uma seta na diagonal
- * em círculo cinzento, para cima-direita numa entrada e para baixo-esquerda
- * numa saída. É provisório: substitui o avatar da conta enquanto não há
- * categorização (ver a nota em app/models/movimento.py, no backend); quando
- * essa fatia chegar, passa a ícone/cor da categoria, sem mexer no resto da
- * linha.
+ * Cada linha mostra, à esquerda, um PONTO COLORIDO — a cor do GRUPO da
+ * categoria do movimento (PontoCategoria, tamanho "md"; ver a nota em
+ * src/componentes/PontoCategoria.tsx). Substitui o avatar da conta que
+ * esteve aqui antes das categorias existirem, e a seguir a esse — uma
+ * seta na diagonal, provisória — que existiu enquanto elas ainda não
+ * tinham cor nenhuma para mostrar.
  *
  * Por baixo do valor de cada movimento, o SALDO DA CONTA logo a seguir a
  * esse movimento (calculado no cliente — ver calcularSaldosApos, mais
@@ -63,8 +63,10 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { CampoPesquisa } from '../componentes/CampoPesquisa'
 import { FiltroMovimentos } from '../componentes/FiltroMovimentos'
-import { IconeMais, IconeSetaDiagonal } from '../componentes/icones'
+import { IconeMais } from '../componentes/icones'
 import { LinkBotao } from '../componentes/LinkBotao'
+import { PontoCategoria } from '../componentes/PontoCategoria'
+import { obterArvoreCategorias, type GrupoArvore } from '../lib/categorias'
 import { listarContas, type Conta } from '../lib/contas'
 import { rotuloDiaRelativo } from '../lib/datas'
 import {
@@ -82,7 +84,21 @@ import estilos from './Movimentos.module.css'
 type Estado =
   | { fase: 'a-carregar' }
   | { fase: 'erro'; mensagem: string }
-  | { fase: 'pronto'; movimentos: Movimento[]; contas: Conta[] }
+  | { fase: 'pronto'; movimentos: Movimento[]; contas: Conta[]; arvore: GrupoArvore[] }
+
+/** O nome do grupo de cada subcategoria, a partir da árvore de categorias
+ *  — é o que dá a cor ao PontoCategoria de cada linha (a cor deriva do
+ *  nome do GRUPO, nunca da subcategoria, para as subcategorias do mesmo
+ *  grupo partilharem cor). */
+function nomeGrupoPorCategoria(arvore: GrupoArvore[]): Map<string, string> {
+  const mapa = new Map<string, string>()
+  for (const grupo of arvore) {
+    for (const sub of grupo.subcategorias) {
+      mapa.set(sub.id, grupo.nome)
+    }
+  }
+  return mapa
+}
 
 /** Ordena os movimentos por data descendente — a única ordem que esta
  *  página usa. A desempatar (vários movimentos no mesmo dia), created_at
@@ -180,37 +196,33 @@ function Esqueleto() {
   )
 }
 
-/** Uma linha da lista: um símbolo à esquerda — uma seta na diagonal em
- *  círculo cinzento, a apontar para cima-direita numa entrada e para
- *  baixo-esquerda numa saída —, a descrição (a negrito, âncora da linha)
- *  com o nome da conta por baixo, e à direita o valor (a cores: verde
- *  entrada, vermelho saída) com o saldo remanescente da conta por baixo.
- *  Tocar leva direto à folha de editar — sem chevron, a linha inteira é
- *  tocável, tal como em Contas.
+/** Uma linha da lista: um ponto colorido à esquerda (a cor do grupo da
+ *  categoria — PontoCategoria, tamanho "md"), a descrição (a negrito,
+ *  âncora da linha) com o nome da conta por baixo, e à direita o valor (a
+ *  cores: verde entrada, vermelho saída) com o saldo remanescente da
+ *  conta por baixo. Tocar leva direto à folha de editar — sem chevron, a
+ *  linha inteira é tocável, tal como em Contas.
  *
- *  O símbolo é neutro e provisório: substitui o avatar da conta enquanto
- *  não há categorias (quando essa fatia existir, passa a ícone/cor da
- *  categoria). A direção da seta dá uma leitura de relance de entrada/saída
- *  sem depender só da cor do valor. */
+ *  "nomeGrupo" pode faltar só num caso raro: um movimento cuja categoria
+ *  foi entretanto eliminada sem migração (não deveria acontecer, ver
+ *  DELETE /categorias no backend — mas um valor de recurso evita que a
+ *  linha fique sem símbolo nenhum caso aconteça). */
 function LinhaMovimento({
   movimento,
   conta,
+  nomeGrupo,
   saldoApos,
 }: {
   movimento: Movimento
   conta: Conta | undefined
+  nomeGrupo: string | undefined
   saldoApos: number | undefined
 }) {
   const entrada = Number(movimento.valor) >= 0
 
   return (
     <Link to={`/movimentos/${movimento.id}/editar`} className={estilos.linha}>
-      <span
-        className={entrada ? estilos.simbolo : `${estilos.simbolo} ${estilos.simboloSaida}`}
-        aria-hidden="true"
-      >
-        <IconeSetaDiagonal tamanho={18} />
-      </span>
+      <PontoCategoria nomeGrupo={nomeGrupo ?? 'Sem categoria'} tamanho="md" />
       <span className={estilos.linhaTexto}>
         <span className={estilos.linhaDescricao}>{movimento.descricao}</span>
         <span className={estilos.linhaConta}>{conta?.nome ?? 'Conta eliminada'}</span>
@@ -261,9 +273,9 @@ export function Movimentos() {
     // fica visível (sem esqueleto a piscar) até a nova chegar e a
     // substituir — só a primeira vez (estado ainda "a-carregar", vindo do
     // useState acima) é que se vê o esqueleto.
-    Promise.all([listarMovimentos(), listarContas()])
-      .then(([movimentos, contas]) => {
-        if (activo) setEstado({ fase: 'pronto', movimentos, contas })
+    Promise.all([listarMovimentos(), listarContas(), obterArvoreCategorias()])
+      .then(([movimentos, contas, arvore]) => {
+        if (activo) setEstado({ fase: 'pronto', movimentos, contas, arvore })
       })
       .catch((erro) => {
         if (!activo) return
@@ -283,6 +295,8 @@ export function Movimentos() {
   const contaPorId = new Map(contas.map((conta) => [conta.id, conta]))
   const saldosApos =
     estado.fase === 'pronto' ? calcularSaldosApos(estado.movimentos, estado.contas) : new Map()
+  const grupoPorCategoriaId =
+    estado.fase === 'pronto' ? nomeGrupoPorCategoria(estado.arvore) : new Map<string, string>()
 
   // Aplicar filtros → filtrar pela pesquisa → ordenar por data → agrupar.
   const resultados =
@@ -300,7 +314,12 @@ export function Movimentos() {
         acao={
           temMovimentos ? (
             <>
-              <FiltroMovimentos filtros={filtros} aoMudar={aoMudarFiltros} contas={contas} />
+              <FiltroMovimentos
+                filtros={filtros}
+                aoMudar={aoMudarFiltros}
+                contas={contas}
+                arvore={estado.fase === 'pronto' ? estado.arvore : []}
+              />
               <LinkBotao para="/movimentos/novo" apenasIcone titulo="Novo movimento">
                 <IconeMais tamanho={22} />
               </LinkBotao>
@@ -374,6 +393,7 @@ export function Movimentos() {
                         key={movimento.id}
                         movimento={movimento}
                         conta={contaPorId.get(movimento.conta_id)}
+                        nomeGrupo={grupoPorCategoriaId.get(movimento.categoria_id)}
                         saldoApos={saldosApos.get(movimento.id)}
                       />
                     ))}

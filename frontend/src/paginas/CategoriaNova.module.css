@@ -1,0 +1,64 @@
+/*
+ * ESTILOS DA ROTA "NOVO GRUPO"
+ * ============================
+ *
+ * A concha do modal vive em Folha.module.css. A ficha (cartão com
+ * contorno, linhas separadas por um traço fino) é a mesma forma de
+ * MovimentoFormulario.module.css — repetida aqui porque cada rota tem o
+ * seu próprio ficheiro de estilos.
+ */
+
+.formulario {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+.grupo {
+  padding: 0;
+  margin: 0;
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+.grupo > div {
+  padding-left: var(--espaco-4);
+  padding-right: var(--espaco-4);
+}
+
+.grupo > div + div {
+  position: relative;
+}
+
+.grupo > div + div::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--espaco-4);
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+.botaoConfirmar:disabled {
+  background: var(--cor-superficie-2);
+  color: var(--cor-texto-3);
+  cursor: not-allowed;
+}

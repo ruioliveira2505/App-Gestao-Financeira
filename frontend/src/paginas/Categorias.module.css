@@ -1,0 +1,118 @@
+/*
+ * ESTILOS DA PÁGINA CATEGORIAS
+ * ============================
+ *
+ * A mesma linguagem visual de Contas (lista a toda a largura, sem cartão,
+ * traço fino recuado) — aqui repartida em duas secções fixas (Entradas /
+ * Saídas), sem menu de ordenar/agrupar nem campo de procura.
+ */
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+.seccoes {
+  padding-top: var(--espaco-3);
+}
+
+.seccao {
+  margin-bottom: var(--espaco-6);
+}
+
+.seccao:last-child {
+  margin-bottom: 0;
+}
+
+.seccaoTitulo {
+  position: relative;
+  margin: 0 var(--espaco-2) var(--espaco-2);
+  padding-bottom: var(--espaco-1);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+/* --- Lista de grupos: sem cartão, linhas directas na página --- */
+
+.lista {
+  margin: 0 calc(-1 * var(--espaco-4));
+}
+
+.linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  padding: var(--espaco-3) var(--espaco-4);
+  background: none;
+  text-decoration: none;
+  color: var(--cor-texto);
+  transition: background-color 120ms ease-out;
+}
+
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .linha:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+/* Traço fino entre linhas, recuado para começar depois do ponto (40px,
+   igual ao PontoCategoria "md"). */
+.linha + .linha::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: calc(var(--espaco-4) + 40px + var(--espaco-3));
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.linhaNome {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--texto-base);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.linhaContagem {
+  flex-shrink: 0;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+.esqueleto {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqueletoPonto {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.esqueletoNome {
+  width: 45%;
+  height: 0.9rem;
+}

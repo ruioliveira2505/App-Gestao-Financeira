@@ -6,19 +6,32 @@
  *
  *   /registo             → ecrã de criação de conta     (público)
  *   /login               → ecrã de início de sessão     (público)
- *   /           (Início)     ┐
- *   /movimentos (Movimentos) │ as secções de navegação (SECCOES)
- *   /contas     (Contas)     ┘ área autenticada, dentro da moldura da app
+ *   /             (Início)     ┐ as secções de navegação (SECCOES) —
+ *   /movimentos   (Movimentos) │ área autenticada, dentro da moldura da
+ *   /contas       (Contas)     ┘ app. "Categorias" NÃO está aqui — é uma
+ *                                 classificação sobre estas entidades, não
+ *                                 uma entidade real como elas (ver a nota
+ *                                 em src/lib/seccoes.ts); alcança-se a
+ *                                 partir de /perfil.
  *   /movimentos/novo         ┐ criar e editar um movimento, cada um como
  *   /movimentos/:id/editar   ┘ folha sobre a lista (um movimento não tem
  *                              página de detalhe própria)
+ *   /categorias         → lista dos grupos, alcançada a partir de /perfil
+ *   /categorias/novo    → criar um GRUPO, como folha sobre a lista
+ *   /categorias/:grupoId → um grupo: as suas subcategorias e todas as
+ *                          ações (renomear, mover, eliminar), como folha
+ *                          sobre a lista, tal como "Novo grupo" — sem
+ *                          detalhe/edição separados nem página de detalhe
+ *                          própria (ver a nota em CategoriaGrupo.tsx)
  *   /perfil     (Perfil)     → a conta do utilizador: identidade, as
- *                              secções (Conta · Segurança · Preferências),
- *                              terminar sessão; alcançada pela zona de
- *                              perfil da navegação, não é uma secção
- *   /perfil/conta        ┐ sub-ecrãs de cada secção do perfil. Por agora
- *   /perfil/seguranca    │ são marcadores "Em breve" (PerfilSeccao);
- *   /perfil/preferencias ┘ ganham conteúdo próprio quando forem feitos
+ *                              secções (Conta · Segurança · Preferências ·
+ *                              Categorias), terminar sessão; alcançada
+ *                              pela zona de perfil da navegação, não é
+ *                              uma secção
+ *   /perfil/conta        ┐ sub-ecrãs de cada secção do perfil. Conta,
+ *   /perfil/seguranca    │ Segurança e Preferências são marcadores "Em
+ *   /perfil/preferencias ┘ breve" (PerfilSeccao); ganham conteúdo próprio
+ *                          quando forem feitos
  *   qualquer outro       → redireciona para /
  *
  * As rotas autenticadas são filhas de uma "rota de layout" sem caminho
@@ -32,6 +45,9 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { RotaProtegida } from './auth/RotaProtegida'
 import { LayoutApp } from './componentes/LayoutApp'
+import { Categorias } from './paginas/Categorias'
+import { CategoriaGrupo } from './paginas/CategoriaGrupo'
+import { CategoriaNova } from './paginas/CategoriaNova'
 import { Contas } from './paginas/Contas'
 import { ContaDetalhe } from './paginas/ContaDetalhe'
 import { ContaEditar } from './paginas/ContaEditar'
@@ -109,6 +125,31 @@ function App() {
             <>
               <ContaDetalhe />
               <ContaEditar />
+            </>
+          }
+        />
+        <Route path="/categorias" element={<Categorias />} />
+        {/* O "Novo grupo" é uma folha sobre a lista, tal como "Nova conta". */}
+        <Route
+          path="/categorias/novo"
+          element={
+            <>
+              <Categorias />
+              <CategoriaNova />
+            </>
+          }
+        />
+        {/* Um grupo abre como folha SOBRE a lista, tal como "Nova conta" e
+            "Novo movimento" (ver a nota em CategoriaGrupo.tsx) — não é uma
+            página de detalhe própria (ao contrário de ContaDetalhe). Um
+            grupo não tem detalhe e edição separados: a mesma folha trata
+            das duas coisas. */}
+        <Route
+          path="/categorias/:grupoId"
+          element={
+            <>
+              <Categorias />
+              <CategoriaGrupo />
             </>
           }
         />

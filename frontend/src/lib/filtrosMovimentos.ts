@@ -12,6 +12,7 @@
  * Parâmetros no URL:
  *   - tipo=entrada | saida                 (ausente = todos)
  *   - contas=<id>,<id>,…                   (ausente = todas)
+ *   - categorias=<id>,<id>,…               (ausente = todas; ids de SUBCATEGORIA)
  *   - de=<AAAA-MM-DD> & ate=<AAAA-MM-DD>   (ausentes = todo o período)
  *
  * Os atalhos de datas (últimos 7/30/90 dias, e "mês específico") são só
@@ -32,19 +33,28 @@ import type { Movimento } from './movimentos'
 export type Filtros = {
   tipo: 'entrada' | 'saida' | null
   contas: string[]
+  categorias: string[]
   de: string | null
   ate: string | null
 }
 
-export const FILTROS_VAZIOS: Filtros = { tipo: null, contas: [], de: null, ate: null }
+export const FILTROS_VAZIOS: Filtros = {
+  tipo: null,
+  contas: [],
+  categorias: [],
+  de: null,
+  ate: null,
+}
 
 /** Lê os filtros de uma query string. */
 export function lerFiltros(params: URLSearchParams): Filtros {
   const tipo = params.get('tipo')
   const contas = params.get('contas')
+  const categorias = params.get('categorias')
   return {
     tipo: tipo === 'entrada' || tipo === 'saida' ? tipo : null,
     contas: contas ? contas.split(',').filter(Boolean) : [],
+    categorias: categorias ? categorias.split(',').filter(Boolean) : [],
     de: params.get('de') || null,
     ate: params.get('ate') || null,
   }
@@ -56,6 +66,7 @@ export function escreverFiltros(filtros: Filtros): URLSearchParams {
   const params = new URLSearchParams()
   if (filtros.tipo) params.set('tipo', filtros.tipo)
   if (filtros.contas.length > 0) params.set('contas', filtros.contas.join(','))
+  if (filtros.categorias.length > 0) params.set('categorias', filtros.categorias.join(','))
   if (filtros.de) params.set('de', filtros.de)
   if (filtros.ate) params.set('ate', filtros.ate)
   return params
@@ -67,6 +78,7 @@ export function contarFiltrosAtivos(filtros: Filtros): number {
   let n = 0
   if (filtros.tipo) n += 1
   if (filtros.contas.length > 0) n += 1
+  if (filtros.categorias.length > 0) n += 1
   if (filtros.de || filtros.ate) n += 1
   return n
 }
@@ -75,11 +87,13 @@ export function contarFiltrosAtivos(filtros: Filtros): number {
  *  tratada à parte (é sempre visível, não vive na folha de filtros). */
 export function aplicarFiltros(movimentos: Movimento[], filtros: Filtros): Movimento[] {
   const contas = new Set(filtros.contas)
+  const categorias = new Set(filtros.categorias)
   return movimentos.filter((movimento) => {
     const valor = Number(movimento.valor)
     if (filtros.tipo === 'entrada' && valor < 0) return false
     if (filtros.tipo === 'saida' && valor >= 0) return false
     if (contas.size > 0 && !contas.has(movimento.conta_id)) return false
+    if (categorias.size > 0 && !categorias.has(movimento.categoria_id)) return false
     if (filtros.de && movimento.data < filtros.de) return false
     if (filtros.ate && movimento.data > filtros.ate) return false
     return true

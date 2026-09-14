@@ -32,7 +32,22 @@ const CONTA = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
+// Árvore mínima, mas com o "Outros" protegido dos dois lados — é para lá
+// que o formulário pré-preenche a categoria por omissão (ver
+// categoriaRefugio, src/lib/categorias.ts); sem ele, o "✓" nunca ficaria
+// ativo nestes testes, que não escolhem categoria explicitamente.
+const ARVORE = [
+  { id: 'g1', nome: 'Trabalho', direcao: 'entrada', subcategorias: [{ id: 'sub1', nome: 'Salário', protegida: false }] },
+  { id: 'g2', nome: 'Outras Entradas', direcao: 'entrada', subcategorias: [{ id: 'sub2', nome: 'Outros', protegida: true }] },
+  { id: 'g3', nome: 'Alimentação', direcao: 'saida', subcategorias: [{ id: 'sub3', nome: 'Supermercado', protegida: false }] },
+  { id: 'g4', nome: 'Outras Saídas', direcao: 'saida', subcategorias: [{ id: 'sub4', nome: 'Outros', protegida: true }] },
+]
+
 function montar(entrada = '/movimentos/novo') {
+  // Registado aqui, não em cada teste: todo o carregamento do formulário
+  // precisa da árvore de categorias, tal como precisa das contas — mas só
+  // alguns testes têm razão para se preocupar com o SEU conteúdo.
+  servidorMsw.use(http.get('/api/categorias/arvore', () => HttpResponse.json(ARVORE)))
   return render(
     <MemoryRouter initialEntries={[entrada]}>
       <Routes>

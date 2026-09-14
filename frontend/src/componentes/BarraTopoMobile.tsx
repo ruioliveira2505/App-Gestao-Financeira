@@ -28,6 +28,12 @@
  * marca location.key como 'default' — é que usa o caminho fixo que a
  * página declarou no "voltar" (ex.: "/contas"), como recurso.
  *
+ * Se a página declarou um "aoRecuar" (ver CabecalhoContexto), a navegação
+ * decidida acima não acontece logo — é entregue a essa função, e é a
+ * própria página quem decide quando a chamar de facto (o caso de uso é
+ * PaginaDeslizante: anima a saída primeiro, só depois navega). Sem
+ * "aoRecuar", navega-se de imediato, como sempre.
+ *
  * Esta barra está SEMPRE visível (não se esconde ao rolar). O que se
  * recolhe ao rolar para baixo é o conteúdo de cada página — o título
  * grande e, na página de Contas, o campo de procura.
@@ -59,10 +65,21 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
     // navegação — ou seja, quando não houve navegação dentro da aplicação
     // e não há para onde recuar. Nesse caso vai para o caminho de recurso;
     // caso contrário, recua no histórico como faria o botão do sistema.
-    if (localizacao.key === 'default') {
-      navegar(cabecalho?.voltar as string)
+    const navegarDeFacto = () => {
+      if (localizacao.key === 'default') {
+        navegar(cabecalho?.voltar as string)
+      } else {
+        navegar(-1)
+      }
+    }
+
+    // Com "aoRecuar" a página quer controlar QUANDO a navegação acontece
+    // (normalmente: depois de uma animação de saída) — entrega-se-lhe a
+    // navegação já decidida, em vez de a fazer aqui e agora.
+    if (cabecalho?.aoRecuar) {
+      cabecalho.aoRecuar(navegarDeFacto)
     } else {
-      navegar(-1)
+      navegarDeFacto()
     }
   }
 

@@ -92,6 +92,16 @@ export function IconeContas(props: PropsIcone) {
   )
 }
 
+// Etiqueta — categorias.
+export function IconeCategorias(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M20.59 13.41 13 21l-9-9V4a1 1 0 0 1 1-1h8z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </Svg>
+  )
+}
+
 // Duas setas para a esquerda — "recolher" a barra lateral.
 export function IconeRecolher(props: PropsIcone) {
   return (
@@ -145,6 +155,20 @@ export function IconeLapis(props: PropsIcone) {
   )
 }
 
+// Três pontos na vertical — "mais opções", como IconeReticencias mas
+// disposto ao alto: usado onde já há um "⋯" horizontal com outro sentido
+// por perto (ex.: o cabeçalho de um grupo de categorias, ver
+// CategoriaGrupo.tsx), para os distinguir ao relance.
+export function IconeReticenciasVertical(props: PropsIcone) {
+  return (
+    <Svg {...props} traco={0}>
+      <circle cx="12" cy="5" r="1.6" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      <circle cx="12" cy="19" r="1.6" fill="currentColor" />
+    </Svg>
+  )
+}
+
 // Seta para a direita — indica que uma linha é clicável (leva a outra
 // página).
 export function IconeChevronDireita(props: PropsIcone) {
@@ -160,17 +184,6 @@ export function IconeChevronEsquerda(props: PropsIcone) {
   return (
     <Svg {...props}>
       <path d="m15 18-6-6 6-6" />
-    </Svg>
-  )
-}
-
-// Seta na diagonal, a apontar para cima-direita. Na lista de movimentos:
-// assim para uma ENTRADA (dinheiro a entrar) e rodada 180° (para
-// baixo-esquerda) para uma SAÍDA.
-export function IconeSetaDiagonal(props: PropsIcone) {
-  return (
-    <Svg {...props}>
-      <path d="M7 17 17 7M7 7h10v10" />
     </Svg>
   )
 }

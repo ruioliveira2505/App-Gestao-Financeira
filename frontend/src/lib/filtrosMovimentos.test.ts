@@ -38,6 +38,7 @@ function movimento(sobrepor: Partial<Movimento>): Movimento {
   return {
     id: 'm',
     conta_id: 'c1',
+    categoria_id: 'cat1',
     data: '2026-06-15',
     descricao: 'Teste',
     valor: '-10.00',
@@ -52,12 +53,14 @@ describe('lerFiltros / escreverFiltros', () => {
     const filtros = {
       tipo: 'saida' as const,
       contas: ['c1', 'c2'],
+      categorias: ['cat1', 'cat2'],
       de: '2026-01-01',
       ate: '2026-03-31',
     }
     const params = escreverFiltros(filtros)
     expect(params.get('tipo')).toBe('saida')
     expect(params.get('contas')).toBe('c1,c2')
+    expect(params.get('categorias')).toBe('cat1,cat2')
     expect(lerFiltros(params)).toEqual(filtros)
   })
 
@@ -86,10 +89,16 @@ describe('contarFiltrosAtivos', () => {
 
 describe('aplicarFiltros', () => {
   const movimentos = [
-    movimento({ id: 'a', conta_id: 'c1', valor: '50.00', data: '2026-02-10' }),
-    movimento({ id: 'b', conta_id: 'c2', valor: '-30.00', data: '2026-05-20' }),
-    movimento({ id: 'c', conta_id: 'c1', valor: '-8.00', data: '2026-08-01' }),
+    movimento({ id: 'a', conta_id: 'c1', categoria_id: 'cat1', valor: '50.00', data: '2026-02-10' }),
+    movimento({ id: 'b', conta_id: 'c2', categoria_id: 'cat2', valor: '-30.00', data: '2026-05-20' }),
+    movimento({ id: 'c', conta_id: 'c1', categoria_id: 'cat2', valor: '-8.00', data: '2026-08-01' }),
   ]
+
+  it('filtra por categoria (várias categorias = qualquer uma delas)', () => {
+    expect(
+      aplicarFiltros(movimentos, { ...FILTROS_VAZIOS, categorias: ['cat2'] }).map((m) => m.id),
+    ).toEqual(['b', 'c'])
+  })
 
   it('filtra por tipo (entrada = valor >= 0)', () => {
     expect(

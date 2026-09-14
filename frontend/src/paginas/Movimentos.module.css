@@ -101,25 +101,9 @@
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-/* Símbolo à esquerda de cada linha: uma seta na diagonal num círculo
-   cinzento (40px, igual ao avatar que estava aqui). Aponta para
-   cima-direita numa entrada; ".simboloSaida" roda-a 180° (baixo-esquerda)
-   numa saída. Neutro de propósito — o verde/vermelho vive no valor, à
-   direita; a seta só reforça a direção do movimento. */
-.simbolo {
-  flex-shrink: 0;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--cor-superficie);
-  color: var(--cor-texto-2);
-}
-
-.simboloSaida svg {
-  transform: rotate(180deg);
-}
+/* O símbolo à esquerda de cada linha é agora o componente partilhado
+   PontoCategoria (tamanho "md", 40px) — o seu estilo vive em
+   PontoCategoria.module.css, nada a definir aqui. */
 
 /* Coluna do meio: descrição (a âncora da linha, negrito) por cima, nome da
    conta (esbatido) por baixo. "min-width: 0" deixa as duas encurtar com
