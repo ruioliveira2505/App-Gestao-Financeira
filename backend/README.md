@@ -111,13 +111,13 @@ Movimentos — CRUD completo, testado, sempre em contas do utilizador autenticad
 - `GET /movimentos` — lista **global** (todas as contas do utilizador), por data mais recente primeiro; `?conta_id=` filtra para uma só.
 - `GET /movimentos/{id}` · `PATCH /movimentos/{id}` (pode mover o movimento para outra conta, ou recategorizá-lo) · `DELETE /movimentos/{id}`.
 
-Categorias — CRUD completo, testado, sempre no âmbito do utilizador autenticado. Uma só tabela, com `parent_id` auto-referencial (grupo → subcategoria, dois níveis); todo o utilizador novo nasce com uma árvore por omissão (18 grupos — 6 de entrada, organizados por origem do dinheiro; 12 de saída, organizados por área de vida, com quatro excepções por tipo de encargo financeiro: Seguros, Impostos e Encargos, Compra de Ativos, Transferências):
-- `GET /categorias/arvore` — todos os grupos do utilizador com as subcategorias aninhadas, por ordem alfabética.
-- `POST /categorias` — cria um grupo (com `direcao`) ou uma subcategoria (com `parent_id`, herda a `direcao` do grupo).
-- `PATCH /categorias/{id}` — renomeia; uma subcategoria pode também mover-se para outro grupo, sempre da mesma `direcao`.
-- `DELETE /categorias/{id}` — elimina um grupo (com as suas subcategorias, em cascata) ou uma subcategoria. Se algum movimento ficasse sem categoria com esta eliminação, o pedido tem de indicar `migrar_para_id` — nunca há uma reatribuição automática, nem um caminho para apagar movimentos.
+Categorias — CRUD completo, testado, sempre no âmbito do utilizador autenticado. Uma só tabela, com `parent_id` auto-referencial (grupo → subcategoria, dois níveis) e uma coluna `ordem` (a posição deliberada entre irmãos, atribuída pela semente por omissão — ver `app/services/categorias_seed.py` — nunca alfabética); todo o utilizador novo nasce com uma árvore por omissão (18 grupos — 6 de entrada, organizados por origem do dinheiro; 12 de saída, organizados por área de vida, com quatro excepções por tipo de encargo financeiro: Seguros, Impostos e Encargos, Compra de Ativos, Transferências):
+- `GET /categorias/arvore` — todos os grupos do utilizador com as subcategorias aninhadas, por `ordem` (não por nome).
+- `POST /categorias` — cria um grupo (com `direcao`) ou uma subcategoria (com `parent_id`, herda a `direcao` do grupo); entra sempre no fim dos seus irmãos (a maior `ordem` entre eles, mais um).
+- `PATCH /categorias/{id}` — renomeia; uma subcategoria pode também mover-se para outro grupo, sempre da mesma `direcao` (nesse caso, a `ordem` recalcula-se para o fim do grupo de destino; um simples renomear mantém a posição actual).
+- `DELETE /categorias/{id}` — elimina um grupo (com as suas subcategorias, em cascata) ou uma subcategoria. Se algum movimento ficasse sem categoria com esta eliminação, o pedido tem de indicar `migrar_para_id` — nunca há uma reatribuição automática, nem um caminho para apagar movimentos. Um grupo que teria, em cascata, uma subcategoria protegida é sempre recusado (400) — nunca se pode eliminar "Outras Entradas"/"Outras Saídas".
 - Duas subcategorias, uma por direção ("Outras Entradas"/"Outras Saídas" → "Outros"), são protegidas: nunca se editam nem se apagam — são o destino garantido de qualquer movimento sem categoria mais específica.
 
 Sessões expiradas — não se apagam sozinhas ao expirar (só um logout explícito remove uma sessão); `uv run python -m scripts.limpar_sessoes` (a partir desta pasta) apaga as que já passaram do prazo. Corre-se à mão por agora; mais tarde agenda-se por cron.
 
-O frontend de contas e de movimentos está feito (ver `../frontend/README.md`). O frontend de categorias é o passo seguinte; depois, a categorização automática de movimentos com um LLM.
+O frontend de contas, movimentos e categorias está feito (ver `../frontend/README.md`). A seguir: a categorização automática de movimentos com um LLM; e, mais tarde, a importação por Open Banking.

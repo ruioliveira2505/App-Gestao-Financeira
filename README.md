@@ -29,6 +29,8 @@ A segunda — os **movimentos** (entradas e saídas de dinheiro numa conta) — 
 - Backend: modelo, migração e endpoints CRUD; o saldo de cada conta passa a somar os movimentos reais (ver [`backend/README.md`](backend/README.md)).
 - Frontend: uma lista global tipo extrato (agrupada por dia, mais recente primeiro), com procura, filtros (conta, tipo, datas) e criar/editar/eliminar num modal (ver [`frontend/README.md`](frontend/README.md)).
 
-A terceira — as **categorias** (o "porquê" de um movimento) — tem o backend feito de ponta a ponta: uma árvore de dois níveis (grupo → subcategoria), semeada por omissão para cada utilizador novo, com CRUD completo e uma regra central — apagar uma categoria com movimentos associados exige indicar para onde migram, nunca automaticamente (ver [`backend/README.md`](backend/README.md)). O frontend é o passo seguinte.
+A terceira — as **categorias** (o "porquê" de um movimento) — está feita de ponta a ponta:
+- Backend: uma árvore de dois níveis (grupo → subcategoria), semeada por omissão para cada utilizador novo, com CRUD completo e uma regra central — apagar uma categoria com movimentos associados exige indicar para onde migram, nunca automaticamente (ver [`backend/README.md`](backend/README.md)).
+- Frontend: o seletor de categoria no formulário de movimento, o ponto colorido na linha da lista, a linha de filtro "Categorias", e a página `/categorias` para gerir a árvore — criar, renomear, mover e eliminar grupos e subcategorias (ver [`frontend/README.md`](frontend/README.md)).
 
-A seguir: o frontend de categorias; depois, a atribuição automática de categorias com um modelo de linguagem; e, mais tarde, a importação por **Open Banking** e o scroll infinito no histórico.
+A seguir: a atribuição automática de categorias com um modelo de linguagem; e, mais tarde, a importação por **Open Banking** e o scroll infinito no histórico.
