@@ -8,7 +8,26 @@ escolhida ter de existir, ser do utilizador e ter a direcao coerente com o
 sinal do valor), a lista global (todas as contas do utilizador, filtrável
 por conta_id), obter/editar/apagar um movimento, e o âmbito por utilizador
 (um movimento cuja conta não é sua é, para todos os efeitos, inexistente —
-404, nunca 403).
+404, nunca 403). E os dois endpoints EM LOTE (eliminar-em-lote,
+recategorizar-em-lote): atomicidade (um id inválido no meio do lote não
+deixa nada por fazer nem faz metade), âmbito por utilizador, e a regra da
+direcao no caso de recategorizar. E a PAGINAÇÃO POR CURSOR de
+GET /movimentos: o "limite" é respeitado, e o cursor ("antes_data" +
+"antes_criado_em" + "antes_id") continua exactamente a seguir ao último
+movimento da página anterior — sem saltar nem repetir nenhum, mesmo
+quando vários partilham a mesma data E o mesmo created_at (o que
+acontece sempre nestes testes: correm dentro de uma única transacção, e
+o Postgres fixa "now()" por transacção, não por instrução — daí "id" ser
+sempre o desempate final) —, e os filtros como parâmetros de query (tipo,
+contas, categorias, de/ate, pesquisa) — ver a nota PAGINAÇÃO POR CURSOR e
+FILTROS COMO PARÂMETROS em app/routers/movimentos.py — incluindo que o
+filtro continua a aplicar-se à SEGUNDA página de um cursor, não só à
+primeira, e que um id ou "tipo" inválidos dão 422, não 500. E o
+"saldo_apos" de cada movimento devolvido pela lista: reflecte sempre o
+saldo real e completo da conta nesse ponto do tempo, mesmo quando um
+filtro está a esconder outros movimentos dessa mesma conta, e nunca soma
+entre contas diferentes do mesmo utilizador — ver a nota SALDO
+REMANESCENTE, no mesmo ficheiro.
 """
 
 import pytest
@@ -319,6 +338,375 @@ async def test_listar_movimentos_nao_mostra_movimentos_de_outro_utilizador(clien
     assert resposta.json() == []
 
 
+# --- Paginação por cursor e filtros como parâmetros de query ---
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_respeita_o_limite(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    for i in range(3):
+        await cliente_autenticado.post(
+            "/movimentos",
+            json=_movimento_valido(
+                conta_id, categoria_id=categoria_id, descricao=f"M{i}", data=f"2026-02-0{i + 1}"
+            ),
+        )
+
+    resposta = await cliente_autenticado.get("/movimentos", params={"limite": 2})
+
+    assert resposta.status_code == 200
+    assert len(resposta.json()) == 2
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_o_cursor_continua_a_partir_do_ultimo(cliente_autenticado, db_session):
+    # Os três com a MESMA data — e, como todo este teste corre dentro de
+    # uma única transacção (ver tests/conftest.py), também com o MESMO
+    # "created_at" (o Postgres fixa "now()" ao início da transacção, não a
+    # cada instrução). Não há, por isso, uma ordem previsível entre eles
+    # a verificar (o desempate final, "id", é um UUID sem relação nenhuma
+    # com a ordem de criação) — o que importa testar é a INVARIANTE: o
+    # cursor nunca salta nem repete um movimento ao mudar de página.
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    ids_criados = set()
+    for i in range(3):
+        criado = await cliente_autenticado.post(
+            "/movimentos",
+            json=_movimento_valido(
+                conta_id, categoria_id=categoria_id, descricao=f"M{i}", data="2026-02-05"
+            ),
+        )
+        ids_criados.add(criado.json()["id"])
+
+    pagina1 = (await cliente_autenticado.get("/movimentos", params={"limite": 2})).json()
+    assert len(pagina1) == 2
+
+    ultimo = pagina1[-1]
+    pagina2 = (
+        await cliente_autenticado.get(
+            "/movimentos",
+            params={
+                "limite": 2,
+                "antes_data": ultimo["data"],
+                "antes_criado_em": ultimo["created_at"],
+                "antes_id": ultimo["id"],
+            },
+        )
+    ).json()
+    assert len(pagina2) == 1
+
+    ids_lidos = {m["id"] for m in pagina1} | {m["id"] for m in pagina2}
+    assert ids_lidos == ids_criados
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_filtra_por_tipo_via_query(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_entrada = await _categoria_id(db_session, "teste@example.com", "entrada")
+    categoria_saida = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_entrada, descricao="Salário", valor="1500.00"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_saida, descricao="Renda", valor="-750.00"
+        ),
+    )
+
+    resposta = await cliente_autenticado.get("/movimentos", params={"tipo": "entrada"})
+
+    assert resposta.status_code == 200
+    assert [m["descricao"] for m in resposta.json()] == ["Salário"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_filtra_por_contas_via_query(cliente_autenticado, db_session):
+    conta_a = await _criar_conta(cliente_autenticado, nome="Conta A")
+    conta_b = await _criar_conta(cliente_autenticado, nome="Conta B")
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_a, categoria_id=categoria_id, descricao="Da A")
+    )
+    await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_b, categoria_id=categoria_id, descricao="Da B")
+    )
+
+    resposta = await cliente_autenticado.get("/movimentos", params={"contas": conta_a})
+
+    assert resposta.status_code == 200
+    assert [m["descricao"] for m in resposta.json()] == ["Da A"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_filtra_por_categorias_via_query(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    categorias_saida = list(
+        (
+            await db_session.scalars(
+                select(Categoria).where(
+                    Categoria.user_id == utilizador.id,
+                    Categoria.direcao == "saida",
+                    Categoria.parent_id.is_not(None),
+                )
+            )
+        ).all()
+    )
+    categoria_a, categoria_b = categorias_saida[0], categorias_saida[1]
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(conta_id, categoria_id=str(categoria_a.id), descricao="A"),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(conta_id, categoria_id=str(categoria_b.id), descricao="B"),
+    )
+
+    resposta = await cliente_autenticado.get("/movimentos", params={"categorias": str(categoria_a.id)})
+
+    assert resposta.status_code == 200
+    assert [m["descricao"] for m in resposta.json()] == ["A"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_filtra_por_intervalo_de_datas(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(conta_id, categoria_id=categoria_id, descricao="Fora", data="2026-01-01"),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(conta_id, categoria_id=categoria_id, descricao="Dentro", data="2026-02-15"),
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/movimentos", params={"de": "2026-02-01", "ate": "2026-02-28"}
+    )
+
+    assert resposta.status_code == 200
+    assert [m["descricao"] for m in resposta.json()] == ["Dentro"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_pesquisa_por_descricao_ou_nome_da_conta(cliente_autenticado, db_session):
+    conta_a = await _criar_conta(cliente_autenticado, nome="Poupança")
+    conta_b = await _criar_conta(cliente_autenticado, nome="À ordem")
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_a, categoria_id=categoria_id, descricao="Compras")
+    )
+    await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_b, categoria_id=categoria_id, descricao="Renda")
+    )
+
+    por_descricao = await cliente_autenticado.get("/movimentos", params={"pesquisa": "compras"})
+    assert [m["descricao"] for m in por_descricao.json()] == ["Compras"]
+
+    por_nome_da_conta = await cliente_autenticado.get("/movimentos", params={"pesquisa": "poupança"})
+    assert [m["descricao"] for m in por_nome_da_conta.json()] == ["Compras"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_calcula_o_saldo_apos_cada_movimento(cliente_autenticado, db_session):
+    # CONTA_VALIDA tem saldo_ancora "1000.00". Um movimento mais antigo
+    # (-50, saída, 2026-02-01) seguido de um mais recente (+200, entrada,
+    # 2026-02-10): o saldo_apos de cada um é o saldo-âncora mais a soma de
+    # tudo o que aconteceu ATÉ ele, por ordem cronológica — não a ordem em
+    # que a lista os devolve (mais recente primeiro).
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_saida = await _categoria_id(db_session, "teste@example.com", "saida")
+    categoria_entrada = await _categoria_id(db_session, "teste@example.com", "entrada")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_saida, descricao="Mais antigo", data="2026-02-01", valor="-50.00"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_entrada, descricao="Mais recente", data="2026-02-10", valor="200.00"
+        ),
+    )
+
+    resposta = await cliente_autenticado.get("/movimentos")
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    # corpo[0] é o mais recente (+200): 1000 - 50 + 200 = 1150.00.
+    # corpo[1] é o mais antigo (-50): 1000 - 50 = 950.00.
+    assert corpo[0]["descricao"] == "Mais recente"
+    assert corpo[0]["saldo_apos"] == "1150.00"
+    assert corpo[1]["descricao"] == "Mais antigo"
+    assert corpo[1]["saldo_apos"] == "950.00"
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_saldo_apos_ignora_os_filtros_da_listagem(cliente_autenticado, db_session):
+    # Um filtro (aqui, por categoria) esconde o movimento mais antigo da
+    # RESPOSTA, mas o saldo_apos do movimento que fica continua a contar
+    # com ele — o saldo remanescente reflecte o histórico completo da
+    # conta, não só o que está a ser mostrado.
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_escondida = await _categoria_id(db_session, "teste@example.com", "saida")
+    categoria_visivel = await _categoria_id(db_session, "teste@example.com", "entrada")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_escondida, descricao="Escondido", data="2026-02-01", valor="-50.00"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_visivel, descricao="Visivel", data="2026-02-10", valor="200.00"
+        ),
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/movimentos", params={"categorias": categoria_visivel}
+    )
+
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert [m["descricao"] for m in corpo] == ["Visivel"]
+    # 1000 - 50 (escondido, mas ainda contabilizado) + 200 = 1150.00.
+    assert corpo[0]["saldo_apos"] == "1150.00"
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_saldo_apos_e_por_conta_nao_soma_entre_contas(cliente_autenticado, db_session):
+    # A função de janela particiona por conta_id (ver _saldo_apos_sq) — o
+    # saldo de uma conta nunca deve incluir movimentos de outra conta do
+    # mesmo utilizador, mesmo que ambas apareçam na mesma resposta.
+    conta_a = await _criar_conta(cliente_autenticado, nome="Conta A", saldo_ancora="1000.00")
+    conta_b = await _criar_conta(cliente_autenticado, nome="Conta B", saldo_ancora="500.00")
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_a, categoria_id=categoria_id, descricao="Da A", valor="-100.00", data="2026-02-01"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_b, categoria_id=categoria_id, descricao="Da B", valor="-50.00", data="2026-02-02"
+        ),
+    )
+
+    resposta = await cliente_autenticado.get("/movimentos")
+
+    assert resposta.status_code == 200
+    por_descricao = {m["descricao"]: m for m in resposta.json()}
+    # 1000 - 100 = 900 (só a conta A); 500 - 50 = 450 (só a conta B).
+    assert por_descricao["Da A"]["saldo_apos"] == "900.00"
+    assert por_descricao["Da B"]["saldo_apos"] == "450.00"
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_pagina_seguinte_continua_a_respeitar_o_filtro(cliente_autenticado, db_session):
+    # Um movimento de ENTRADA entre dois de SAÍDA (por data): se o filtro
+    # "tipo=saida" só se aplicasse à primeira página, esta entrada
+    # apareceria na segunda — é exactamente isso que este teste confirma
+    # que não acontece.
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_saida = await _categoria_id(db_session, "teste@example.com", "saida")
+    categoria_entrada = await _categoria_id(db_session, "teste@example.com", "entrada")
+    for descricao, data in [("S1", "2026-02-06"), ("S2", "2026-02-05")]:
+        await cliente_autenticado.post(
+            "/movimentos",
+            json=_movimento_valido(
+                conta_id, categoria_id=categoria_saida, descricao=descricao, data=data
+            ),
+        )
+    # Entre S2 (05) e S3 (03) por data — se o filtro escapasse à segunda
+    # página, esta entrada apareceria ali, entre as duas saídas.
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_entrada, descricao="E", data="2026-02-04", valor="10.00"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(conta_id, categoria_id=categoria_saida, descricao="S3", data="2026-02-03"),
+    )
+
+    pagina1 = (
+        await cliente_autenticado.get("/movimentos", params={"tipo": "saida", "limite": 2})
+    ).json()
+    assert [m["descricao"] for m in pagina1] == ["S1", "S2"]
+
+    ultimo = pagina1[-1]
+    pagina2 = (
+        await cliente_autenticado.get(
+            "/movimentos",
+            params={
+                "tipo": "saida",
+                "limite": 2,
+                "antes_data": ultimo["data"],
+                "antes_criado_em": ultimo["created_at"],
+                "antes_id": ultimo["id"],
+            },
+        )
+    ).json()
+
+    assert [m["descricao"] for m in pagina2] == ["S3"]
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_filtro_de_datas_inclui_os_extremos(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_id, descricao="No primeiro dia", data="2026-02-01"
+        ),
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json=_movimento_valido(
+            conta_id, categoria_id=categoria_id, descricao="No ultimo dia", data="2026-02-28"
+        ),
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/movimentos", params={"de": "2026-02-01", "ate": "2026-02-28"}
+    )
+
+    assert resposta.status_code == 200
+    descricoes = {m["descricao"] for m in resposta.json()}
+    assert descricoes == {"No primeiro dia", "No ultimo dia"}
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_com_id_invalido_em_contas_devolve_422(cliente_autenticado):
+    # "contas"/"categorias" chegam como texto livre (separado por
+    # vírgulas), não como uuid.UUID na assinatura da rota — por isso não
+    # ganham a validação automática do FastAPI; _uuids_de_csv tem de
+    # validar isto à mão (ver a nota no próprio ficheiro).
+    resposta = await cliente_autenticado.get("/movimentos", params={"contas": "nao-e-um-uuid"})
+
+    assert resposta.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_listar_movimentos_com_tipo_invalido_devolve_422(cliente_autenticado):
+    resposta = await cliente_autenticado.get("/movimentos", params={"tipo": "qualquer-coisa"})
+
+    assert resposta.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_obter_movimento_devolve_o_movimento(cliente_autenticado, db_session):
     conta_id = await _criar_conta(cliente_autenticado)
@@ -478,5 +866,194 @@ async def test_apagar_movimento_de_outro_utilizador_devolve_404(client, db_sessi
     await client.post("/auth/login", json=b)
 
     resposta = await client.delete(f"/movimentos/{movimento_id}")
+
+    assert resposta.status_code == 404
+
+
+# --- Em lote: eliminar-em-lote ---
+
+
+@pytest.mark.asyncio
+async def test_eliminar_movimentos_em_lote_remove_todos(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    ids = []
+    for descricao in ["A", "B", "C"]:
+        criado = await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id, descricao=descricao)
+        )
+        ids.append(criado.json()["id"])
+
+    resposta = await cliente_autenticado.post("/movimentos/eliminar-em-lote", json={"ids": ids})
+
+    assert resposta.status_code == 204
+    for movimento_id in ids:
+        assert (await cliente_autenticado.get(f"/movimentos/{movimento_id}")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_eliminar_movimentos_em_lote_e_atomico_se_um_id_nao_existir(cliente_autenticado, db_session):
+    # Um lote com um id que não existe (ou não é do utilizador) é
+    # recusado por inteiro — os válidos não podem ficar meio-eliminados.
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    criado = await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+    )
+    movimento_id = criado.json()["id"]
+
+    resposta = await cliente_autenticado.post(
+        "/movimentos/eliminar-em-lote",
+        json={"ids": [movimento_id, "00000000-0000-0000-0000-000000000000"]},
+    )
+
+    assert resposta.status_code == 404
+    # O movimento válido do lote continua lá — nada foi apagado.
+    assert (await cliente_autenticado.get(f"/movimentos/{movimento_id}")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_eliminar_movimentos_em_lote_com_movimento_de_outro_utilizador_devolve_404(client, db_session):
+    a = {"email": "a@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=a)
+    await client.post("/auth/login", json=a)
+    conta_a = await _criar_conta(client)
+    categoria_id = await _categoria_id(db_session, "a@example.com", "saida")
+    criado = await client.post(
+        "/movimentos", json=_movimento_valido(conta_a, categoria_id=categoria_id)
+    )
+    movimento_id = criado.json()["id"]
+
+    await client.post("/auth/logout")
+    b = {"email": "b@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=b)
+    await client.post("/auth/login", json=b)
+
+    resposta = await client.post("/movimentos/eliminar-em-lote", json={"ids": [movimento_id]})
+
+    assert resposta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_eliminar_movimentos_em_lote_com_lista_vazia_e_recusado(cliente_autenticado):
+    resposta = await cliente_autenticado.post("/movimentos/eliminar-em-lote", json={"ids": []})
+
+    assert resposta.status_code == 422
+
+
+# --- Em lote: recategorizar-em-lote ---
+
+
+@pytest.mark.asyncio
+async def test_recategorizar_movimentos_em_lote_muda_a_categoria_de_todos(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_a_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    ids = []
+    for descricao in ["A", "B"]:
+        criado = await cliente_autenticado.post(
+            "/movimentos",
+            json=_movimento_valido(conta_id, categoria_id=categoria_a_id, descricao=descricao),
+        )
+        ids.append(criado.json()["id"])
+
+    # Outra categoria de saída qualquer, diferente da primeira (a árvore
+    # semeada por omissão tem sempre mais do que uma — ver
+    # app/services/categorias_seed.py).
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    categoria_b = await db_session.scalar(
+        select(Categoria).where(
+            Categoria.user_id == utilizador.id,
+            Categoria.direcao == "saida",
+            Categoria.parent_id.is_not(None),
+            Categoria.id != categoria_a_id,
+        )
+    )
+
+    resposta = await cliente_autenticado.post(
+        "/movimentos/recategorizar-em-lote",
+        json={"ids": ids, "categoria_id": str(categoria_b.id)},
+    )
+
+    assert resposta.status_code == 204
+    for movimento_id in ids:
+        corpo = (await cliente_autenticado.get(f"/movimentos/{movimento_id}")).json()
+        assert corpo["categoria_id"] == str(categoria_b.id)
+
+
+@pytest.mark.asyncio
+async def test_recategorizar_movimentos_em_lote_com_direcao_errada_e_recusado(cliente_autenticado, db_session):
+    # Os movimentos são de saída (valor negativo); a categoria de destino
+    # é de entrada — incoerência que _validar_direcao tem de recusar.
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_saida_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    categoria_entrada_id = await _categoria_id(db_session, "teste@example.com", "entrada")
+    criado = await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_saida_id)
+    )
+    movimento_id = criado.json()["id"]
+
+    resposta = await cliente_autenticado.post(
+        "/movimentos/recategorizar-em-lote",
+        json={"ids": [movimento_id], "categoria_id": categoria_entrada_id},
+    )
+
+    assert resposta.status_code == 400
+    # Nada foi recategorizado.
+    corpo = (await cliente_autenticado.get(f"/movimentos/{movimento_id}")).json()
+    assert corpo["categoria_id"] == categoria_saida_id
+
+
+@pytest.mark.asyncio
+async def test_recategorizar_movimentos_em_lote_com_categoria_de_outro_utilizador_devolve_404(client, db_session):
+    a = {"email": "a@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=a)
+    await client.post("/auth/login", json=a)
+    conta_a = await _criar_conta(client)
+    categoria_a_id = await _categoria_id(db_session, "a@example.com", "saida")
+    criado = await client.post(
+        "/movimentos", json=_movimento_valido(conta_a, categoria_id=categoria_a_id)
+    )
+    movimento_id = criado.json()["id"]
+
+    await client.post("/auth/logout")
+    b = {"email": "b@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=b)
+    await client.post("/auth/login", json=b)
+    categoria_b_id = await _categoria_id(db_session, "b@example.com", "saida")
+
+    # De volta ao utilizador A, tenta recategorizar o SEU movimento para
+    # uma categoria do B — que não é sua.
+    await client.post("/auth/logout")
+    await client.post("/auth/login", json=a)
+    resposta = await client.post(
+        "/movimentos/recategorizar-em-lote",
+        json={"ids": [movimento_id], "categoria_id": categoria_b_id},
+    )
+
+    assert resposta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_recategorizar_movimentos_em_lote_com_movimento_de_outro_utilizador_devolve_404(client, db_session):
+    a = {"email": "a@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=a)
+    await client.post("/auth/login", json=a)
+    conta_a = await _criar_conta(client)
+    categoria_a_id = await _categoria_id(db_session, "a@example.com", "saida")
+    criado = await client.post(
+        "/movimentos", json=_movimento_valido(conta_a, categoria_id=categoria_a_id)
+    )
+    movimento_id = criado.json()["id"]
+
+    await client.post("/auth/logout")
+    b = {"email": "b@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=b)
+    await client.post("/auth/login", json=b)
+    categoria_b_id = await _categoria_id(db_session, "b@example.com", "saida")
+
+    resposta = await client.post(
+        "/movimentos/recategorizar-em-lote",
+        json={"ids": [movimento_id], "categoria_id": categoria_b_id},
+    )
 
     assert resposta.status_code == 404

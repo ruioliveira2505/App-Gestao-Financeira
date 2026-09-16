@@ -43,7 +43,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -55,6 +55,29 @@ class Movimento(Base):
     """Um movimento (entrada ou saída de dinheiro) associado a uma conta."""
 
     __tablename__ = "movimentos"
+
+    # Índice composto (conta_id, data, created_at, id): a mesma ordem que
+    # tanto a função de janela do saldo_apos (partição por conta_id,
+    # ordenada por data/created_at/id — app/routers/movimentos.py) como a
+    # paginação por cursor (ordenada pela mesma tripla, em sentido
+    # inverso) já usam. Sem este índice, o Postgres tem de ordenar as
+    # linhas do zero em cada pedido — o saldo_apos, em particular, corre
+    # em TODO o histórico do utilizador, em TODOS os pedidos à listagem,
+    # nunca filtrado (ver a nota "SALDO REMANESCENTE" nesse ficheiro).
+    # Declarado aqui (e não só na migração) para o modelo continuar a
+    # descrever fielmente o esquema real — sem isto, uma futura
+    # "alembic revision --autogenerate" veria este índice na base de
+    # dados, não o encontraria nos metadados do modelo, e propunha
+    # apagá-lo.
+    __table_args__ = (
+        Index(
+            "ix_movimentos_conta_id_data_created_at_id",
+            "conta_id",
+            "data",
+            "created_at",
+            "id",
+        ),
+    )
 
     # Chave primária. UUID, pela mesma razão das outras tabelas (users,
     # sessions, contas): um id sequencial expõe quantos movimentos existem
@@ -98,9 +121,9 @@ class Movimento(Base):
 
     # Categoria atribuída a este movimento — obrigatória, ver a nota
     # CATEGORIA OBRIGATÓRIA no topo do ficheiro. index=True pela mesma
-    # razão de conta_id: os filtros por categoria (a acrescentar no
-    # frontend) e as estatísticas agrupadas por categoria vão consultar
-    # por este campo.
+    # razão de conta_id: o filtro por categoria de GET /movimentos (o
+    # parâmetro "categorias", em app/routers/movimentos.py) e futuras
+    # estatísticas agrupadas por categoria vão consultar por este campo.
     #
     # Sem ondelete explícito (o que o Postgres chama NO ACTION): a base de
     # dados recusa apagar uma categoria enquanto este movimento ainda

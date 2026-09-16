@@ -24,6 +24,18 @@ Os campos são os mesmos na criação e na edição (ao contrário de Conta, uma
 edição de movimento pode mexer em tudo, incluindo mudar a conta a que
 pertence — "mover" o movimento) — por isso vivem numa única classe-base
 (_CamposMovimento), sem precisar de duas versões.
+
+EM LOTE (MovimentosEliminarEmLote / MovimentosRecategorizarEmLote): os
+dois pedidos do modo de seleção múltipla da lista de Movimentos (ver
+app/routers/movimentos.py) — "ids" nunca pode vir vazio (Field(min_length
+=1)): um pedido em lote sem nenhum id não corresponde a nenhuma seleção
+real, é quase de certeza um erro do cliente.
+
+"saldo_apos" (em MovimentoOut) só vem preenchido em GET /movimentos (a
+lista) — os outros endpoints (criar, editar, obter um só, eliminar) nunca
+o calculam, porque nada os usa para o mostrar; fica None nesses casos. Ver
+a nota SALDO REMANESCENTE em app/routers/movimentos.py para o porquê de
+ser o backend, e não o frontend, a calculá-lo.
 """
 
 import uuid
@@ -99,3 +111,27 @@ class MovimentoOut(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+
+    # Saldo da conta IMEDIATAMENTE APÓS este movimento (saldo de abertura da
+    # conta + soma de todos os movimentos até este, por ordem cronológica).
+    # Só GET /movimentos (a listagem) o calcula — ver a nota no topo deste
+    # ficheiro; nos restantes endpoints fica None.
+    saldo_apos: str | None = None
+
+
+class MovimentosEliminarEmLote(BaseModel):
+    """Dados recebidos no pedido de eliminação em lote (POST /movimentos/eliminar-em-lote)."""
+
+    ids: list[uuid.UUID] = Field(min_length=1)
+
+
+class MovimentosRecategorizarEmLote(BaseModel):
+    """Dados recebidos no pedido de recategorização em lote (POST /movimentos/recategorizar-em-lote)."""
+
+    ids: list[uuid.UUID] = Field(min_length=1)
+
+    # A categoria de destino — tem de pertencer ao utilizador autenticado
+    # e a sua direcao tem de ser coerente com o valor de CADA movimento do
+    # lote (verificado na rota, não aqui — tal como categoria_id em
+    # _CamposMovimento).
+    categoria_id: uuid.UUID
