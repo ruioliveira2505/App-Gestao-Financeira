@@ -61,6 +61,25 @@ async def test_login_com_sucesso_cria_sessao_associada_ao_utilizador(client, db_
 
 
 @pytest.mark.asyncio
+async def test_login_com_email_em_capitalizacao_diferente_da_do_registo_autentica(client):
+    # Registou-se com maiúsculas; entra com o mesmo email todo em
+    # minúsculas — tem de ser reconhecido como a mesma conta (ver a
+    # normalização em app/schemas/auth.py).
+    await client.post(
+        "/auth/registo",
+        json={"email": "Helena@Example.com", "password": "palavrapasse123"},
+    )
+
+    resposta = await client.post(
+        "/auth/login",
+        json={"email": "helena@example.com", "password": "palavrapasse123"},
+    )
+
+    assert resposta.status_code == 200
+    assert "session_token" in resposta.cookies
+
+
+@pytest.mark.asyncio
 async def test_login_com_password_incorreta_e_recusado(client):
     await client.post(
         "/auth/registo",

@@ -18,8 +18,9 @@ parent_id aponta para a própria tabela categorias, não para outra tabela.
 A aplicação só permite dois níveis (um grupo nunca é subcategoria de outra
 subcategoria); essa regra não está escrita aqui na base de dados — o tipo
 da coluna não impede, por si só, uma cadeia mais longa — e é antes
-verificada no código do serviço (app/services/categorias.py) sempre que
-uma categoria é criada ou movida.
+verificada no código dos endpoints (app/routers/categorias.py, em
+"criar_categoria" e "editar_categoria") sempre que uma categoria é criada
+ou movida.
 
 DIRECÇÃO (entrada ou saída): cada GRUPO tem de indicar se pertence às
 entradas ("entrada") ou às saídas ("saida"); uma subcategoria HERDA essa
@@ -102,7 +103,10 @@ class Categoria(Base):
     # Chave estrangeira para o dono da categoria. Cada utilizador tem a sua
     # própria árvore de categorias, semeada automaticamente no registo;
     # index=True porque toda e qualquer consulta a categorias filtra por
-    # este campo ("as categorias deste utilizador").
+    # este campo ("as categorias deste utilizador"). SEM "ondelete" — a
+    # mesma nota de "user_id" em conta.py: não há, por agora, nenhum
+    # endpoint que apague um User; quando existir, esta relação precisa de
+    # uma política explícita, não a ausência de uma.
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )

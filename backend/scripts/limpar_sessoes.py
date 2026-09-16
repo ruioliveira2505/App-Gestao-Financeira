@@ -3,9 +3,18 @@ SCRIPT: LIMPAR SESSÕES EXPIRADAS
 ====================================
 
 Apaga da base de dados todas as sessões (tabela "sessions") cujo prazo já
-passou. A explicação completa de porque isto é preciso vive em
-app/services/sessions.py — aqui é só o ponto de entrada para correr a
-partir da linha de comandos.
+passou. Cada login (app/routers/auth.py) cria uma linha nova nessa
+tabela; só um logout explícito a apaga. Uma sessão que simplesmente
+expira — os 30 minutos deslizantes (SESSION_DURATION, em
+app/core/sessions.py) passam sem uso, ou o browser fecha sem se clicar em
+"Terminar sessão" — fica na tabela PARA SEMPRE: nada mais a apaga
+sozinha. Não é uma falha de segurança (obter_utilizador_atual, em
+app/core/deps.py, já rejeita qualquer sessão cujo expires_at tenha
+passado, mesmo que a linha continue na tabela) — é só falta de limpeza:
+sem correr este script, a tabela cresce sem qualquer travão, para sempre.
+Este ficheiro é só o ponto de entrada para correr essa limpeza a partir
+da linha de comandos; a função em si (apagar_sessoes_expiradas) vive em
+app/services/sessions.py.
 
 USO
 ---

@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     encontrados.
     """
 
-    # Único campo desta configuração: o endereço completo de acesso à base
-    # de dados (por exemplo, "postgresql+asyncpg://utilizador:password@localhost:5432/nome_bd").
+    # O endereço completo de acesso à base de dados (por exemplo,
+    # "postgresql+asyncpg://utilizador:password@localhost:5432/nome_bd").
     # O "+asyncpg" indica ao SQLAlchemy qual o driver a usar para comunicar
     # com a PostgreSQL de forma assíncrona — sem este sufixo, a ligação
     # seria interpretada como síncrona, o que não corresponde ao que este

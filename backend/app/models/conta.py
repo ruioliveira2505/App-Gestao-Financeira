@@ -4,8 +4,8 @@ MODELO DA TABELA "contas"
 
 Representa uma conta que o utilizador acompanha na aplicação — uma conta
 bancária, um cartão, dinheiro em numerário, uma poupança. É a raiz do
-domínio financeiro: os movimentos (a acrescentar mais tarde) vão pertencer
-a uma conta.
+domínio financeiro: cada movimento (ver app/models/movimento.py — uma
+entrada ou saída de dinheiro, numa data) pertence sempre a uma conta.
 
 Conceito central — a ÂNCORA. A aplicação não conhece o histórico completo
 de uma conta; começa a acompanhá-la a partir de um certo ponto. Guarda-se
@@ -43,7 +43,13 @@ class Conta(Base):
     # Chave estrangeira para o dono da conta. A base de dados recusa uma
     # conta associada a um utilizador inexistente. index=True porque toda e
     # qualquer consulta a contas filtra por este campo ("as contas deste
-    # utilizador").
+    # utilizador"). SEM "ondelete" (ao contrário de "categoria_id", em
+    # movimento.py, ou "parent_id", em categoria.py, que usam CASCADE): não
+    # existe, por agora, nenhum endpoint que apague um User — quando
+    # existir ("eliminar conta de utilizador"), esta relação precisa de
+    # uma decisão explícita (CASCADE para apagar tudo o que é dele, ou
+    # RESTRICT para obrigar a confirmar/exportar primeiro), não o "sem
+    # política nenhuma" que isto é hoje.
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )

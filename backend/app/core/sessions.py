@@ -25,12 +25,13 @@ from datetime import timedelta
 
 # Duração da sessão desde o último pedido autenticado — uma "expiração
 # deslizante": em vez de a sessão expirar sempre num prazo fixo a partir do
-# login, cada pedido válido feito com ela renova expires_at para
-# datetime.now(UTC) + SESSION_DURATION (a partir do momento em que existir
-# essa renovação — ver a rota "quem sou eu" e as rotas protegidas que se
-# seguem a esta). Uma sessão sem qualquer pedido durante este período deixa
-# de ser válida, mesmo que o cookie continue a existir no browser; uma
-# sessão em uso activo nunca expira a meio dessa utilização.
+# login, cada pedido autenticado renova expires_at para
+# datetime.now(UTC) + SESSION_DURATION. Essa renovação é feita por
+# obter_utilizador_atual (app/core/deps.py) — a dependência usada por
+# TODAS as rotas protegidas, não só "quem sou eu" — sempre que a sessão
+# apresentada ainda é válida. Uma sessão sem qualquer pedido durante este
+# período deixa de ser válida, mesmo que o cookie continue a existir no
+# browser; uma sessão em uso activo nunca expira a meio dessa utilização.
 SESSION_DURATION = timedelta(minutes=30)
 
 

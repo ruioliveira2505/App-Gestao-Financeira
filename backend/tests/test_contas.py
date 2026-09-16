@@ -363,6 +363,52 @@ async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autent
 
 
 @pytest.mark.asyncio
+async def test_saldo_actual_com_varias_contas_nao_soma_entre_contas(cliente_autenticado, db_session):
+    # A soma agrupada de GET /contas (uma única consulta para todas as
+    # contas do utilizador, não uma por conta — ver _somas_de_movimentos)
+    # tem de atribuir cada movimento à SUA conta, nunca misturar entre
+    # elas.
+    conta_a_id = (
+        await cliente_autenticado.post(
+            "/contas", json={**CONTA_VALIDA, "nome": "Conta A", "saldo_ancora": "1000.00"}
+        )
+    ).json()["id"]
+    conta_b_id = (
+        await cliente_autenticado.post(
+            "/contas", json={**CONTA_VALIDA, "nome": "Conta B", "saldo_ancora": "500.00"}
+        )
+    ).json()["id"]
+    categoria_saida_id = await _categoria_id(db_session, "teste@example.com", "saida")
+
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={
+            "conta_id": conta_a_id,
+            "categoria_id": categoria_saida_id,
+            "data": "2026-02-01",
+            "descricao": "Da A",
+            "valor": "-100.00",
+        },
+    )
+    await cliente_autenticado.post(
+        "/movimentos",
+        json={
+            "conta_id": conta_b_id,
+            "categoria_id": categoria_saida_id,
+            "data": "2026-02-02",
+            "descricao": "Da B",
+            "valor": "-50.00",
+        },
+    )
+
+    contas = {c["id"]: c for c in (await cliente_autenticado.get("/contas")).json()}
+
+    # 1000 - 100 = 900 (só a conta A); 500 - 50 = 450 (só a conta B).
+    assert contas[conta_a_id]["saldo"] == "900.00"
+    assert contas[conta_b_id]["saldo"] == "450.00"
+
+
+@pytest.mark.asyncio
 async def test_editar_conta_recusa_mudar_moeda_com_movimentos(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")

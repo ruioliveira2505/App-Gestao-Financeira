@@ -20,8 +20,25 @@ import uuid
 # EmailStr é um tipo de texto que exige, automaticamente, um formato de
 # email válido (depende da biblioteca email-validator, instalada à parte).
 # Field permite acrescentar regras de validação a um campo, como o
-# comprimento mínimo usado abaixo, em "password".
-from pydantic import BaseModel, EmailStr, Field
+# comprimento mínimo usado abaixo, em "password". field_validator permite
+# acrescentar uma regra própria (aqui, normalizar o email) além do que
+# EmailStr já valida sozinho.
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def _normalizar_email(valor: str) -> str:
+    """
+    Tira espaços à volta e passa a minúsculas — para "Ana@Exemplo.com" e
+    "ana@exemplo.com" serem sempre o MESMO email, tanto ao registar como
+    ao entrar. Sem isto, dois registos com a mesma morada mas capitalização
+    diferente criariam duas contas distintas (a coluna "email" é única,
+    mas sensível a maiúsculas/minúsculas — ver app/models/user.py), e um
+    utilizador que digitasse o seu próprio email de forma diferente da que
+    usou ao registar-se via receberia sempre "Email ou password
+    incorretos", sem forma de perceber que a conta existe, só que sob
+    outra capitalização.
+    """
+    return valor.strip().lower()
 
 
 class UserRegisto(BaseModel):
@@ -29,7 +46,8 @@ class UserRegisto(BaseModel):
 
     # EmailStr, por si só, já rejeita um pedido em que este campo não
     # tenha a forma de um endereço de email (ex.: sem "@"), antes mesmo de
-    # o código do endpoint correr.
+    # o código do endpoint correr. A normalização (ver _normalizar_email)
+    # corre a seguir, já sobre um valor que se sabe ser um email válido.
     email: EmailStr
 
     # Field(min_length=8) exige, desde já, uma password com pelo menos
@@ -38,6 +56,8 @@ class UserRegisto(BaseModel):
     # o hash com Argon2id (que continua a acontecer), é só uma primeira
     # barreira contra passwords demasiado curtas.
     password: str = Field(min_length=8)
+
+    _normalizar = field_validator("email")(_normalizar_email)
 
 
 class UserLogin(BaseModel):
@@ -51,6 +71,8 @@ class UserLogin(BaseModel):
     # essa comparação já falha, sozinha, para qualquer password incorrecta,
     # seja qual for o motivo de estar errada.
     password: str
+
+    _normalizar = field_validator("email")(_normalizar_email)
 
 
 class UserPublico(BaseModel):

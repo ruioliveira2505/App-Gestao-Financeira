@@ -40,7 +40,20 @@ _DUAS_CASAS = Decimal("0.01")
 
 
 async def _soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
-    """Soma o "valor" (com sinal) de todos os movimentos de uma conta. 0 se não houver nenhum."""
+    """
+    Soma o "valor" (com sinal) de todos os movimentos de uma conta. 0 se
+    não houver nenhum.
+
+    SEM filtro por data aqui, mesmo sabendo que um movimento nunca pode
+    ser anterior à data-âncora da conta (ver app/models/conta.py): essa
+    regra já é imposta noutro sítio — _validar_data, em
+    app/routers/movimentos.py, chamada tanto ao criar como ao editar um
+    movimento, incluindo ao "mover" um movimento de uma conta para outra.
+    Como nenhum movimento anterior à âncora chega a existir na base de
+    dados, somar sem filtro de data dá exactamente o mesmo resultado que
+    somar só os posteriores à âncora — mas sem repetir aqui uma
+    verificação que já está garantida noutro lado.
+    """
     resultado = await db.execute(
         select(func.coalesce(func.sum(Movimento.valor), 0)).where(
             Movimento.conta_id == conta_id

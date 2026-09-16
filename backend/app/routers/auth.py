@@ -28,8 +28,12 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
 # select é a função do SQLAlchemy usada para construir consultas (o
 # equivalente ao SELECT em SQL), usada abaixo para procurar um utilizador
-# pelo email ou uma sessão pelo hash do seu token.
+# pelo email ou uma sessão pelo hash do seu token. IntegrityError é a
+# excepção que o SQLAlchemy levanta quando o Postgres recusa uma escrita
+# por violar uma restrição (aqui, a coluna "email" ser única) — ver a nota
+# em registar(), mais abaixo, sobre a corrida que só ela apanha.
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 # AsyncSession é o tipo da sessão de base de dados assíncrona — usado aqui
 # apenas como anotação de tipo, para o editor e para o FastAPI perceberem
@@ -77,6 +81,14 @@ async def registar(dados: UserRegisto, db: AsyncSession = Depends(get_db)) -> Us
     guardada assim); grava o utilizador com o hash da password. Se o email
     já estiver registado, devolve um erro 409 (Conflict) em vez de criar um
     segundo utilizador com o mesmo email.
+
+    O 409 sai de DOIS sítios: a verificação explícita logo a seguir (o
+    caso comum), e um "except" à volta do commit (mais abaixo) para o caso
+    RARO de dois registos com o mesmo email chegarem ao mesmo tempo — os
+    dois passam a verificação (nenhum viu ainda o outro), e só a restrição
+    UNIQUE da base de dados, no commit, apanha o segundo. Sem esse
+    "except", essa corrida daria um erro genérico 500 (IntegrityError não
+    tratada) em vez do 409 que esta rota promete sempre dar.
     """
     # "dados: UserRegisto" recebe e já vem validado — o FastAPI lê o corpo
     # do pedido (JSON), valida-o contra o schema UserRegisto (rejeitando
@@ -116,8 +128,25 @@ async def registar(dados: UserRegisto, db: AsyncSession = Depends(get_db)) -> Us
     # categorias — ficam na mesma transacção: se a segunda falhar a meio,
     # o commit não chega a acontecer e a primeira é desfeita também, em
     # vez de deixar um utilizador registado sem árvore de categorias.
+    #
+    # O "flush" está dentro de um "try": é AQUI, ao enviar o INSERT à base
+    # de dados, que a restrição UNIQUE da coluna "email" seria violada se
+    # dois registos com o mesmo email tivessem passado a verificação
+    # acima ao mesmo tempo (nenhum viu ainda o outro) — a corrida descrita
+    # no docstring desta rota. "rollback" desfaz o INSERT falhado antes de
+    # a sessão poder ser reutilizada; sem ele, a excepção que se segue
+    # deixaria a sessão de base de dados num estado inválido para
+    # qualquer pedido seguinte que a reutilizasse.
     db.add(novo_utilizador)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Já existe uma conta registada com este email.",
+        )
+
     await semear_categorias(db, novo_utilizador.id)
 
     # commit() é o que de facto grava tudo na base de dados de forma

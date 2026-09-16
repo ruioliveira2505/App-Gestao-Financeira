@@ -416,6 +416,40 @@ async def test_eliminar_categoria_com_migrar_para_id_igual_a_si_propria_e_recusa
 
 
 @pytest.mark.asyncio
+async def test_eliminar_categoria_sem_movimentos_ainda_valida_migrar_para_id(cliente_autenticado):
+    # "migrar_para_id" é sempre validado quando indicado — mesmo aqui, em
+    # que a categoria a eliminar não tem nenhum movimento a migrar (e o
+    # destino, portanto, nem chega a ser usado). Sem esta validação, um
+    # "migrar_para_id" de direcao errada seria aceite em silêncio só por,
+    # neste caso, não fazer falta nenhuma.
+    arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
+    origem_id = _subcategoria(_grupo(arvore, "Alimentação"), "Supermercado")["id"]
+    destino_entrada_id = _subcategoria(_grupo(arvore, "Trabalho"), "Salário")["id"]
+
+    resposta = await cliente_autenticado.delete(
+        f"/categorias/{origem_id}", params={"migrar_para_id": destino_entrada_id}
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_eliminar_categoria_com_migrar_para_id_malformado_devolve_422(cliente_autenticado):
+    # "migrar_para_id" é declarado como uuid.UUID na assinatura da rota —
+    # a validação automática do FastAPI/Pydantic já dá 422 sozinha; este
+    # teste é só a confirmação simétrica dos 422 análogos em
+    # tests/test_movimentos.py (ids inválidos em "contas"/"categorias").
+    arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
+    origem_id = _subcategoria(_grupo(arvore, "Alimentação"), "Supermercado")["id"]
+
+    resposta = await cliente_autenticado.delete(
+        f"/categorias/{origem_id}", params={"migrar_para_id": "nao-e-um-uuid"}
+    )
+
+    assert resposta.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_eliminar_grupo_apaga_as_subcategorias_em_cascata(cliente_autenticado):
     grupo_id = (
         await cliente_autenticado.post("/categorias", json={"nome": "Grupo Temporário", "direcao": "saida"})
@@ -469,5 +503,32 @@ async def test_eliminar_categoria_de_outro_utilizador_devolve_404(client):
     await client.post("/auth/login", json=b)
 
     resposta = await client.delete(f"/categorias/{categoria_a_id}")
+
+    assert resposta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_eliminar_categoria_com_migrar_para_id_de_outro_utilizador_e_recusado(client):
+    a = {"email": "a@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=a)
+    await client.post("/auth/login", json=a)
+    arvore_a = (await client.get("/categorias/arvore")).json()
+    origem_id = _subcategoria(_grupo(arvore_a, "Alimentação"), "Supermercado")["id"]
+    await _criar_conta_e_movimento(client, origem_id)
+
+    await client.post("/auth/logout")
+    b = {"email": "b@example.com", "password": "palavrapasse123"}
+    await client.post("/auth/registo", json=b)
+    await client.post("/auth/login", json=b)
+    arvore_b = (await client.get("/categorias/arvore")).json()
+    destino_b_id = _subcategoria(_grupo(arvore_b, "Alimentação"), "Supermercado")["id"]
+
+    # De volta ao utilizador A, tenta eliminar a SUA categoria migrando os
+    # movimentos para uma categoria do B — que não é sua.
+    await client.post("/auth/logout")
+    await client.post("/auth/login", json=a)
+    resposta = await client.delete(
+        f"/categorias/{origem_id}", params={"migrar_para_id": destino_b_id}
+    )
 
     assert resposta.status_code == 404

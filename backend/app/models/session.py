@@ -49,6 +49,12 @@ class UserSession(Base):
     # id existente na tabela "users" — a base de dados recusa o registo de
     # uma sessão associada a um utilizador inexistente. É a base de dados,
     # e não o código da aplicação, que garante esta integridade referencial.
+    # SEM "ondelete" — a mesma nota de "user_id" em conta.py/categoria.py:
+    # não há, por agora, nenhum endpoint que apague um User; quando
+    # existir, esta relação precisa de uma política explícita (aqui,
+    # CASCADE seria o mais natural — as sessões de um utilizador apagado
+    # não têm razão nenhuma para continuar a existir —, mas fica por
+    # decidir nessa altura, não hoje).
     user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
 
     # DateTime(timezone=True): a coluna regista também o fuso horário, e não

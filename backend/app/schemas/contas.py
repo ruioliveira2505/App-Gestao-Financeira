@@ -87,8 +87,10 @@ class ContaEditar(_CamposDescritivos):
     Dados recebidos no pedido de edição de uma conta (PATCH /contas/{id}).
 
     Só os campos descritivos — a edição nunca mexe na âncora (data_ancora,
-    saldo_ancora); para isso haverá um endpoint próprio, quando os
-    movimentos existirem.
+    saldo_ancora); mudar a âncora depois de já existirem movimentos exige
+    pensar no que acontece a esses movimentos (continuam a contar? a
+    partir de quando?), por isso fica de fora deste endpoint até haver um
+    desenho próprio para esse caso.
     """
 
 
@@ -104,9 +106,10 @@ class ContaOut(BaseModel):
 
     # Valores monetários como texto (ver a nota no topo do ficheiro).
     saldo_ancora: str
-    # Saldo actual da conta. Enquanto não existem movimentos, é igual ao
-    # saldo da âncora; quando os movimentos existirem, passa a
-    # saldo_ancora mais a soma dos movimentos até hoje.
+    # Saldo actual da conta: saldo_ancora mais a soma (com sinal) de todos
+    # os movimentos desta conta (ver app/routers/contas.py, _para_saida).
+    # Sem movimentos ainda, é igual ao saldo da âncora — a soma de zero
+    # movimentos é zero.
     saldo: str
 
     created_at: datetime

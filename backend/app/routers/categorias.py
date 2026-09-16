@@ -281,6 +281,13 @@ async def eliminar_categoria(
     recusado (409) em vez de escolher um destino sozinho — mesmo que fosse
     a categoria-refúgio, seria uma reatribuição que o utilizador nunca viu
     acontecer.
+
+    "migrar_para_id", se indicado, é sempre validado (pertence ao
+    utilizador, não é a própria categoria a desaparecer, tem a mesma
+    direcao) — mesmo quando a categoria a eliminar não tem NENHUM
+    movimento a migrar, e portanto o destino nem chega a ser usado: um
+    valor inválido nunca deve ser aceite em silêncio só porque, por
+    acaso, não fazia falta.
     """
     categoria = await obter_categoria_do_utilizador(db, utilizador, categoria_id)
     if categoria.protegida:
@@ -314,20 +321,13 @@ async def eliminar_categoria(
 
     ids_a_desaparecer = [categoria.id, *[sub.id for sub in subcategorias]]
 
-    n_movimentos = await db.scalar(
-        select(func.count()).select_from(Movimento).where(Movimento.categoria_id.in_(ids_a_desaparecer))
-    )
-
-    if n_movimentos > 0:
-        if migrar_para_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"{n_movimentos} movimento(s) usam esta categoria (ou uma das suas "
-                    "subcategorias). Indica para onde migrar em migrar_para_id antes de eliminar."
-                ),
-            )
-
+    # Validado sempre que indicado — mesmo que a categoria não venha a ter
+    # nenhum movimento para migrar (ver a nota "migrar_para_id" no
+    # docstring): um "migrar_para_id" alheio, inexistente, ou de direcao
+    # errada é sempre um erro do pedido, nunca algo a ignorar em silêncio
+    # só por acaso não fazer falta.
+    destino: Categoria | None = None
+    if migrar_para_id is not None:
         destino = await obter_categoria_do_utilizador(db, utilizador, migrar_para_id)
         if destino.id in ids_a_desaparecer:
             raise HTTPException(
@@ -338,6 +338,20 @@ async def eliminar_categoria(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="O destino da migração tem de ser da mesma direção (entrada ou saída).",
+            )
+
+    n_movimentos = await db.scalar(
+        select(func.count()).select_from(Movimento).where(Movimento.categoria_id.in_(ids_a_desaparecer))
+    )
+
+    if n_movimentos > 0:
+        if destino is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{n_movimentos} movimento(s) usam esta categoria (ou uma das suas "
+                    "subcategorias). Indica para onde migrar em migrar_para_id antes de eliminar."
+                ),
             )
 
         await db.execute(

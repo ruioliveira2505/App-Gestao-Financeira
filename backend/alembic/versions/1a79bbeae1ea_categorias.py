@@ -36,6 +36,17 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_categorias_parent_id'), 'categorias', ['parent_id'], unique=False)
     op.create_index(op.f('ix_categorias_user_id'), 'categorias', ['user_id'], unique=False)
+    # NOTA (não gerada pelo Alembic): esta coluna é acrescentada NOT NULL,
+    # sem "server_default", a uma tabela "movimentos" já existente (ver a
+    # migração anterior, 2e3a817e3a0f) — só é segura porque, nesta altura
+    # do projecto, essa tabela ainda não tinha NENHUMA linha (a tabela
+    # "categorias" ainda nem existia). Esta migração NUNCA deve ser
+    # reproduzida contra uma base de dados que já tenha movimentos
+    # gravados — falharia (Postgres não tem valor nenhum para preencher
+    # as linhas existentes). Se algum dia for preciso repetir esta cadeia
+    # de migrações contra dados reais, este passo tem de mudar para
+    # "nullable=True" + um preenchimento explícito + só depois
+    # "ALTER COLUMN ... SET NOT NULL".
     op.add_column('movimentos', sa.Column('categoria_id', sa.UUID(), nullable=False))
     op.create_index(op.f('ix_movimentos_categoria_id'), 'movimentos', ['categoria_id'], unique=False)
     op.create_foreign_key(None, 'movimentos', 'categorias', ['categoria_id'], ['id'])

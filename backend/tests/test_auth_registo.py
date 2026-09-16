@@ -51,6 +51,33 @@ async def test_registo_com_email_ja_existente_e_recusado(client):
 
 
 @pytest.mark.asyncio
+async def test_registo_normaliza_o_email_para_minusculas(client):
+    resposta = await client.post(
+        "/auth/registo",
+        json={"email": "  Diana@Exemplo.COM ", "password": "palavrapasse123"},
+    )
+
+    assert resposta.status_code == 201
+    assert resposta.json()["email"] == "diana@exemplo.com"
+
+
+@pytest.mark.asyncio
+async def test_registo_com_mesmo_email_em_capitalizacao_diferente_e_recusado(client):
+    # Sem a normalização (ver app/schemas/auth.py), isto criaria uma
+    # segunda conta em vez de ser recusado — "Eduardo@..." e "eduardo@..."
+    # têm de ser tratados como o MESMO email.
+    await client.post(
+        "/auth/registo", json={"email": "eduardo@example.com", "password": "palavrapasse123"}
+    )
+
+    resposta = await client.post(
+        "/auth/registo", json={"email": "Eduardo@Example.com", "password": "outrapasse123"}
+    )
+
+    assert resposta.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_registo_com_password_curta_e_recusado(client):
     resposta = await client.post(
         "/auth/registo",

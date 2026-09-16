@@ -14,9 +14,9 @@ a duas coisas específicas desta aplicação:
 
 2. Os modelos da aplicação (Base.metadata): é isto que permite ao comando
    "alembic revision --autogenerate" comparar o que os modelos Python
-   dizem que deveria existir (as tabelas users e sessions) com o que
-   realmente existe na base de dados, e gerar automaticamente o código
-   SQL da diferença.
+   dizem que deveria existir (as tabelas users, sessions, contas,
+   categorias e movimentos) com o que realmente existe na base de dados,
+   e gerar automaticamente o código SQL da diferença.
 
 Existe ainda uma particularidade técnica: a aplicação usa um motor
 assíncrono (SQLAlchemy com o driver asyncpg), mas o Alembic foi desenhado,

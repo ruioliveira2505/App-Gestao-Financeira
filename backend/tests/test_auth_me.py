@@ -9,6 +9,8 @@ renova a expiração dessa sessão (a expiração deslizante decidida para as
 sessões — ver app/core/sessions.py).
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import select
 
@@ -65,3 +67,34 @@ async def test_me_renova_a_expiracao_da_sessao(client, db_session):
     expiracao_apos_me = await expiracao_actual()
 
     assert expiracao_apos_me > expiracao_apos_login
+
+
+@pytest.mark.asyncio
+async def test_me_com_sessao_ja_expirada_e_recusado(client, db_session):
+    # Ao contrário de test_me_sem_sessao_e_recusado (sem cookie nenhum),
+    # este simula uma sessão que EXISTE na base de dados — cookie válido,
+    # linha em "sessions" real — mas cujo prazo já passou. É o outro ramo
+    # de obter_utilizador_atual (app/core/deps.py) que nenhum teste
+    # exercitava directamente: sem este, um erro de sinal na comparação
+    # de datas ("expires_at < agora" trocado por "&gt;", por exemplo)
+    # passaria despercebido por toda a suite.
+    await client.post(
+        "/auth/registo",
+        json={"email": "expirada@example.com", "password": "palavrapasse123"},
+    )
+    await client.post(
+        "/auth/login",
+        json={"email": "expirada@example.com", "password": "palavrapasse123"},
+    )
+    token = client.cookies.get("session_token")
+
+    resultado = await db_session.execute(
+        select(UserSession).where(UserSession.token_hash == hash_token(token))
+    )
+    sessao = resultado.scalar_one()
+    sessao.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    await db_session.commit()
+
+    resposta = await client.get("/auth/me")
+
+    assert resposta.status_code == 401

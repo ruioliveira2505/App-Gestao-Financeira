@@ -2,12 +2,14 @@
 SERVIÇO DE CATEGORIAS — VERIFICAÇÃO DE POSSE
 ================================================
 
-Uma única função, obter_categoria_do_utilizador, usada por app/routers/
-movimentos.py (para confirmar que a categoria escolhida ao criar ou editar
-um movimento pertence ao utilizador) e, mais tarde, por app/routers/
-categorias.py. Estar num sítio só evita duas cópias da mesma query — e da
-mesma regra de segurança — a divergirem com o tempo; é o mesmo padrão já
-usado em app/services/contas.py, para o mesmo efeito com contas.
+Uma única função, obter_categoria_do_utilizador, usada tanto por
+app/routers/movimentos.py (para confirmar que a categoria escolhida ao
+criar ou editar um movimento pertence ao utilizador) como por
+app/routers/categorias.py (para confirmar posse antes de editar, mover ou
+eliminar uma categoria). Estar num sítio só evita duas cópias da mesma
+query — e da mesma regra de segurança — a divergirem com o tempo; é o
+mesmo padrão já usado em app/services/contas.py, para o mesmo efeito com
+contas.
 """
 
 import uuid
