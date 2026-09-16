@@ -1,3 +1,9 @@
+/* Estilos de Avatar.tsx: um círculo colorido com a inicial de um nome
+   (ex.: a zona de perfil da barra lateral, o topo da página de Perfil).
+   A cor (".avatar[data-cor='N']", mais abaixo) é escolhida pelo próprio
+   componente a partir do nome, para a mesma pessoa ter sempre a mesma
+   cor. */
+
 .avatar {
   display: inline-flex;
   align-items: center;

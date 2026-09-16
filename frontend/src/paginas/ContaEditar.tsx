@@ -29,6 +29,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { CaixaErro } from '../componentes/CaixaErro'
 import { Confirmacao } from '../componentes/Confirmacao'
 import { ContaFormulario, type DadosConta } from '../componentes/ContaFormulario'
 import { ContextoFolha } from '../componentes/contextoFolha'
@@ -57,6 +58,13 @@ export function ContaEditar() {
   const [valido, setValido] = useState(false)
   const [aConfirmarEliminar, setAConfirmarEliminar] = useState(false)
   const [aEliminar, setAEliminar] = useState(false)
+  // Separado de "erro": esse é o erro de CARREGAR a conta, e um "return"
+  // antecipado troca a página inteira por essa mensagem (ver mais abaixo).
+  // Reutilizá-lo aqui para o erro de ELIMINAR faria o mesmo "return"
+  // disparar depois de uma eliminação falhada — perdendo o formulário
+  // inteiro só porque o pedido de eliminação falhou. Este mostra-se, em
+  // vez disso, junto ao próprio botão "Eliminar conta".
+  const [erroEliminar, setErroEliminar] = useState<string | null>(null)
 
   // Coordenação com a folha de um seletor (moeda/banco/tipo) aberto por
   // cima desta: enquanto é arrastado para baixo, "espelhoY" espelha o seu
@@ -121,10 +129,14 @@ export function ContaEditar() {
     try {
       await apagarConta(id)
       navegar('/contas')
-    } catch {
+    } catch (erroApanhado) {
       setAEliminar(false)
       setAConfirmarEliminar(false)
-      setErro('Não foi possível eliminar a conta.')
+      setErroEliminar(
+        erroApanhado instanceof ErroApi
+          ? erroApanhado.message
+          : 'Não foi possível eliminar a conta.',
+      )
     }
   }
 
@@ -178,11 +190,15 @@ export function ContaEditar() {
                 <button
                   type="button"
                   className={estilos.linhaEliminar}
-                  onClick={() => setAConfirmarEliminar(true)}
+                  onClick={() => {
+                    setErroEliminar(null)
+                    setAConfirmarEliminar(true)
+                  }}
                 >
                   Eliminar conta
                 </button>
               </div>
+              {erroEliminar !== null && <CaixaErro>{erroEliminar}</CaixaErro>}
             </div>
           )}
         </Folha>

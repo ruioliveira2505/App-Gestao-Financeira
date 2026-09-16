@@ -78,7 +78,9 @@ describe('Página Editar conta', () => {
     await screen.findByRole('dialog', { name: 'Editar conta' })
     await userEvent.click(screen.getByText(/Euro/))
     const painelMoeda = await screen.findByRole('dialog', { name: 'Moeda' })
-    const cabecalho = painelMoeda.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = painelMoeda.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })
@@ -172,5 +174,60 @@ describe('Página Editar conta', () => {
       screen.queryByRole('dialog', { name: 'Eliminar conta' }),
     ).not.toBeInTheDocument()
     expect(eliminou).toBe(false)
+  })
+
+  it('se o pedido da conta falhar, mostra o erro em vez do formulário', async () => {
+    servidorMsw.use(
+      http.get('/api/contas/c1', () =>
+        HttpResponse.json({ detail: 'Falha de rede.' }, { status: 500 }),
+      ),
+    )
+
+    montar()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falha de rede.')
+    expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument()
+  })
+
+  it('se guardar falhar, mostra o erro dentro do formulário (que continua aberto)', async () => {
+    servidorMsw.use(
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA)),
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.patch('/api/contas/c1', () =>
+        HttpResponse.json({ detail: 'Nome já usado noutra conta.' }, { status: 409 }),
+      ),
+    )
+
+    montar()
+    await screen.findByRole('dialog', { name: 'Editar conta' })
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
+
+    expect(await screen.findByText('Nome já usado noutra conta.')).toBeInTheDocument()
+    // O modal continua aberto — não houve navegação para o detalhe.
+    expect(screen.getByRole('dialog', { name: 'Editar conta' })).toBeInTheDocument()
+  })
+
+  it('se eliminar falhar, mostra o erro junto ao botão — sem perder o formulário', async () => {
+    // Regressão: o erro de eliminar reutilizava o mesmo estado do erro de
+    // CARREGAR a conta, e esse estado faz a página inteira dar lugar a uma
+    // mensagem — perdendo o formulário só porque a eliminação falhou.
+    servidorMsw.use(
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA)),
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.delete('/api/contas/c1', () =>
+        HttpResponse.json({ detail: 'A conta tem movimentos associados.' }, { status: 409 }),
+      ),
+    )
+
+    montar()
+    await userEvent.click(await screen.findByRole('button', { name: 'Eliminar conta' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'Eliminar conta' })
+    await userEvent.click(within(dialogo).getByRole('button', { name: 'Eliminar' }))
+
+    expect(await screen.findByText('A conta tem movimentos associados.')).toBeInTheDocument()
+    // O diálogo de confirmação fecha, mas o formulário de edição fica.
+    expect(screen.queryByRole('dialog', { name: 'Eliminar conta' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Editar conta' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument()
   })
 })

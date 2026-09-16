@@ -33,12 +33,16 @@ type Variante = 'primario' | 'secundario' | 'perigo'
 // propriedades válidas de um <button> (type, disabled, onClick, ...).
 // Herdamo-las todas e acrescentamos "children" (o conteúdo do botão), a
 // "variante" e a forma "apenasIcone".
+//
+// A união discriminada a seguir (em vez de "apenasIcone?: boolean;
+// titulo?: string" soltos) torna o "obrigatório" do comentário acima uma
+// regra que o TypeScript verifica sozinho: com "apenasIcone: true",
+// "titulo" passa a exigido — omiti-lo é um erro de compilação, não um
+// botão sem nome acessível descoberto só a usar a app a sério.
 type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode
   variante?: Variante
-  apenasIcone?: boolean
-  titulo?: string
-}
+} & ({ apenasIcone: true; titulo: string } | { apenasIcone?: false; titulo?: string })
 
 export function Botao({
   children,

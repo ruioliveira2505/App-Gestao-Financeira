@@ -29,6 +29,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { CaixaErro } from '../componentes/CaixaErro'
 import { Confirmacao } from '../componentes/Confirmacao'
 import { MovimentoFormulario, type DadosMovimento } from '../componentes/MovimentoFormulario'
 import { ContextoFolha } from '../componentes/contextoFolha'
@@ -56,6 +57,13 @@ export function MovimentoEditar() {
   const [valido, setValido] = useState(false)
   const [aConfirmarEliminar, setAConfirmarEliminar] = useState(false)
   const [aEliminar, setAEliminar] = useState(false)
+  // Separado de "erro": esse é o erro de CARREGAR o movimento, e um
+  // "return" antecipado troca a página inteira por essa mensagem (ver mais
+  // abaixo). Reutilizá-lo aqui para o erro de ELIMINAR faria o mesmo
+  // "return" disparar depois de uma eliminação falhada — perdendo o
+  // formulário inteiro só porque o pedido de eliminação falhou. Este
+  // mostra-se, em vez disso, junto ao próprio botão "Eliminar movimento".
+  const [erroEliminar, setErroEliminar] = useState<string | null>(null)
 
   // Coordenação com a folha do seletor de conta aberta por cima desta:
   // enquanto é arrastada para baixo, "espelhoY" espelha o deslocamento e
@@ -115,10 +123,14 @@ export function MovimentoEditar() {
     try {
       await apagarMovimento(id)
       navegar('/movimentos')
-    } catch {
+    } catch (erroApanhado) {
       setAEliminar(false)
       setAConfirmarEliminar(false)
-      setErro('Não foi possível eliminar o movimento.')
+      setErroEliminar(
+        erroApanhado instanceof ErroApi
+          ? erroApanhado.message
+          : 'Não foi possível eliminar o movimento.',
+      )
     }
   }
 
@@ -172,11 +184,15 @@ export function MovimentoEditar() {
                 <button
                   type="button"
                   className={estilos.linhaEliminar}
-                  onClick={() => setAConfirmarEliminar(true)}
+                  onClick={() => {
+                    setErroEliminar(null)
+                    setAConfirmarEliminar(true)
+                  }}
                 >
                   Eliminar movimento
                 </button>
               </div>
+              {erroEliminar !== null && <CaixaErro>{erroEliminar}</CaixaErro>}
             </div>
           )}
         </Folha>

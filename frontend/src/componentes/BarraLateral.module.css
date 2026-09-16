@@ -42,7 +42,11 @@
   height: var(--altura-barra-topo);
   display: flex;
   align-items: center;
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px), entre o logo e o nome da
+     app — a mesma distância entre ícone/texto próximos já usada em
+     BarraTopoMobile.module.css. O "padding" (espaço até à margem da
+     barra) não muda — é uma distância diferente, não relacionada. */
+  gap: var(--espaco-3);
   padding: 0 var(--espaco-2);
 }
 
@@ -87,7 +91,11 @@
 .gatilhoPerfil {
   display: flex;
   align-items: center;
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px), entre o avatar e o nome —
+     a mesma distância entre ícone/texto próximos já usada em
+     BarraTopoMobile.module.css. O "padding" à volta da linha inteira não
+     muda — é uma distância diferente, não relacionada. */
+  gap: var(--espaco-3);
   width: 100%;
   padding: var(--espaco-2);
   border: none;

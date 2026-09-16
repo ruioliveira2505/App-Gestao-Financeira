@@ -1,3 +1,8 @@
+/* Estilos de LinkVoltar.tsx: a ligação "‹ Voltar" mostrada no conteúdo,
+   em desktop, no topo de uma página de detalhe. Escondida em ecrã
+   estreito (ver a media query mais abaixo), porque aí a barra de topo já
+   mostra o seu próprio "‹" — duplicá-lo confundiria mais do que ajudaria. */
+
 .link {
   display: inline-block;
   margin-bottom: var(--espaco-4);

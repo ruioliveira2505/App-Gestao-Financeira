@@ -17,10 +17,10 @@
  *   - apenasIcone: quando verdadeiro, o botão fica redondo e do tamanho de
  *                 um ícone, sem espaço para texto. Nesse caso "children"
  *                 deve ser só um ícone.
- *   - titulo:     obrigatório na prática quando apenasIcone é verdadeiro —
- *                 dá o nome acessível (aria-label) e a dica ao passar o
- *                 rato (title), já que não há texto visível a nomear o
- *                 botão. Ignorado quando há texto.
+ *   - titulo:     obrigatório (o TypeScript exige-o) quando apenasIcone é
+ *                 verdadeiro — dá o nome acessível (aria-label) e a dica
+ *                 ao passar o rato (title), já que não há texto visível a
+ *                 nomear o botão. Ignorado quando há texto.
  */
 
 import type { ReactNode } from 'react'
@@ -31,13 +31,14 @@ import estilos from './Botao.module.css'
 
 type Variante = 'primario' | 'secundario' | 'perigo'
 
+// A união discriminada (em vez de "apenasIcone?: boolean; titulo?: string"
+// soltos) torna o "obrigatório na prática" do comentário acima uma regra
+// que o TypeScript verifica sozinho — ver a mesma nota em Botao.tsx.
 type Props = {
   para: string
   children: ReactNode
   variante?: Variante
-  apenasIcone?: boolean
-  titulo?: string
-}
+} & ({ apenasIcone: true; titulo: string } | { apenasIcone?: false; titulo?: string })
 
 export function LinkBotao({
   para,

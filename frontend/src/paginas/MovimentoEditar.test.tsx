@@ -40,6 +40,12 @@ const MOVIMENTO = {
   valor: '-50.00',
   created_at: '2026-02-10T10:00:00Z',
   updated_at: '2026-02-10T10:00:00Z',
+  // null como em qualquer endpoint que não seja a listagem (GET
+  // /movimentos/{id}, como aqui, nunca o calcula) — ver a nota em
+  // src/lib/movimentos.ts. Nem MovimentoEditar.tsx nem
+  // MovimentoFormulario.tsx o lêem; fica só para o mock reflectir
+  // fielmente a forma real da resposta da API.
+  saldo_apos: null,
 }
 
 // Árvore mínima, com o "Outros" protegido dos dois lados — é para lá que
@@ -186,12 +192,63 @@ describe('Página Editar movimento', () => {
     // o formulário obter a lista de contas.
     await userEvent.click(await screen.findByText('Conta à ordem'))
     const painel = await screen.findByRole('dialog', { name: 'Conta' })
-    const cabecalho = painel.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = painel.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })
     fireEvent.pointerUp(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })
 
     expect(await screen.findByText('lista de movimentos')).toBeInTheDocument()
+  })
+
+  it('se o pedido do movimento falhar, mostra o erro em vez do formulário', async () => {
+    servidorMsw.use(
+      http.get('/api/movimentos/m1', () =>
+        HttpResponse.json({ detail: 'Falha de rede.' }, { status: 500 }),
+      ),
+    )
+
+    montar()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falha de rede.')
+    expect(screen.queryByLabelText('Descrição')).not.toBeInTheDocument()
+  })
+
+  it('se guardar falhar, mostra o erro dentro do formulário (que continua aberto)', async () => {
+    usarBase([
+      http.patch('/api/movimentos/m1', () =>
+        HttpResponse.json({ detail: 'Conta não encontrada.' }, { status: 404 }),
+      ),
+    ])
+    montar()
+
+    await screen.findByLabelText('Descrição')
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }))
+
+    expect(await screen.findByText('Conta não encontrada.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Editar movimento' })).toBeInTheDocument()
+  })
+
+  it('se eliminar falhar, mostra o erro junto ao botão — sem perder o formulário', async () => {
+    // Regressão: o erro de eliminar reutilizava o mesmo estado do erro de
+    // CARREGAR o movimento, e esse estado faz a página inteira dar lugar a
+    // uma mensagem — perdendo o formulário só porque a eliminação falhou.
+    usarBase([
+      http.delete('/api/movimentos/m1', () =>
+        HttpResponse.json({ detail: 'Não foi possível eliminar.' }, { status: 500 }),
+      ),
+    ])
+    montar()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Eliminar movimento' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'Eliminar movimento' })
+    await userEvent.click(within(dialogo).getByRole('button', { name: 'Eliminar' }))
+
+    expect(await screen.findByText('Não foi possível eliminar.')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Eliminar movimento' })).not.toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Editar movimento' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Descrição')).toBeInTheDocument()
   })
 })

@@ -97,7 +97,9 @@ describe('PainelDeEscolha', () => {
     )
 
     const dialogo = screen.getByRole('dialog', { name: 'Moeda' })
-    const cabecalho = dialogo.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = dialogo.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientY: 320, pointerId: 1 })

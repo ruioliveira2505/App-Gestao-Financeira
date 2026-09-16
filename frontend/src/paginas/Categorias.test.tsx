@@ -80,4 +80,27 @@ describe('Página Categorias', () => {
       '/categorias/novo',
     )
   })
+
+  it('se o pedido da árvore falhar, mostra o erro em vez da lista', async () => {
+    // Não usa montar(): esse auxiliar regista sempre, por baixo, o seu
+    // próprio handler de SUCESSO para "/api/categorias/arvore" — como é
+    // chamado depois de qualquer "servidorMsw.use()" do próprio teste,
+    // ganharia sempre ao handler de falha registado aqui (ver o mesmo
+    // problema, já documentado, em MovimentoNovo.test.tsx).
+    servidorMsw.use(
+      http.get('/api/categorias/arvore', () =>
+        HttpResponse.json({ detail: 'Falha de rede.' }, { status: 500 }),
+      ),
+    )
+    render(
+      <MemoryRouter initialEntries={['/categorias']}>
+        <Routes>
+          <Route path="/categorias" element={<Categorias />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Falha de rede.')
+    expect(screen.queryByText('Trabalho')).not.toBeInTheDocument()
+  })
 })

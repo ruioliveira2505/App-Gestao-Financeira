@@ -126,8 +126,15 @@ export function MovimentoFormulario({
   // A árvore de categorias, para o seletor de categoria — "null" enquanto
   // ainda não chegou. Ao contrário das contas, nunca fica vazia na
   // prática (todo o utilizador nasce com a árvore semeada), por isso não
-  // há aqui um estado "sem categorias" próprio.
+  // há aqui um estado "sem categorias" próprio — só o de erro, abaixo.
   const [arvore, setArvore] = useState<GrupoArvore[] | null>(null)
+  // Um pedido falhado (rede, servidor) NUNCA se confunde com "chegaram e
+  // são mesmo zero" — sem esta distinção, um utilizador com contas de
+  // sobra que apanhasse um erro transitório via "Precisas de uma conta
+  // primeiro." (a mensagem de conta VAZIA), convidando-o a criar uma
+  // conta a mais que já tem.
+  const [erroContas, setErroContas] = useState<string | null>(null)
+  const [erroArvore, setErroArvore] = useState<string | null>(null)
 
   useEffect(() => {
     let activo = true
@@ -135,8 +142,14 @@ export function MovimentoFormulario({
       .then((lista) => {
         if (activo) setContas(lista)
       })
-      .catch(() => {
-        if (activo) setContas([])
+      .catch((erroApanhado) => {
+        if (!activo) return
+        setContas([])
+        setErroContas(
+          erroApanhado instanceof ErroApi
+            ? erroApanhado.message
+            : 'Não foi possível carregar as tuas contas.',
+        )
       })
     return () => {
       activo = false
@@ -149,8 +162,14 @@ export function MovimentoFormulario({
       .then((lista) => {
         if (activo) setArvore(lista)
       })
-      .catch(() => {
-        if (activo) setArvore([])
+      .catch((erroApanhado) => {
+        if (!activo) return
+        setArvore([])
+        setErroArvore(
+          erroApanhado instanceof ErroApi
+            ? erroApanhado.message
+            : 'Não foi possível carregar as categorias.',
+        )
       })
     return () => {
       activo = false
@@ -247,6 +266,19 @@ export function MovimentoFormulario({
   // refúgio por omissão).
   if (contas === null || arvore === null) return null
 
+  // Falhou o pedido das contas: NUNCA se mostra "Precisas de uma conta
+  // primeiro." aqui (essa mensagem é só para quando "contas" chegou e é
+  // mesmo uma lista vazia) — um erro de rede transitório não é o mesmo
+  // que "não tens contas", e diria a alguém com contas de sobra para
+  // criar mais uma, desnecessariamente.
+  if (erroContas !== null) {
+    return (
+      <div className={estilos.semContas}>
+        <CaixaErro>{erroContas}</CaixaErro>
+      </div>
+    )
+  }
+
   // Sem nenhuma conta: não há onde lançar o movimento. Em vez de um
   // formulário com um seletor vazio, pede-se para criar uma conta
   // primeiro — o mesmo convite que a página Movimentos já mostra quando
@@ -263,6 +295,12 @@ export function MovimentoFormulario({
 
   return (
     <Formulario id={idFormulario} aoSubmeter={submeter}>
+      {/* Falhou o pedido da árvore de categorias: ao contrário das
+          contas, isto não impede o resto do formulário de se usar — só
+          explica, em vez de deixar em silêncio, porque é que o campo de
+          Categoria está vazio e o "✓" nunca fica disponível
+          (categoriaEfetiva cai num refúgio que também não existe). */}
+      {erroArvore !== null && <CaixaErro>{erroArvore}</CaixaErro>}
       {/* Ordem: conta → tipo → categoria → descrição → data → valor.
           Segue-se a ordem natural do lançamento: primeiro a que conta
           pertence (é o que dá contexto a tudo o resto — a moeda do valor,

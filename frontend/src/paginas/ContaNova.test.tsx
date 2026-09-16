@@ -50,6 +50,24 @@ describe('Página Nova conta', () => {
     expect(corpoRecebido).toMatchObject({ nome: 'Revolut', saldo_ancora: '250.50' })
   })
 
+  it('se a criação falhar, mostra o erro do servidor e o modal continua aberto', async () => {
+    servidorMsw.use(
+      http.get('/api/contas', () => HttpResponse.json([])),
+      http.post('/api/contas', () =>
+        HttpResponse.json({ detail: 'Já existe uma conta com este nome.' }, { status: 409 }),
+      ),
+    )
+
+    montar()
+    await userEvent.type(screen.getByLabelText('Nome'), 'Revolut')
+    await userEvent.type(screen.getByLabelText('Saldo início'), '100')
+    await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
+
+    expect(await screen.findByText('Já existe uma conta com este nome.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Nova conta' })).toBeInTheDocument()
+    expect(screen.queryByText('lista de contas')).not.toBeInTheDocument()
+  })
+
   it('o "✓" só fica ativo com os campos obrigatórios preenchidos', async () => {
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
@@ -143,7 +161,9 @@ describe('Página Nova conta', () => {
 
     await userEvent.click(screen.getByText(/Euro/))
     const painel = await screen.findByRole('dialog', { name: 'Moeda' })
-    const cabecalho = painel.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = painel.firstElementChild?.firstElementChild as HTMLElement
 
     // Arrasto claramente horizontal (dx >> dy) para lá do limiar.
     fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
@@ -166,7 +186,9 @@ describe('Página Nova conta', () => {
 
     await userEvent.click(screen.getByText(/Euro/))
     const painel = await screen.findByRole('dialog', { name: 'Moeda' })
-    const cabecalho = painel.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = painel.firstElementChild?.firstElementChild as HTMLElement
 
     // Arrasto claramente vertical (dy >> dx) para lá do limiar.
     fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
@@ -196,7 +218,9 @@ describe('Página Nova conta', () => {
 
     const dialogo = await screen.findByRole('dialog', { name: 'Nova conta' })
     // O cabeçalho (a "pega" + a linha do título) é a zona de arrasto.
-    const cabecalho = dialogo.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = dialogo.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientY: 320, pointerId: 1 })
@@ -211,7 +235,9 @@ describe('Página Nova conta', () => {
     montar()
 
     const dialogo = await screen.findByRole('dialog', { name: 'Nova conta' })
-    const cabecalho = dialogo.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior", não
+    // directamente do "dialog" — ver a nota em Folha.module.css.
+    const cabecalho = dialogo.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientY: 130, pointerId: 1 })

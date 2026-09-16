@@ -115,6 +115,26 @@ describe('Página Novo movimento', () => {
     expect(corpoRecebido).toMatchObject({ valor: '1500.00' })
   })
 
+  it('se a criação falhar, mostra o erro do servidor e o modal continua aberto', async () => {
+    servidorMsw.use(
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.post('/api/movimentos', () =>
+        HttpResponse.json({ detail: 'Conta não encontrada.' }, { status: 404 }),
+      ),
+    )
+
+    montar()
+    await userEvent.click(await screen.findByText('Escolher conta'))
+    await userEvent.click(screen.getByText('Conta à ordem'))
+    await userEvent.type(screen.getByLabelText('Descrição'), 'Supermercado')
+    await userEvent.type(screen.getByLabelText(/Valor/), '10')
+    await userEvent.click(screen.getByRole('button', { name: 'Criar movimento' }))
+
+    expect(await screen.findByText('Conta não encontrada.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Novo movimento' })).toBeInTheDocument()
+    expect(screen.queryByText('lista de movimentos')).not.toBeInTheDocument()
+  })
+
   it('o "✓" só fica ativo com os campos obrigatórios preenchidos', async () => {
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([CONTA])))
     montar()
@@ -156,6 +176,49 @@ describe('Página Novo movimento', () => {
     expect(screen.queryByLabelText('Descrição')).not.toBeInTheDocument()
   })
 
+  it('se o pedido das contas falhar, mostra o erro — NUNCA "Precisas de uma conta primeiro"', async () => {
+    // Regressão: um pedido falhado (rede, servidor) era tratado
+    // exactamente como "chegou e é uma lista vazia" — um utilizador com
+    // contas de sobra via a mensagem de conta VAZIA, e era convidado a
+    // criar mais uma que já tem.
+    servidorMsw.use(
+      http.get('/api/contas', () =>
+        HttpResponse.json({ detail: 'Falha de rede.' }, { status: 500 }),
+      ),
+    )
+    montar()
+
+    expect(await screen.findByText('Falha de rede.')).toBeInTheDocument()
+    expect(screen.queryByText('Precisas de uma conta primeiro.')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Descrição')).not.toBeInTheDocument()
+  })
+
+  it('se o pedido da árvore de categorias falhar, mostra o erro dentro do formulário (que continua utilizável)', async () => {
+    servidorMsw.use(
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.get('/api/categorias/arvore', () =>
+        HttpResponse.json({ detail: 'Falha de rede.' }, { status: 500 }),
+      ),
+    )
+    // Não usa montar(): esse auxiliar regista sempre, por baixo, o seu
+    // próprio handler de SUCESSO para "/api/categorias/arvore" — como é
+    // chamado depois de qualquer "servidorMsw.use()" do próprio teste,
+    // ganharia sempre ao handler de falha registado aqui.
+    render(
+      <MemoryRouter initialEntries={['/movimentos/novo']}>
+        <Routes>
+          <Route path="/movimentos" element={<p>lista de movimentos</p>} />
+          <Route path="/movimentos/novo" element={<MovimentoNovo />} />
+        </Routes>
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByText('Falha de rede.')).toBeInTheDocument()
+    // Ao contrário do erro das contas: o resto do formulário continua lá
+    // (a conta já carregou, só a categoria é que falhou).
+    expect(screen.getByLabelText('Descrição')).toBeInTheDocument()
+  })
+
   it('em mobile, a conta escolhe-se num painel que entra da direita', async () => {
     definirEcraMobile(true)
     servidorMsw.use(
@@ -186,7 +249,11 @@ describe('Página Novo movimento', () => {
 
     await userEvent.click(await screen.findByText('Escolher conta'))
     const painel = await screen.findByRole('dialog', { name: 'Conta' })
-    const cabecalho = painel.firstElementChild as HTMLElement
+    // ".cabecalho" é o primeiro filho de ".painelInterior" (o invólucro
+    // que recorta aos cantos arredondados — ver a nota em
+    // Folha.module.css), não directamente de ".painel" (o próprio
+    // "dialog", que só tem esse invólucro como filho único).
+    const cabecalho = painel.firstElementChild?.firstElementChild as HTMLElement
 
     fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
     fireEvent.pointerMove(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })

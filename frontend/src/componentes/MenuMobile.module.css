@@ -67,7 +67,9 @@
   height: var(--altura-barra-topo);
   display: flex;
   align-items: center;
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px) — a mesma distância entre
+     ícones próximos já usada em BarraTopoMobile.module.css. */
+  gap: var(--espaco-3);
 }
 
 .zonaLateral {

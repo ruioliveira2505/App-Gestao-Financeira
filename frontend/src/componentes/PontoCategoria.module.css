@@ -1,3 +1,9 @@
+/* Estilos de PontoCategoria.tsx: um círculo colorido sem letra, usado
+   como marca de categoria (ex.: junto ao nome de uma categoria numa
+   linha de movimento, ou numa opção de seletor). Reaproveita a mesma
+   paleta de seis tons e a mesma escolha determinística de cor do Avatar
+   (Avatar.module.css) — o mesmo nome de grupo dá sempre a mesma cor. */
+
 .ponto {
   display: inline-block;
   flex-shrink: 0;

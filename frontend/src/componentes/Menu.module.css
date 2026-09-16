@@ -126,7 +126,11 @@
 .item {
   display: flex;
   align-items: center;
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px) — a mesma distância entre
+     ícone e texto já usada em BarraTopoMobile.module.css e nas linhas de
+     lista. O "padding" (mais abaixo) não muda — é uma distância
+     diferente, não relacionada. */
+  gap: var(--espaco-3);
   width: 100%;
   text-align: left;
 

@@ -48,6 +48,18 @@
  * movimento), excluindo o que está a ser eliminado. Só depois de escolher
  * é que a eliminação é repetida, agora com o destino.
  *
+ * ERROS DENTRO DA SUA FOLHA: quando uma ação é iniciada a partir de uma
+ * das folhas aninhadas desta página (Renomear grupo, Mover para, o
+ * seletor de migração), um erro do servidor não usa a caixa de erro
+ * partilhada da página principal ("erroAcao") — mostra-se DENTRO dessa
+ * própria folha (erroRenomearGrupo, erroMover, erroMigracao, cada um o
+ * seu próprio estado). A folha aninhada cobre visualmente a página por
+ * trás em telemóvel; um erro que só aparecesse lá em baixo, fora do que
+ * está à vista, nunca chegaria a ser visto. Só as ações SEM folha
+ * própria (renomear uma subcategoria, em linha; adicionar subcategoria;
+ * a confirmação inicial de eliminar) usam "erroAcao", que já está sempre
+ * visível na página.
+ *
  * COORDENAÇÃO DE ARRASTO (ContextoFolha) com as três folhas aninhadas
  * (Renomear grupo / Mover para / Migração): esta página fornece o
  * ContextoFolha, tal como "Editar conta"/"Editar movimento" o fornecem
@@ -112,6 +124,26 @@ type AlvoMigracao = AlvoEliminar & { mensagem: string }
 
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível concluir. Tenta novamente.'
 
+/** Esqueleto mostrado enquanto a árvore de categorias carrega — a mesma
+ *  forma (círculo + barra, a pulsar) do esqueleto de Categorias.tsx,
+ *  incluindo o "role=status": um leitor de ecrã que entre nesta folha
+ *  antes de a árvore chegar deve ouvir que algo está a carregar, tal como
+ *  já acontece nas outras páginas com este mesmo formato. */
+function Esqueleto() {
+  return (
+    <div className={estilos.esqueletoPagina} role="status" aria-label="A carregar categorias">
+      <div className={estilos.lista}>
+        {[0, 1, 2].map((indice) => (
+          <div key={indice} className={estilos.linha}>
+            <span className={`${estilos.esqueleto} ${estilos.esqueletoPonto}`} />
+            <span className={`${estilos.esqueleto} ${estilos.esqueletoNome}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function CategoriaGrupo() {
   const { grupoId } = useParams<{ grupoId: string }>()
   const navegar = useNavigate()
@@ -134,9 +166,9 @@ export function CategoriaGrupo() {
   const [textoRenomear, setTextoRenomear] = useState('')
   const [aGuardarRenomear, setAGuardarRenomear] = useState(false)
   // Erro do renomear do GRUPO especificamente — mostrado DENTRO da sua
-  // folha (ver a nota ERROS DENTRO DA SUA FOLHA, mais abaixo). O renomear
-  // de uma subcategoria é em linha, sem folha a tapar a página — usa o
-  // "erroAcao" partilhado, que já fica visível.
+  // folha (ver a nota ERROS DENTRO DA SUA FOLHA no topo do ficheiro). O
+  // renomear de uma subcategoria é em linha, sem folha a tapar a página —
+  // usa o "erroAcao" partilhado, que já fica visível.
   const [erroRenomearGrupo, setErroRenomearGrupo] = useState<string | null>(null)
 
   // Adicionar subcategoria — inline, no fundo da lista.
@@ -147,6 +179,11 @@ export function CategoriaGrupo() {
   // Mover uma subcategoria para outro grupo.
   const [alvoMover, setAlvoMover] = useState<{ id: string; nome: string } | null>(null)
   const [erroMover, setErroMover] = useState<string | null>(null)
+  // ListaDeOpcoes (o seletor de destino) não desativa as suas opções
+  // enquanto uma escolha está pendente — sem esta flag, dois toques
+  // rápidos em destinos diferentes disparavam dois PATCH concorrentes, e
+  // o que respondesse por último decidia o grupo final, em silêncio.
+  const [aGuardarMover, setAGuardarMover] = useState(false)
 
   // Eliminar (grupo ou subcategoria) — confirmação, e o seletor de
   // migração que só aparece se o backend a exigir (409).
@@ -240,9 +277,9 @@ export function CategoriaGrupo() {
       await recarregar()
       setAlvoRenomear(null)
     } catch (erro) {
-      // Ver a nota ERROS DENTRO DA SUA FOLHA no topo do ficheiro: o
-      // renomear do GRUPO tem folha própria (o erro fica lá dentro); a
-      // subcategoria renomeia-se em linha, sem folha a tapar a página.
+      // Ver ERROS DENTRO DA SUA FOLHA no topo do ficheiro: o renomear do
+      // GRUPO tem folha própria (o erro fica lá dentro); a subcategoria
+      // renomeia-se em linha, sem folha a tapar a página.
       const mensagem = erro instanceof ErroApi ? erro.message : MENSAGEM_ERRO_GENERICA
       if (alvoRenomear.ehGrupo) setErroRenomearGrupo(mensagem)
       else setErroAcao(mensagem)
@@ -273,7 +310,8 @@ export function CategoriaGrupo() {
   // --- Mover subcategoria para outro grupo ---
 
   async function confirmarMover(novoGrupoId: string) {
-    if (!alvoMover) return
+    if (!alvoMover || aGuardarMover) return
+    setAGuardarMover(true)
     setErroMover(null)
     try {
       await editarCategoria(alvoMover.id, alvoMover.nome, novoGrupoId)
@@ -281,16 +319,24 @@ export function CategoriaGrupo() {
       setAlvoMover(null)
     } catch (erro) {
       // Mostrado DENTRO da folha "Mover para" (ver ERROS DENTRO DA SUA
-      // FOLHA): o erro mais comum aqui é um nome duplicado no grupo de
-      // destino, e a folha tapa a página — um erro lá em baixo, atrás
-      // dela, nunca chegaria a ser visto em mobile.
+      // FOLHA no topo do ficheiro): o erro mais comum aqui é um nome
+      // duplicado no grupo de destino, e a folha tapa a página — um erro
+      // lá em baixo, atrás dela, nunca chegaria a ser visto em mobile.
       setErroMover(erro instanceof ErroApi ? erro.message : MENSAGEM_ERRO_GENERICA)
+    } finally {
+      setAGuardarMover(false)
     }
   }
 
   // --- Eliminar (com o passo de migração, se o backend o exigir) ---
 
   async function tentarEliminar(alvo: AlvoEliminar, migrarParaId?: string) {
+    // A confirmação inicial já desativa o seu próprio botão enquanto
+    // "aProcessarEliminar" (Confirmacao recebe-o em "aConfirmar"), mas o
+    // passo de migração usa ListaDeOpcoes, que não desativa as opções —
+    // sem esta guarda, dois toques rápidos em destinos diferentes
+    // disparavam dois pedidos concorrentes.
+    if (aProcessarEliminar) return
     setAProcessarEliminar(true)
     try {
       await eliminarCategoria(alvo.id, migrarParaId)
@@ -333,7 +379,7 @@ export function CategoriaGrupo() {
   }
 
   if (estado.fase === 'a-carregar') {
-    return <p className={estilos.nota}>A carregar…</p>
+    return <Esqueleto />
   }
 
   if (!grupo) {

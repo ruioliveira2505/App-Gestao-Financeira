@@ -65,17 +65,40 @@
   top: calc(env(safe-area-inset-top, 0px) + var(--espaco-5));
   z-index: 50;
 
+  /* "display: flex" só para ".painelInterior" (o único filho, a seguir)
+     poder crescer com "flex: 1" e ocupar toda a altura disponível. */
   display: flex;
-  flex-direction: column;
   background: var(--cor-fundo);
   border-radius: 20px 20px 0 0;
-  /* Recorta o conteúdo aos cantos arredondados. Não afeta a sombra
-     própria do painel (essa pinta-se por fora). */
-  overflow: hidden;
+  /* SEM "overflow" aqui — só no invólucro interior (".painelInterior",
+     a seguir): ao contrário do que este comentário costumava dizer,
+     "overflow: hidden" CORTA SIM a sombra do próprio elemento que o
+     define (não só a de elementos por trás) — o mesmo bug já corrigido
+     esta sessão na pílula "Selecionar"/"Filtros" e na barra de ações do
+     modo de seleção de Movimentos. Como este painel recebe o "transform"
+     inline do arrasto (ver Folha.tsx), a sombra E o arrasto têm de
+     acompanhar o MESMO elemento — daí ficar aqui, no exterior, e o
+     recorte aos cantos arredondados passar para dentro. */
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.16);
 
   transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   overscroll-behavior: contain;
+}
+
+/* O recorte do conteúdo (cabeçalho + corpo) aos cantos arredondados —
+   separado da sombra, ver a nota acima. "border-radius: inherit" (não um
+   valor fixo): acompanha o que ".painel" tiver a cada momento, sem
+   repetir o valor aqui E na secção de desktop, mais abaixo (onde os
+   cantos passam a estar TODOS arredondados, não só os de cima).
+   "min-height: 0" é o que permite ao ".corpo" lá dentro (flex:1,
+   overflow-y:auto) rolar de facto, em vez de esticar o painel todo. */
+.painelInterior {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  border-radius: inherit;
+  overflow: hidden;
 }
 
 /* Enquanto se arrasta, sem transição — o painel segue o dedo. */

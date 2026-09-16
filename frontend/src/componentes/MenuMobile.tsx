@@ -64,6 +64,16 @@ export function MenuMobile({ aoFechar }: Props) {
   // Recebe o foco quando o menu abre, para a navegação por teclado / leitor
   // de ecrã começar dentro do painel.
   const fecharRef = useRef<HTMLButtonElement>(null)
+  // Quem tinha o foco mesmo antes de o menu abrir — normalmente o próprio
+  // ☰ (persiste na barra de topo entre navegações) — para lho devolver ao
+  // fechar (mais abaixo). Tem de ser o ARGUMENTO de useRef(), avaliado já
+  // durante este primeiro render, antes de QUALQUER efeito correr — um
+  // useEffect próprio só correria DEPOIS do efeito que foca "fecharRef"
+  // (mais abaixo), e já leria esse botão como sendo o elemento
+  // "anterior" — errado.
+  const elementoAoAbrir = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null,
+  )
   // A decorrer a animação de saída? Troca as animações de entrada pelas de
   // saída (ver CSS) e impede um segundo "fechar".
   const [aFechar, setAFechar] = useState(false)
@@ -74,6 +84,16 @@ export function MenuMobile({ aoFechar }: Props) {
   useEffect(() => {
     fecharRef.current?.focus()
     return () => window.clearTimeout(temporizador.current)
+  }, [])
+
+  // Ao fechar (desmontar), devolve o foco a quem tinha antes de o menu
+  // abrir. Sem isto, o browser deixa-o em <body>, e quem navega por
+  // teclado perde o sítio onde estava.
+  useEffect(() => {
+    const elemento = elementoAoAbrir.current
+    return () => {
+      elemento?.focus?.()
+    }
   }, [])
 
   // Inicia a saída: anima e, terminada a animação, desmonta.

@@ -128,6 +128,15 @@ export function Folha({
   // Recebe o foco ao abrir, para a navegação por teclado / leitor de ecrã
   // começar dentro da folha.
   const fecharRef = useRef<HTMLButtonElement>(null)
+  // Quem tinha o foco mesmo antes de esta folha abrir — para lho devolver
+  // ao fechar (mais abaixo). Tem de ser o ARGUMENTO de useRef(), avaliado
+  // já durante este primeiro render, antes de QUALQUER efeito correr —
+  // um useEffect próprio só correria DEPOIS do efeito que foca
+  // "fecharRef" (mais abaixo), e já leria esse botão como sendo o
+  // elemento "anterior" — errado.
+  const elementoAoAbrir = useRef<HTMLElement | null>(
+    typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null,
+  )
 
   // Coordenação com a folha de fundo, quando esta está aninhada num fluxo.
   const contexto = useContext(ContextoFolha)
@@ -155,6 +164,16 @@ export function Folha({
   // Ao abrir, o foco vai para o botão de fechar.
   useEffect(() => {
     fecharRef.current?.focus()
+  }, [])
+
+  // Ao fechar (desmontar), devolve o foco a quem tinha antes de esta
+  // folha abrir — sem isto, o browser deixa-o em <body>, e quem navega
+  // por teclado perde o sítio onde estava.
+  useEffect(() => {
+    const elemento = elementoAoAbrir.current
+    return () => {
+      elemento?.focus?.()
+    }
   }, [])
 
   // Inicia a animação de saída própria. "recuar" só sai pelo lado se houver
@@ -336,32 +355,37 @@ export function Folha({
         aria-label={titulo}
         onKeyDown={aoTeclar}
       >
-        <div
-          className={estilos.cabecalho}
-          onPointerDown={aoDescerPonteiro}
-          onPointerMove={aoMoverPonteiro}
-          onPointerUp={aoLargarPonteiro}
-          onPointerCancel={aoLargarPonteiro}
-        >
-          <span className={estilos.pega} aria-hidden="true" />
-          <div className={estilos.barraTitulo}>
-            <div className={estilos.zonaLateral}>
-              <button
-                type="button"
-                ref={fecharRef}
-                className={classeFechar}
-                onClick={() => sair('recuar')}
-                aria-label={rotuloFechar}
-              >
-                {iconeFechar ?? <IconeChevronEsquerda tamanho={24} />}
-              </button>
+        {/* O recorte aos cantos arredondados (cabeçalho + corpo) vive
+            aqui dentro, separado da sombra do ".painel" exterior — ver a
+            nota em Folha.module.css. */}
+        <div className={estilos.painelInterior}>
+          <div
+            className={estilos.cabecalho}
+            onPointerDown={aoDescerPonteiro}
+            onPointerMove={aoMoverPonteiro}
+            onPointerUp={aoLargarPonteiro}
+            onPointerCancel={aoLargarPonteiro}
+          >
+            <span className={estilos.pega} aria-hidden="true" />
+            <div className={estilos.barraTitulo}>
+              <div className={estilos.zonaLateral}>
+                <button
+                  type="button"
+                  ref={fecharRef}
+                  className={classeFechar}
+                  onClick={() => sair('recuar')}
+                  aria-label={rotuloFechar}
+                >
+                  {iconeFechar ?? <IconeChevronEsquerda tamanho={24} />}
+                </button>
+              </div>
+              <span className={estilos.titulo}>{titulo}</span>
+              <div className={estilos.zonaLateral}>{acaoConteudo}</div>
             </div>
-            <span className={estilos.titulo}>{titulo}</span>
-            <div className={estilos.zonaLateral}>{acaoConteudo}</div>
           </div>
-        </div>
 
-        <div className={estilos.corpo}>{conteudo}</div>
+          <div className={estilos.corpo}>{conteudo}</div>
+        </div>
       </div>
     </div>,
     document.body,

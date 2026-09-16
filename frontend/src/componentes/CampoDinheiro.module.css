@@ -1,3 +1,11 @@
+/* Estilos de CampoDinheiro.tsx: um campo numérico para valores monetários
+   (ex.: "Saldo início" em Nova conta, "Valor" no formulário de
+   movimento), com um símbolo de moeda fixo à esquerda dentro da mesma
+   moldura do <input> (ver ".moldura"/".simbolo", mais abaixo). A
+   disposição ".linha" (mais abaixo) é uma variante sem contorno nem
+   símbolo, para caber dentro de uma linha de lista — ver
+   CampoTexto.module.css, que segue o mesmo padrão de disposição. */
+
 .campo {
   display: flex;
   flex-direction: column;

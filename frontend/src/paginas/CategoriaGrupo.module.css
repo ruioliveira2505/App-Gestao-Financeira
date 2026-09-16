@@ -22,6 +22,41 @@
   color: var(--cor-texto-2);
 }
 
+/* --- Esqueleto de carregamento --- */
+
+/* Esta folha não tem Folha nenhuma à volta enquanto carrega (ainda não
+   se sabe o título do grupo) — por isso, ao contrário de ".lista"/
+   ".linha" normais (que já vivem dentro do "corpo" com padding da
+   Folha), o esqueleto traz o seu próprio respiro. */
+.esqueletoPagina {
+  padding: var(--espaco-4);
+}
+
+.esqueleto {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqueletoPonto {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.esqueletoNome {
+  width: 45%;
+  height: 0.9rem;
+}
+
 /* "⋯" do cabeçalho — mesmo círculo branco com sombra usado nas outras
    páginas (Contas, ContaDetalhe). Só um gatilho, não dois botões: com dois
    ícones lado a lado nesta zona, o título deixava de ficar centrado (ver
@@ -121,7 +156,9 @@
 /* Modo de escrita — tanto "Adicionar subcategoria" como renomear em linha:
    um campo de texto e um "✓" de acento a confirmar. */
 .linhaNova {
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px) — a mesma distância entre
+     elementos próximos já usada em BarraTopoMobile.module.css. */
+  gap: var(--espaco-3);
 }
 
 .novoInput {
