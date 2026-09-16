@@ -26,11 +26,11 @@ A primeira entidade do domínio — as **contas** (bancária, cartão, dinheiro,
 - Frontend: listar, ver, criar e editar contas, dentro de uma moldura própria para telemóvel (barra de topo + menu ☰) e para desktop (barra lateral); e uma página de Perfil com os dados da conta e o terminar sessão (ver [`frontend/README.md`](frontend/README.md)).
 
 A segunda — os **movimentos** (entradas e saídas de dinheiro numa conta) — está feita de ponta a ponta:
-- Backend: modelo, migração e endpoints CRUD; o saldo de cada conta passa a somar os movimentos reais (ver [`backend/README.md`](backend/README.md)).
-- Frontend: uma lista global tipo extrato (agrupada por dia, mais recente primeiro), com procura, filtros (conta, tipo, datas) e criar/editar/eliminar num modal (ver [`frontend/README.md`](frontend/README.md)).
+- Backend: modelo, migração e endpoints CRUD, mais dois endpoints em lote (eliminar e recategorizar vários de uma vez, atómicos); o saldo de cada conta passa a somar os movimentos reais (ver [`backend/README.md`](backend/README.md)).
+- Frontend: uma lista global tipo extrato (agrupada por dia, mais recente primeiro, com scroll infinito), com procura, filtros (conta, categoria, tipo, datas), criar/editar/eliminar num modal, e um modo de seleção múltipla para eliminar/recategorizar vários movimentos de uma vez (ver [`frontend/README.md`](frontend/README.md)).
 
 A terceira — as **categorias** (o "porquê" de um movimento) — está feita de ponta a ponta:
 - Backend: uma árvore de dois níveis (grupo → subcategoria), semeada por omissão para cada utilizador novo, com CRUD completo e uma regra central — apagar uma categoria com movimentos associados exige indicar para onde migram, nunca automaticamente (ver [`backend/README.md`](backend/README.md)).
 - Frontend: o seletor de categoria no formulário de movimento, o ponto colorido na linha da lista, a linha de filtro "Categorias", e a página `/categorias` para gerir a árvore — criar, renomear, mover e eliminar grupos e subcategorias (ver [`frontend/README.md`](frontend/README.md)).
 
-A seguir: a atribuição automática de categorias com um modelo de linguagem; e, mais tarde, a importação por **Open Banking** e o scroll infinito no histórico.
+A seguir: a atribuição automática de categorias com um modelo de linguagem; e, mais tarde, a importação por **Open Banking**.
