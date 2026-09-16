@@ -3,10 +3,17 @@
  * ==========================
  *
  * Barra fixa no topo do ecrã (só montada em mobile). Três zonas: ☰ (ou
- * "‹") à esquerda, o título ao centro (só em páginas de detalhe), as ações
- * à direita. As zonas laterais têm a mesma largura mínima, para o título
- * ficar mesmo centrado. Sem cor nem borda próprias — funde-se com o fundo
- * da página, à maneira do iOS.
+ * "‹") à esquerda, um título ao centro (só em páginas de detalhe — as
+ * zonas laterais têm a mesma largura mínima, para ficar mesmo centrado),
+ * as ações à direita. Sem cor nem borda próprias — funde-se com o fundo da
+ * página, à maneira do iOS.
+ *
+ * O título COMPACTO de uma página principal "colapsavel" (ver
+ * CabecalhoPagina.tsx) NÃO segue este centrado — fica dentro da própria
+ * zona esquerda, logo a seguir ao ☰ (ver ".tituloCompacto", mais abaixo, e
+ * a nota em BarraTopoMobile.tsx sobre o porquê: a zona direita muda de
+ * conteúdo consoante o modo da página, e um título centrado saltaria de
+ * posição sempre que ela mudasse de tamanho).
  *
  * Com "viewport-fit=cover" (ver index.html), o conteúdo passa por baixo da
  * barra de estado do iPhone — por isso a barra tem um "padding-top" igual
@@ -37,33 +44,55 @@
   background: var(--cor-fundo);
 }
 
-/* Zonas laterais: largura mínima igual, para o título ao centro ficar
-   mesmo centrado. Uma empurra o conteúdo para a esquerda, a outra para a
-   direita. */
-.esquerda,
+/* Zonas laterais: largura mínima igual, para o título de uma página de
+   detalhe (ao centro) ficar mesmo centrado. Uma empurra o conteúdo para a
+   esquerda, a outra para a direita.
+   ".esquerda" pode ENCOLHER (ao contrário de ".direita", que nunca
+   encolhe): é o que permite ao título compacto (dentro dela — ver
+   ".tituloCompacto") ceder espaço com reticências, em vez de empurrar a
+   zona direita para fora do ecrã, quando as duas juntas não cabem. O
+   próprio botão (".botao", mais abaixo) tem "flex-shrink: 0": encolhe
+   sempre o TÍTULO primeiro, nunca o ícone.
+   SEM "overflow: hidden" aqui: cortaria a sombra do botão ☰ (que se
+   estende para lá da sua própria caixa — ver ".botao"), deixando um
+   rasto/sombra reta e cortada por baixo dele. O recorte do texto do
+   título ("…") já vem só de ".tituloCompacto" ter "overflow: hidden" a
+   si próprio — não precisa de o repetir aqui. */
+.esquerda {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  /* --espaco-3 (12px), não --espaco-2 (8px) — a mesma distância que já
+     separa um ícone do seu texto nas listas da app (ex.: PontoCategoria
+     da descrição, em Movimentos.module.css ".linha"). Com o título
+     compacto agora ao lado do ☰, o espaçamento mais apertado ficava
+     demasiado colado. */
+  gap: var(--espaco-3);
+  flex-shrink: 1;
+  min-width: 2.75rem;
+}
+
 .direita {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  /* Mesmo espaçamento de ".esquerda", pela mesma razão — entre os dois
+     botões que aqui possam coexistir (ex.: "⋯" e "+", em Contas). */
+  gap: var(--espaco-3);
   flex-shrink: 0;
   min-width: 2.75rem;
 }
 
-.esquerda {
-  justify-content: flex-start;
-}
-
-.direita {
-  justify-content: flex-end;
-  gap: var(--espaco-2);
-}
-
 /* Círculo BRANCO com sombra suave — um botão que "flutua" sobre a página,
    à maneira do iOS. O "+" (a ação principal, um <a> preenchido) mantém o
-   seu próprio aspecto. */
+   seu próprio aspecto. "flex-shrink: 0": dentro de ".esquerda" (que pode
+   encolher), o ícone nunca é o que cede espaço — é sempre o título ao
+   lado. */
 .botao {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 2.5rem;
   height: 2.5rem;
   border: none;
@@ -78,8 +107,10 @@
   background: var(--cor-superficie);
 }
 
-/* Título ao centro da barra (páginas de detalhe). Ocupa o espaço entre as
-   duas zonas laterais e centra o texto; encurta com "…" se não couber. */
+/* Título ao centro da barra (páginas de detalhe, ou o título compacto de
+   uma página principal "colapsavel" — ver mais abaixo). Ocupa o espaço
+   entre as duas zonas laterais e centra o texto; encurta com "…" se não
+   couber. */
 .titulo {
   flex: 1;
   min-width: 0;
@@ -90,4 +121,39 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* O título compacto de uma página principal "colapsavel" (ver
+   CabecalhoPagina.tsx) — dentro da zona ESQUERDA, logo a seguir ao ☰ (ver
+   a nota no topo do ficheiro sobre o porquê de não ficar centrado, como o
+   de uma página de detalhe). Alinhado à esquerda (não ao centro), e
+   "flex: 1 1 auto" com "min-width: 0" para poder encolher com reticências
+   dentro de ".esquerda" quando o espaço aperta, sem nunca empurrar o
+   ícone ao lado.
+   Está sempre no DOM mas INVISÍVEL por omissão, para poder entrar/sair
+   com uma transição em vez de aparecer/desaparecer de repente. Numa
+   página sem "colapsavel" activo, fica invisível para sempre — sem
+   espaço a mais no layout (o ícone continua a ser o único elemento
+   visível de ".esquerda"). */
+.tituloCompacto {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: left;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+  pointer-events: none;
+}
+
+.tituloCompactoVisivel {
+  opacity: 1;
+  transform: translateY(0);
 }

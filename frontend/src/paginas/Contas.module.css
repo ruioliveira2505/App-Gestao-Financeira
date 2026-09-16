@@ -10,12 +10,30 @@
  * Tudo em tokens globais (o antigo protótipo de tipografia/raios foi
  * promovido para src/index.css).
  *
- * Esta página está a ser desenhada MOBILE-FIRST. O layout próprio de
- * desktop é uma ronda futura, à parte.
+ * Esta página foi desenhada MOBILE-FIRST. O layout próprio de desktop é
+ * uma ronda futura, à parte.
  */
 
 .nota {
   color: var(--cor-texto-2);
+}
+
+/* O campo de procura, ao colapsar em sincronia com o título grande do
+   cabeçalho (ver "aoColapsar" em Contas.tsx, e a nota em
+   useColapsarAoRolar.ts) — desvanece-se e desliza ligeiramente para
+   cima, sem lhe animar a altura (o espaço fica reservado). */
+.procura {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+.procuraEscondida {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
 }
 
 /* --- "⋯" na barra de topo (abre o menu ordenar/agrupar) --- */

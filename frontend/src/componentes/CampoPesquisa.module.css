@@ -25,6 +25,10 @@
   border-color: var(--cor-acento);
 }
 
+.desativado {
+  opacity: 0.5;
+}
+
 .icone {
   display: flex;
   flex-shrink: 0;

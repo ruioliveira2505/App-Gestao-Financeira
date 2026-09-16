@@ -217,6 +217,19 @@ export function IconeCheck(props: PropsIcone) {
   )
 }
 
+// Uma lista com "vistos" — "modo de seleção" (escolher várias linhas de
+// uma lista, ex.: Movimentos).
+export function IconeChecklist(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="m3 7 2 2 4-4" />
+      <path d="M13 6h8" />
+      <path d="m3 15 2 2 4-4" />
+      <path d="M13 14h8" />
+    </Svg>
+  )
+}
+
 // Um sinal "+" — criar algo novo (ex.: uma conta).
 export function IconeMais(props: PropsIcone) {
   return (

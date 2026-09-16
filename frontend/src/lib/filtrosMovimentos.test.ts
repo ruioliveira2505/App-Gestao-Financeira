@@ -2,15 +2,15 @@
  * TESTES DAS FUNÇÕES PURAS DOS FILTROS DE MOVIMENTOS
  * =================================================
  *
- * Cobrem o que não depende de React: ler/escrever os filtros no URL,
- * contá-los e aplicá-los a uma lista. A interface (a folha) é testada em
- * Movimentos.test.tsx.
+ * Cobrem o que não depende de React: ler/escrever os filtros no URL e
+ * contá-los. A filtragem em si passou para o backend (ver a nota no topo
+ * de filtrosMovimentos.ts) — testada em tests/test_movimentos.py, no
+ * backend. A interface (a folha) é testada em Movimentos.test.tsx.
  */
 
 import { describe, expect, it } from 'vitest'
 
 import {
-  aplicarFiltros,
   contarFiltrosAtivos,
   escreverFiltros,
   FILTROS_VAZIOS,
@@ -22,7 +22,6 @@ import {
   presetAtivo,
   ROTULO_PRESET,
 } from './filtrosMovimentos'
-import type { Movimento } from './movimentos'
 
 /** ISO local (AAAA-MM-DD) — igual ao que intervaloDoPreset usa por dentro
  *  (meia-noite LOCAL, não UTC). */
@@ -31,21 +30,6 @@ function isoLocal(data: Date): string {
   const mes = String(data.getMonth() + 1).padStart(2, '0')
   const dia = String(data.getDate()).padStart(2, '0')
   return `${ano}-${mes}-${dia}`
-}
-
-/** Um movimento mínimo, só com o que os filtros olham. */
-function movimento(sobrepor: Partial<Movimento>): Movimento {
-  return {
-    id: 'm',
-    conta_id: 'c1',
-    categoria_id: 'cat1',
-    data: '2026-06-15',
-    descricao: 'Teste',
-    valor: '-10.00',
-    created_at: '2026-06-15T00:00:00Z',
-    updated_at: '2026-06-15T00:00:00Z',
-    ...sobrepor,
-  }
 }
 
 describe('lerFiltros / escreverFiltros', () => {
@@ -84,52 +68,6 @@ describe('contarFiltrosAtivos', () => {
 
   it('as datas contam como UM filtro mesmo com só uma ponta', () => {
     expect(contarFiltrosAtivos({ ...FILTROS_VAZIOS, ate: '2026-12-31' })).toBe(1)
-  })
-})
-
-describe('aplicarFiltros', () => {
-  const movimentos = [
-    movimento({ id: 'a', conta_id: 'c1', categoria_id: 'cat1', valor: '50.00', data: '2026-02-10' }),
-    movimento({ id: 'b', conta_id: 'c2', categoria_id: 'cat2', valor: '-30.00', data: '2026-05-20' }),
-    movimento({ id: 'c', conta_id: 'c1', categoria_id: 'cat2', valor: '-8.00', data: '2026-08-01' }),
-  ]
-
-  it('filtra por categoria (várias categorias = qualquer uma delas)', () => {
-    expect(
-      aplicarFiltros(movimentos, { ...FILTROS_VAZIOS, categorias: ['cat2'] }).map((m) => m.id),
-    ).toEqual(['b', 'c'])
-  })
-
-  it('filtra por tipo (entrada = valor >= 0)', () => {
-    expect(
-      aplicarFiltros(movimentos, { ...FILTROS_VAZIOS, tipo: 'entrada' }).map((m) => m.id),
-    ).toEqual(['a'])
-  })
-
-  it('filtra por conta (várias contas = qualquer uma delas)', () => {
-    expect(
-      aplicarFiltros(movimentos, { ...FILTROS_VAZIOS, contas: ['c1'] }).map((m) => m.id),
-    ).toEqual(['a', 'c'])
-  })
-
-  it('filtra por intervalo de datas, inclusive nas pontas', () => {
-    expect(
-      aplicarFiltros(movimentos, {
-        ...FILTROS_VAZIOS,
-        de: '2026-02-10',
-        ate: '2026-05-20',
-      }).map((m) => m.id),
-    ).toEqual(['a', 'b'])
-  })
-
-  it('combina os filtros (todos têm de passar)', () => {
-    expect(
-      aplicarFiltros(movimentos, {
-        ...FILTROS_VAZIOS,
-        tipo: 'saida',
-        contas: ['c1'],
-      }).map((m) => m.id),
-    ).toEqual(['c'])
   })
 })
 

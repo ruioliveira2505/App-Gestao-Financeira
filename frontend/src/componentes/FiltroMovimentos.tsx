@@ -1,10 +1,18 @@
 /*
- * FiltroMovimentos — O BOTÃO E A FOLHA DE FILTROS DA LISTA DE MOVIMENTOS
+ * FiltroMovimentos — A FOLHA DE FILTROS DA LISTA DE MOVIMENTOS
  * =====================================================================
  *
- * Um só botão (funil), na barra de topo ao lado do "+". Um pontinho no
- * canto avisa que há filtros ativos (e o "aria-label" muda). Toca-se e
- * abre a folha de filtros — de baixo para cima —, uma lista curta de
+ * CONTROLADO por fora ("aberto" + "aoFechar"): este componente já não
+ * desenha o seu próprio gatilho — quem o monta decide QUANDO abre (ver a
+ * nota ESTRUTURA em Movimentos.tsx: "Selecionar" e "Filtros" são dois
+ * botões directos, visualmente unidos numa pílula, não um menu — cada um
+ * continua a abrir com um único toque). "ativos" (`contarFiltrosAtivos`)
+ * é calculado aqui dentro e só usado para o texto da folha; quem mostra
+ * o gatilho é responsável por decidir se avisa, à parte, que há filtros
+ * activos (o botão "Filtros" de Movimentos.tsx mostra um pontinho, tal
+ * como este componente mostrava antes de deixar de ter gatilho próprio).
+ *
+ * Renderiza a folha de filtros — de baixo para cima —, uma lista curta de
  * LINHAS-SELETOR:
  *
  *   Contas   Todas             ›
@@ -60,7 +68,7 @@ import { Avatar } from './Avatar'
 import { CampoTexto } from './CampoTexto'
 import { ContextoFolha } from './contextoFolha'
 import { Folha } from './Folha'
-import { IconeCheck, IconeChevronDireita, IconeFechar, IconeFunil } from './icones'
+import { IconeCheck, IconeChevronDireita, IconeFechar } from './icones'
 import { PontoCategoria } from './PontoCategoria'
 import { direcaoDaCategoria, type GrupoArvore } from '../lib/categorias'
 import type { Conta } from '../lib/contas'
@@ -79,41 +87,32 @@ import {
 } from '../lib/filtrosMovimentos'
 import estilos from './FiltroMovimentos.module.css'
 
-type Props = {
+type PropsBase = {
   filtros: Filtros
   aoMudar: (filtros: Filtros) => void
   contas: Conta[]
   arvore: GrupoArvore[]
 }
 
-export function FiltroMovimentos({ filtros, aoMudar, contas, arvore }: Props) {
-  const [aberto, setAberto] = useState(false)
+type Props = PropsBase & {
+  aberto: boolean
+  aoFechar: () => void
+}
+
+export function FiltroMovimentos({ filtros, aoMudar, contas, arvore, aberto, aoFechar }: Props) {
   const ativos = contarFiltrosAtivos(filtros)
 
-  return (
-    <>
-      <button
-        type="button"
-        className={estilos.gatilho}
-        aria-label={ativos > 0 ? 'Filtros (ativos)' : 'Filtros'}
-        aria-haspopup="dialog"
-        onClick={() => setAberto(true)}
-      >
-        <IconeFunil tamanho={20} />
-        {ativos > 0 && <span className={estilos.ponto} aria-hidden="true" />}
-      </button>
+  if (!aberto) return null
 
-      {aberto && (
-        <FolhaFiltros
-          filtros={filtros}
-          aoMudar={aoMudar}
-          contas={contas}
-          arvore={arvore}
-          ativos={ativos}
-          aoFechar={() => setAberto(false)}
-        />
-      )}
-    </>
+  return (
+    <FolhaFiltros
+      filtros={filtros}
+      aoMudar={aoMudar}
+      contas={contas}
+      arvore={arvore}
+      ativos={ativos}
+      aoFechar={aoFechar}
+    />
   )
 }
 
@@ -133,7 +132,7 @@ function FolhaFiltros({
   arvore,
   ativos,
   aoFechar,
-}: Props & { ativos: number; aoFechar: () => void }) {
+}: PropsBase & { ativos: number; aoFechar: () => void }) {
   const [espelhoY, setEspelhoY] = useState(0)
   const [aEspelhar, setAEspelhar] = useState(false)
   const [aAbandonar, setAAbandonar] = useState(false)

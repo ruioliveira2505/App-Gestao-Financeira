@@ -2,45 +2,12 @@
  * ESTILOS DO FiltroMovimentos
  * ===========================
  *
- * O botão (funil) na barra de topo, a folha de filtros (uma lista de
- * linhas-seletor), e as folhas que cada linha abre da direita — lá dentro,
- * a lista de opções com "✓". As conchas das folhas vêm de Folha.module.css.
+ * A folha de filtros (uma lista de linhas-seletor) e as folhas que cada
+ * linha abre da direita — lá dentro, a lista de opções com "✓". As
+ * conchas das folhas vêm de Folha.module.css. O botão que abre isto tudo
+ * já não é deste componente — vive na pílula "Selecionar"/"Filtros", em
+ * Movimentos.module.css (ver a nota no topo de FiltroMovimentos.tsx).
  */
-
-/* --- Botão na barra de topo --- */
-
-/* Círculo branco com sombra, igual ao "⋯" da lista de contas e ao ☰ da
-   barra de topo (40px). "position: relative" ancora o pontinho. */
-.gatilho {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: none;
-  padding: 0;
-  border-radius: 999px;
-  background: var(--cor-fundo);
-  box-shadow: var(--sombra-flutuante);
-  color: var(--cor-texto);
-}
-
-.gatilho:active {
-  background: var(--cor-superficie);
-}
-
-/* "Há filtros ativos" — um pontinho no canto do botão, sem número (o
-   detalhe está na folha; o "aria-label" do botão também muda). */
-.ponto {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--cor-acento);
-  box-shadow: 0 0 0 2px var(--cor-fundo);
-}
 
 /* --- Folha principal: a lista de linhas-seletor --- */
 

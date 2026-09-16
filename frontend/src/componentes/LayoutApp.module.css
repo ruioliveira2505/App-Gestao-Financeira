@@ -12,6 +12,15 @@
  * único elemento que faz scroll é o <main> (".conteudo"), na vertical.
  * Isto vale só para as páginas autenticadas; os ecrãs de login/registo,
  * fora deste layout, rolam normalmente se o conteúdo não couber.
+ *
+ * ".painel" tem "position: relative" para servir de referência a um
+ * rodapé fixo que uma página queira desenhar (ex.: a barra de ações do
+ * modo de seleção múltipla em Movimentos.tsx, "position: absolute;
+ * bottom: 0"): assim fica preso ao fundo do ECRÃ (".painel" ocupa sempre
+ * a altura toda, herdada de ".layout") mas contido na LARGURA da coluna
+ * de conteúdo — nunca sobre a barra lateral, em desktop. Um "position:
+ * fixed" comum não serviria: fixa-se sempre ao viewport inteiro,
+ * ignorando a barra lateral.
  */
 
 .layout {
@@ -24,6 +33,7 @@
 /* Coluna à direita da barra: a barra de topo (só em estreito) e a área de
    conteúdo. */
 .painel {
+  position: relative;
   flex: 1;
   /* min-width: 0 impede que um conteúdo largo (uma tabela, um bloco de
      código) force a coluna a crescer para além da largura do ecrã. */

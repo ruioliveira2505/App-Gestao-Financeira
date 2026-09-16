@@ -68,6 +68,75 @@ export function definirEcraMobile(valor: boolean): void {
   ouvintesMedia.forEach((ouvinte) => ouvinte({ matches: valor }))
 }
 
+/*
+ * MOCK DE IntersectionObserver
+ * ----------------------------
+ * O jsdom também não implementa IntersectionObserver — usado pela
+ * sentinela do scroll infinito de Movimentos.tsx (ver a nota PAGINAÇÃO POR
+ * CURSOR nesse ficheiro). Sem isto, montar essa página rebentava com
+ * "IntersectionObserver is not defined".
+ *
+ * Em vez de simular intersecções verdadeiras (que exigiriam medir
+ * posições e tamanhos, tudo o que o jsdom também não faz), este mock só
+ * regista qual o callback associado a cada elemento observado — e
+ * simularEntradaNoEcra(elemento), mais abaixo, dispara esse callback à
+ * mão, tal como um scroll a sério dispararia o do browser.
+ */
+type EntradaIntersecaoMock = { isIntersecting: boolean; target: Element }
+type OuvinteIntersecao = (entradas: EntradaIntersecaoMock[]) => void
+
+const observadoresIntersecao = new Map<Element, OuvinteIntersecao>()
+
+class IntersectionObserverMock {
+  #callback: OuvinteIntersecao
+
+  constructor(callback: OuvinteIntersecao) {
+    this.#callback = callback
+  }
+
+  observe(elemento: Element) {
+    observadoresIntersecao.set(elemento, this.#callback)
+  }
+
+  unobserve(elemento: Element) {
+    observadoresIntersecao.delete(elemento)
+  }
+
+  disconnect() {
+    for (const [elemento, callback] of observadoresIntersecao) {
+      if (callback === this.#callback) observadoresIntersecao.delete(elemento)
+    }
+  }
+
+  takeRecords() {
+    return []
+  }
+}
+
+window.IntersectionObserver = IntersectionObserverMock as unknown as typeof IntersectionObserver
+
+/** Simula uma sentinela a ENTRAR no ecrã — dispara o callback do
+ *  IntersectionObserver que a está a observar (ver o mock acima), com
+ *  "isIntersecting: true". Usado pelos testes de scroll infinito de
+ *  Movimentos.test.tsx (a sentinela do fim da lista, que pede mais uma
+ *  página assim que fica visível) e, ao rolar de volta para cima, pelos
+ *  testes do título colapsável do cabeçalho (App.test.tsx — ver
+ *  useColapsarAoRolar.ts), onde a sentinela REAPARECE no ecrã. */
+export function simularEntradaNoEcra(elemento: Element): void {
+  observadoresIntersecao.get(elemento)?.([{ isIntersecting: true, target: elemento }])
+}
+
+/** O oposto: simula uma sentinela a SAIR do ecrã ("isIntersecting:
+ *  false"). Usado pelos testes do título colapsável do cabeçalho
+ *  (App.test.tsx — ver useColapsarAoRolar.ts) — a sentinela sai do ecrã
+ *  quando se rola para além do título grande. */
+export function simularSaidaDoEcra(elemento: Element): void {
+  observadoresIntersecao.get(elemento)?.([{ isIntersecting: false, target: elemento }])
+}
+
+// Cada teste começa sem observadores pendentes de testes anteriores.
+afterEach(() => observadoresIntersecao.clear())
+
 // Cada teste começa em "desktop".
 afterEach(() => {
   ecraMobile = false

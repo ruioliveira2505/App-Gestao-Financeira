@@ -9,7 +9,7 @@
  * remanescente), não uma linha simples; e a lista é agrupada por dia, sem
  * "⋯" de ordenar/agrupar (é um extrato, vista fixa — ver Movimentos.tsx).
  *
- * Esta página está a ser desenhada MOBILE-FIRST, tal como Contas.
+ * Esta página foi desenhada MOBILE-FIRST, tal como Contas.
  */
 
 .nota {
@@ -19,6 +19,24 @@
 /* O campo de pesquisa é o componente partilhado CampoPesquisa (lupa +
    campo + "✕" para limpar) — os seus estilos vivem em
    CampoPesquisa.module.css. */
+
+/* O invólucro do campo de pesquisa, ao colapsar em sincronia com o
+   título grande do cabeçalho (ver "aoColapsar" em Movimentos.tsx, e a
+   nota em useColapsarAoRolar.ts) — desvanece-se e desliza ligeiramente
+   para cima, sem lhe animar a altura (o espaço fica reservado). */
+.procura {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
+}
+
+.procuraEscondida {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
 
 /* --- Grupos (por dia, por conta, ou nenhum) --- */
 
@@ -101,9 +119,35 @@
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-/* O símbolo à esquerda de cada linha é agora o componente partilhado
+/* O símbolo à esquerda de cada linha é o componente partilhado
    PontoCategoria (tamanho "md", 40px) — o seu estilo vive em
-   PontoCategoria.module.css, nada a definir aqui. */
+   PontoCategoria.module.css. Em modo seleção, NÃO é substituído: um
+   checkbox mais pequeno (.checkbox, mais abaixo) aparece à esquerda dele,
+   empurrando toda a linha para a direita — nada troca de aspeto, só
+   entra mais uma coisa (ver a nota MODO DE SELEÇÃO MÚLTIPLA em
+   Movimentos.tsx). O espaçamento entre os dois vem do "gap" já definido
+   em ".linha", sem precisar de margem própria aqui. */
+
+/* O checkbox de cada linha, em modo seleção — mais pequeno do que o
+   PontoCategoria ao lado, de propósito: não é um símbolo a competir com
+   ele, é só a marca de "selecionado". Vazio (só o contorno) quando não
+   selecionado. */
+.checkbox {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid var(--cor-borda);
+  background: var(--cor-fundo);
+  color: var(--cor-acento-texto);
+}
+
+.checkboxSelecionado {
+  border-color: var(--cor-acento);
+  background: var(--cor-acento);
+}
 
 /* Coluna do meio: descrição (a âncora da linha, negrito) por cima, nome da
    conta (esbatido) por baixo. "min-width: 0" deixa as duas encurtar com
@@ -166,6 +210,30 @@
   color: var(--cor-texto-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* --- Sentinela do scroll infinito (ver a nota PAGINAÇÃO POR CURSOR em
+   Movimentos.tsx) --- */
+
+.sentinela {
+  display: flex;
+  justify-content: center;
+  padding: var(--espaco-4);
+}
+
+.sentinelaTexto {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+.sentinelaTentarNovamente {
+  border: none;
+  background: none;
+  padding: var(--espaco-1) var(--espaco-2);
+  font: inherit;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-acento);
 }
 
 /* --- Esqueleto de carregamento --- */
@@ -236,4 +304,170 @@
   font-size: var(--texto-lg);
   font-weight: 600;
   color: var(--cor-texto);
+}
+
+/* --- "Selecionar" / "Filtros" do cabeçalho — dois botões, uma pílula --- */
+
+/* A pílula: a mesma sombra flutuante de sempre, mas à volta dos DOIS
+   botões juntos, não um círculo por botão — para os ler como um grupo, não
+   como dois elementos soltos (ver a nota ESTRUTURA em Movimentos.tsx).
+   SEM "overflow" aqui — só no invólucro interior (".grupoAcoesInterior",
+   a seguir): "overflow: hidden" corta tudo o que sai da própria caixa do
+   elemento, incluindo o SEU PRÓPRIO "box-shadow" (que se pinta para lá
+   dela, de propósito, para "flutuar") — juntar as duas regras no mesmo
+   elemento cortava a sombra a direito, o mesmo bug já corrigido na zona
+   esquerda da barra de topo (ver a nota em BarraTopoMobile.module.css). */
+.grupoAcoes {
+  display: flex;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+}
+
+/* O recorte aos cantos arredondados (o fundo de toque de cada botão, ao
+   tocar-lhe) vive aqui, separado da sombra — ver a nota acima. */
+.grupoAcoesInterior {
+  display: flex;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* Mais LARGOS do que os outros círculos de acção da app (2.5rem), não
+   mais altos — a altura fica igual à dos botões ao lado ("+"), só a
+   largura cresce, para cada ícone ganhar mais respiro lateral dentro da
+   pílula. */
+.botaoGrupoAcoes {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 3.25rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  background: none;
+  color: var(--cor-texto);
+}
+
+.botaoGrupoAcoes:active {
+  background: var(--cor-superficie);
+}
+
+/* Divisória fina entre os dois botões da pílula. */
+.botaoGrupoAcoes + .botaoGrupoAcoes {
+  border-left: 1px solid var(--cor-borda-leve);
+}
+
+/* "Há filtros ativos" — o mesmo pontinho que estava antes ancorado ao
+   próprio botão do funil (ver a nota em FiltroMovimentos.tsx). */
+.ponto {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  box-shadow: 0 0 0 2px var(--cor-fundo);
+}
+
+/* --- Modo de seleção múltipla --- */
+
+/* Espaço para a última linha da lista não ficar escondida atrás da barra
+   de ações fixa (.barraAcoesLote, mais abaixo). */
+.paginaComBarraLote {
+  padding-bottom: 4.5rem;
+}
+
+/* O "X", no lugar do "Selecionar"/funil/"+" habituais (CabecalhoPagina
+   "acao") — a única forma de sair do modo de seleção. Círculo branco com
+   sombra, o mesmo aspeto do botão "fechar" da Folha (variante "circulo",
+   ver Folha.module.css) e do ☰/"+" da barra de topo — ícone, não texto,
+   para ficar consistente com todos os outros botões de ação de cabeçalho
+   da app (era "Cancelar", em texto, numa primeira versão desta fatia). */
+.botaoCancelarSelecao {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.botaoCancelarSelecao:active {
+  background: var(--cor-superficie);
+}
+
+/* A barra de ações fixa no fundo do ecrã — só existe em modo seleção. O
+   mesmo formato de cartão arredondado da Folha (cantos de cima
+   arredondados, encostada ao fundo do ecrã — ver Folha.module.css) e o
+   mesmo botão "texto só" da Confirmacao (ver Confirmacao.module.css:
+   fundo plano, cor a fazer o trabalho todo, sem pílulas preenchidas nem
+   ícones) — para ficar visualmente da família das outras folhas/cartões
+   da app, não um componente à parte.
+
+   "position: absolute" dentro de ".painel" (position: relative, ver
+   LayoutApp.module.css): fica presa ao fundo do ECRÃ, mas contida na
+   largura da coluna de conteúdo, nunca sobre a barra lateral.
+
+   SEM "overflow" aqui — só no invólucro interior
+   (".barraAcoesLoteInterior", a seguir): a sombra desta barra aponta
+   para CIMA (desvio negativo), pintada para lá da própria caixa; juntar
+   "overflow: hidden" no mesmo elemento cortava-a a direito, o mesmo bug
+   já corrigido na pílula "Selecionar"/"Filtros" (ver a nota, mais acima)
+   e na zona esquerda da barra de topo (BarraTopoMobile.module.css). */
+.barraAcoesLote {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  background: var(--cor-fundo);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -2px 12px rgb(0 0 0 / 6%);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Recorta o fundo de toque dos botões aos cantos arredondados — separado
+   da sombra, ver a nota acima. */
+.barraAcoesLoteInterior {
+  display: flex;
+  border-radius: 20px 20px 0 0;
+  overflow: hidden;
+}
+
+.botaoAcaoLote {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.25rem;
+  padding: var(--espaco-4);
+  border: none;
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  font: inherit;
+  font-weight: 500;
+}
+
+.botaoAcaoLote:active {
+  background: var(--cor-superficie-2);
+}
+
+.botaoAcaoLote:disabled {
+  color: var(--cor-texto-3);
+}
+
+/* Divisória fina entre os dois botões — como o traço entre o cabeçalho e
+   o botão da Confirmacao. */
+.botaoAcaoLote + .botaoAcaoLote {
+  border-left: 1px solid var(--cor-borda-leve);
+}
+
+.botaoAcaoLotePerigo {
+  color: var(--cor-negativo);
 }

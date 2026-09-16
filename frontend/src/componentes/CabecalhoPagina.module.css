@@ -1,3 +1,11 @@
+/* Estilos de CabecalhoPagina.tsx: o cabeçalho comum a todas as páginas —
+   ícone opcional + título (+ subtítulo) + uma ação à direita. Em desktop
+   desenha-se sempre aqui, no conteúdo; em mobile só as páginas de
+   detalhe o mostram completo — as páginas principais mostram aqui só o
+   título grande (".tituloGrande", mais abaixo) e movem a ação para a
+   barra de topo (ver a nota "APRESENTAÇÕES" no topo de
+   CabecalhoPagina.tsx). */
+
 .cabecalho {
   display: flex;
   align-items: flex-start;
@@ -34,14 +42,26 @@
 .acao {
   display: flex;
   align-items: center;
-  gap: var(--espaco-2);
+  /* --espaco-3 (12px), não --espaco-2 (8px) — a mesma distância entre
+     ícones próximos já usada em BarraTopoMobile.module.css (".esquerda"/
+     ".direita") e no espaço ícone-texto das linhas de lista. */
+  gap: var(--espaco-3);
   flex-shrink: 0;
 }
 
 /* Título grande no conteúdo (mobile, páginas principais) — estilo "large
-   title" do iOS/WhatsApp. Rola com o conteúdo. */
+   title" do iOS/WhatsApp. Rola com o conteúdo. Quando "colapsavel", o
+   espaço que ocupa fica reservado (não se anima a altura — ver a nota em
+   useColapsarAoRolar.ts sobre o risco de um ciclo com a própria deteção
+   de scroll); só a APARÊNCIA (opacidade + um leve deslize) se anima ao
+   colapsar. */
 .tituloGrande {
   margin-bottom: var(--espaco-4);
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 200ms ease-out,
+    transform 200ms ease-out;
 }
 
 .tituloGrande h1 {
@@ -49,4 +69,25 @@
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.1;
+}
+
+/* Colapsado: desvanece-se e desliza ligeiramente para cima — o mesmo
+   sentido em que se está a rolar. "pointer-events: none" para não
+   continuar a receber toques enquanto invisível. */
+.tituloGrandeEscondido {
+  opacity: 0;
+  transform: translateY(-6px);
+  pointer-events: none;
+}
+
+/* A sentinela que useColapsarAoRolar vigia — invisível, com 1px de altura
+   (não 0): um alvo de área ZERO é um caso conhecido de comportamento
+   inconsistente entre browsers para o IntersectionObserver (a sua
+   "intersection rectangle" fica degenerada) — a mesma razão por que a
+   sentinela do scroll infinito (Movimentos.module.css ".sentinela") já
+   tem altura a sério. 1px é imperceptível visualmente, mas já chega para
+   dar ao observador uma área real a vigiar. */
+.sentinelaColapso {
+  height: 1px;
+  overflow: hidden;
 }

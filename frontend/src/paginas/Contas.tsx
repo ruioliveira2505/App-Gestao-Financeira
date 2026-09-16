@@ -348,6 +348,11 @@ export function Contas() {
   const [estado, setEstado] = useState<Estado>({ fase: 'a-carregar' })
   const [pesquisa, setPesquisa] = useState('')
 
+  // Ao rolar para além do título grande (ver "colapsavel" em
+  // <CabecalhoPagina>, mais abaixo), o campo de procura desvanece-se em
+  // sincronia com ele — os dois "desaparecem" como um só gesto.
+  const [cabecalhoColapsado, setCabecalhoColapsado] = useState(false)
+
   // Ordenação e agrupamento: valor inicial lido do browser, uma vez.
   const [campoOrdem, setCampoOrdem] = useState<CampoOrdem>(() =>
     lerPreferencia(CHAVE_CAMPO, CAMPOS_ORDEM, 'nome'),
@@ -412,6 +417,12 @@ export function Contas() {
             ? contagemGrupo(estado.contas)
             : undefined
         }
+        // Ao rolar para além do título, este passa a aparecer compacto na
+        // barra de topo, ao lado do ☰ (ver a nota em useColapsarAoRolar.ts
+        // e em BarraTopoMobile.tsx). "aoColapsar" sincroniza o campo de
+        // procura, mais abaixo, com o mesmo momento.
+        colapsavel
+        aoColapsar={setCabecalhoColapsado}
         acao={
           temContas ? (
             <>
@@ -449,15 +460,31 @@ export function Contas() {
 
       {estado.fase === 'pronto' && estado.contas.length > 0 && (
         <>
-          {/* Campo de procura, a ocupar a linha toda. Está no fluxo normal
-              do conteúdo: ao rolar a lista para baixo, sai do ecrã por
-              baixo da barra de topo (opaca) e reaparece ao voltar ao topo. */}
-          <CampoPesquisa
-            valor={pesquisa}
-            aoMudar={setPesquisa}
-            placeholder="Procurar conta…"
-            rotulo="Procurar conta"
-          />
+          {/* Campo de procura, a ocupar a linha toda. Desvanece-se em
+              sincronia com o título grande ao rolar para baixo (ver
+              "aoColapsar" no <CabecalhoPagina>, acima) — o espaço que
+              ocupa fica reservado, tal como o do título (ver a nota em
+              useColapsarAoRolar.ts sobre o porquê de não se animar
+              também a altura). "inert": enquanto invisível, o campo não
+              deve continuar alcançável por Tab nem por um leitor de
+              ecrã — tira-o da árvore de acessibilidade E da ordem de
+              tabulação de uma só vez (ao contrário de "aria-hidden"
+              sozinho, que não impede o foco por teclado). */}
+          <div
+            className={
+              cabecalhoColapsado
+                ? `${estilos.procura} ${estilos.procuraEscondida}`
+                : estilos.procura
+            }
+            inert={cabecalhoColapsado}
+          >
+            <CampoPesquisa
+              valor={pesquisa}
+              aoMudar={setPesquisa}
+              placeholder="Procurar conta…"
+              rotulo="Procurar conta"
+            />
+          </div>
 
           {resultados.length === 0 ? (
             <p className={estilos.semResultados}>

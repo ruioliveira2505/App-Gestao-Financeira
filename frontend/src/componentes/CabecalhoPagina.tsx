@@ -31,10 +31,20 @@
  *
  * "icone": desenha-se à esquerda do título, no cabeçalho do conteúdo
  * (desktop, ou páginas principais). Não vai para a barra de topo.
+ *
+ * "colapsavel": só tem efeito numa página PRINCIPAL, em mobile (sem
+ * "voltar"). Ao rolar para além do título grande, este passa a mostrar-se
+ * COMPACTO na barra de topo, ao lado do ☰ — o mesmo padrão do "large
+ * title" do iOS a colapsar (ver useColapsarAoRolar.ts, e a nota em
+ * BarraTopoMobile.tsx). "aoColapsar", se indicado, é chamado sempre que
+ * esse estado muda — para a própria página poder animar em sincronia
+ * outros elementos que também devam desaparecer ao rolar (ex.: a barra de
+ * procura, logo a seguir a este cabeçalho).
  */
 
 import { useEffect, type ReactNode } from 'react'
 
+import { useColapsarAoRolar } from '../hooks/useColapsarAoRolar'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useDefinirCabecalho } from './useCabecalho'
 import estilos from './CabecalhoPagina.module.css'
@@ -46,21 +56,47 @@ type Props = {
   acao?: ReactNode
   voltar?: string
   aoRecuar?: (navegarDeFacto: () => void) => void
+  colapsavel?: boolean
+  aoColapsar?: (colapsado: boolean) => void
 }
 
-export function CabecalhoPagina({ titulo, subtitulo, icone, acao, voltar, aoRecuar }: Props) {
+export function CabecalhoPagina({
+  titulo,
+  subtitulo,
+  icone,
+  acao,
+  voltar,
+  aoRecuar,
+  colapsavel = false,
+  aoColapsar,
+}: Props) {
   const eMobile = useMediaQuery('(max-width: 768px)')
   const definir = useDefinirCabecalho()
 
+  // Só activo numa página principal (sem "voltar") — nas de detalhe o
+  // título já vive sempre na barra de topo, não há "large title" nenhum
+  // para colapsar.
+  const { sentinelaRef, colapsado } = useColapsarAoRolar()
+  const ehColapsavel = colapsavel && !voltar
+  // "undefined" (não "false") quando a página não é colapsavel — é o que
+  // diz à barra de topo para nem sequer desenhar ali o título compacto
+  // (ver BarraTopoMobile.tsx): "false" significaria "colapsavel, mas
+  // ainda não rolado", um estado bem diferente de "nem faz parte disto".
+  const tituloCompacto = ehColapsavel ? colapsado : undefined
+
   useEffect(() => {
     if (!definir) return
-    definir({ titulo, acao, voltar, aoRecuar })
+    definir({ titulo, acao, voltar, aoRecuar, tituloCompacto })
     // "definir" é estável (ver cabecalhoContexto). "acao" entra nas
     // dependências porque muda dentro da mesma página — ex.: no detalhe de
     // uma conta, só existe depois de a conta carregar. Não há ciclo: este
     // componente só re-renderiza quando a sua página re-renderiza (não
     // consome o contexto que muda a cada "definir").
-  }, [definir, titulo, acao, voltar, aoRecuar])
+  }, [definir, titulo, acao, voltar, aoRecuar, tituloCompacto])
+
+  useEffect(() => {
+    if (ehColapsavel) aoColapsar?.(colapsado)
+  }, [aoColapsar, ehColapsavel, colapsado])
 
   // Mobile dentro da moldura.
   if (eMobile && definir) {
@@ -70,11 +106,20 @@ export function CabecalhoPagina({ titulo, subtitulo, icone, acao, voltar, aoRecu
       return subtitulo ? <p className={estilos.subtituloSolto}>{subtitulo}</p> : null
     }
     // Página principal: título grande no conteúdo (a barra de topo só tem
-    // o ☰ e a ação).
+    // o ☰ e a ação) — desvanece-se ao colapsar, quando "colapsavel". A
+    // sentinela (invisível) é o que o useColapsarAoRolar vigia: assim que
+    // sai do ecrã por cima, "colapsado" passa a true.
     return (
-      <div className={estilos.tituloGrande}>
+      <div
+        className={
+          tituloCompacto
+            ? `${estilos.tituloGrande} ${estilos.tituloGrandeEscondido}`
+            : estilos.tituloGrande
+        }
+      >
         <h1>{titulo}</h1>
         {subtitulo && <p className={estilos.subtitulo}>{subtitulo}</p>}
+        {colapsavel && <div ref={sentinelaRef} className={estilos.sentinelaColapso} aria-hidden="true" />}
       </div>
     )
   }

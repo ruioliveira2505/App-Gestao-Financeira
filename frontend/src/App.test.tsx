@@ -16,7 +16,7 @@ import { http, HttpResponse } from 'msw'
 import { MemoryRouter } from 'react-router-dom'
 
 import { servidorMsw } from './test/servidor-msw'
-import { definirEcraMobile } from './test/setup'
+import { definirEcraMobile, simularEntradaNoEcra, simularSaidaDoEcra } from './test/setup'
 import { AuthProvider } from './auth/AuthProvider'
 import App from './App'
 
@@ -319,6 +319,68 @@ describe('Moldura da aplicação', () => {
       'href',
       '/contas/nova',
     )
+  })
+
+  it('em mobile, ao rolar para além do título grande, este passa a compacto na barra de topo', async () => {
+    // Contas é uma página "colapsavel" (ver CabecalhoPagina.tsx): ao
+    // rolar para além do "large title" no conteúdo, o título passa a
+    // aparecer, compacto, ao centro da barra de topo — ao lado do ☰. A
+    // detecção usa IntersectionObserver sobre uma sentinela (ver
+    // useColapsarAoRolar.ts); em teste, simula-se com
+    // simularEntradaNoEcra (o mesmo mecanismo já usado para o scroll
+    // infinito de Movimentos).
+    definirEcraMobile(true)
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.get('/api/contas', () =>
+        HttpResponse.json([
+          {
+            id: 'a',
+            nome: 'À ordem',
+            banco: 'BPI',
+            tipo: 'Conta corrente',
+            moeda: 'EUR',
+            data_ancora: '2026-01-01',
+            saldo_ancora: '100.00',
+            saldo: '100.00',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
+          },
+        ]),
+      ),
+    )
+    montar('/contas')
+
+    const tituloGrande = await screen.findByRole('heading', { name: 'Contas', level: 1 })
+    // "Contas" também é o nome de uma ligação na barra lateral (sempre no
+    // DOM, mesmo em mobile — só escondida por CSS, que o jsdom não avalia
+    // — ver LayoutApp.tsx). Por isso o título compacto procura-se dentro
+    // da barra de topo (identificada pelo botão ☰), não em todo o ecrã.
+    const barraTopo = screen.getByRole('button', { name: 'Abrir menu' }).closest('header')
+    if (!barraTopo) throw new Error('Barra de topo não encontrada.')
+    // O título compacto está sempre no DOM (para poder animar a entrada/
+    // saída em CSS — ver a nota em BarraTopoMobile.tsx), mas começa
+    // escondido da acessibilidade. "findByText" (não "getByText"): o
+    // contexto do cabeçalho só é preenchido num efeito de
+    // CabecalhoPagina, um ciclo de render depois de a página montar.
+    const tituloCompacto = await within(barraTopo).findByText('Contas')
+    expect(tituloCompacto).toHaveAttribute('aria-hidden', 'true')
+
+    // A sentinela é o único filho invisível (aria-hidden) do bloco do
+    // título grande — sai do ecrã ao rolar para além dele.
+    const sentinela = tituloGrande.parentElement?.querySelector(
+      'div[aria-hidden="true"]',
+    ) as HTMLElement
+    expect(sentinela).toBeTruthy()
+
+    simularSaidaDoEcra(sentinela)
+
+    await waitFor(() => expect(tituloCompacto).toHaveAttribute('aria-hidden', 'false'))
+
+    // A rolar de volta para cima (a sentinela reaparece no ecrã), o
+    // título compacto volta a esconder-se.
+    simularEntradaNoEcra(sentinela)
+    await waitFor(() => expect(tituloCompacto).toHaveAttribute('aria-hidden', 'true'))
   })
 
   it('em mobile, o «X» do modal "Nova conta" recua no histórico', async () => {

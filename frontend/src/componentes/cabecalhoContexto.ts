@@ -33,6 +33,17 @@ export type Cabecalho = {
   // normalmente depois de uma animação de saída, não antes). Sem
   // "aoRecuar", a barra de topo navega de imediato, como sempre fez.
   aoRecuar?: (navegarDeFacto: () => void) => void
+  // Só em páginas PRINCIPAIS (sem "voltar"), com "colapsavel" no
+  // <CabecalhoPagina> — ver useColapsarAoRolar.ts. "undefined" (não
+  // "false") quando a página nem é "colapsavel" — é o que diz à barra de
+  // topo para nem desenhar aqui o título compacto. Quando presente
+  // (true/false), diz-lhe para mostrar o título compacto DENTRO DA ZONA
+  // ESQUERDA, ao lado do ☰ — NÃO ao centro, como o de uma página de
+  // detalhe: a zona direita de uma página principal muda de conteúdo
+  // consoante o modo (ex.: a pílula de Movimentos dá lugar a um "X" no
+  // modo de seleção), e um título centrado saltaria de posição sempre
+  // que essa zona mudasse de tamanho (ver a nota em BarraTopoMobile.tsx).
+  tituloCompacto?: boolean
 }
 
 export type DefinirCabecalho = (cabecalho: Cabecalho | null) => void

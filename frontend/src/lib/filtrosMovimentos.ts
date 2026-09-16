@@ -3,11 +3,14 @@
  * =============================
  *
  * O estado dos filtros vive no URL (query string) — sobrevive a navegar
- * para editar um movimento e voltar, e é já a forma que o backend vai
- * consumir quando a filtragem passar para o servidor. Aqui ficam as
- * funções puras: ler os filtros de uma query string, escrevê-los de
- * volta, contar quantos estão ativos, e aplicá-los a uma lista de
- * movimentos (por agora, tudo no cliente).
+ * para editar um movimento e voltar, e é a mesma forma que o backend
+ * consome (GET /movimentos aceita estes parâmetros directamente — ver a
+ * nota FILTROS COMO PARÂMETROS em app/routers/movimentos.py). Aqui ficam
+ * só as funções puras sobre essa forma: ler os filtros de uma query
+ * string, escrevê-los de volta, e contar quantos estão ativos. A
+ * filtragem em si (incluindo a pesquisa por texto) é feita em SQL, no
+ * backend — src/lib/movimentos.ts:listarMovimentos passa estes mesmos
+ * campos como parâmetros do pedido.
  *
  * Parâmetros no URL:
  *   - tipo=entrada | saida                 (ausente = todos)
@@ -27,8 +30,6 @@
  * a comparar grandezas que não são comparáveis. Volta quando a aplicação
  * tiver uma moeda base para converter (a página Resumo vai precisar dela).
  */
-
-import type { Movimento } from './movimentos'
 
 export type Filtros = {
   tipo: 'entrada' | 'saida' | null
@@ -81,23 +82,6 @@ export function contarFiltrosAtivos(filtros: Filtros): number {
   if (filtros.categorias.length > 0) n += 1
   if (filtros.de || filtros.ate) n += 1
   return n
-}
-
-/** Aplica os filtros a uma lista de movimentos. A pesquisa por texto é
- *  tratada à parte (é sempre visível, não vive na folha de filtros). */
-export function aplicarFiltros(movimentos: Movimento[], filtros: Filtros): Movimento[] {
-  const contas = new Set(filtros.contas)
-  const categorias = new Set(filtros.categorias)
-  return movimentos.filter((movimento) => {
-    const valor = Number(movimento.valor)
-    if (filtros.tipo === 'entrada' && valor < 0) return false
-    if (filtros.tipo === 'saida' && valor >= 0) return false
-    if (contas.size > 0 && !contas.has(movimento.conta_id)) return false
-    if (categorias.size > 0 && !categorias.has(movimento.categoria_id)) return false
-    if (filtros.de && movimento.data < filtros.de) return false
-    if (filtros.ate && movimento.data > filtros.ate) return false
-    return true
-  })
 }
 
 // --- Atalhos de datas ---

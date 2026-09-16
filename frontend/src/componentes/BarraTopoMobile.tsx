@@ -4,16 +4,21 @@
  *
  * Só existe em mobile (o LayoutApp só a renderiza quando useMediaQuery diz
  * que o ecrã é estreito). É a única barra fixa da aplicação em mobile
- * (não há barra de separadores no fundo). Três zonas — o título ao centro
- * fica visualmente centrado porque as zonas laterais têm largura mínima
- * igual:
+ * (não há barra de separadores no fundo). Três zonas — o título de uma
+ * página de DETALHE fica ao centro, porque as zonas laterais têm largura
+ * mínima igual; o de uma página PRINCIPAL "colapsavel", quando aparece
+ * aqui, NÃO segue este centrado — ver a nota mais abaixo, sobre o
+ * porquê:
  *
  *   - esquerda:
- *       · páginas principais → o botão ☰, que abre o menu (MenuMobile);
+ *       · páginas principais → o botão ☰, que abre o menu (MenuMobile) —
+ *         seguido, se a página for "colapsavel" e já se tiver rolado o
+ *         suficiente, do seu título compacto;
  *       · páginas de detalhe (as que declaram "voltar" no <CabecalhoPagina>)
  *         → "‹ voltar";
- *   - centro: o título da página de detalhe (nas páginas principais fica
- *     vazio — o título aparece grande no conteúdo);
+ *   - centro: só o título de uma página de detalhe (nas páginas principais
+ *     fica vazio — o título aparece grande no conteúdo, ou compacto na
+ *     zona esquerda, nunca aqui);
  *   - direita: a ação da página atual (ex.: o "+" ou o menu "⋯").
  *
  * A navegação entre secções é toda pelo menu ☰ (não há controlo segmentado
@@ -35,8 +40,19 @@
  * "aoRecuar", navega-se de imediato, como sempre.
  *
  * Esta barra está SEMPRE visível (não se esconde ao rolar). O que se
- * recolhe ao rolar para baixo é o conteúdo de cada página — o título
- * grande e, na página de Contas, o campo de procura.
+ * recolhe ao rolar para baixo é o conteúdo de cada página — nas páginas
+ * com <CabecalhoPagina colapsavel>, o título grande e (se a própria
+ * página o fizer, ligada a "aoColapsar") a barra de procura. Quando isso
+ * acontece, o título passa a aparecer aqui — "tituloCompacto", em
+ * CabecalhoContexto —, mas À DIREITA DO ☰, dentro da própria zona
+ * esquerda, NÃO ao centro como o de uma página de detalhe: a zona direita
+ * de uma página principal muda de conteúdo consoante o modo (ex.: a
+ * pílula "Selecionar"/"Filtros" dá lugar a um "X" no modo de seleção da
+ * lista de Movimentos, larguras diferentes) — um título centrado, que
+ * depende das duas zonas terem a mesma largura para ficar mesmo no meio,
+ * "saltaria" de posição sempre que a zona direita mudasse de tamanho. Ao
+ * ficar ancorado ao ☰, o título nunca se mexe, aconteça o que acontecer
+ * do lado direito.
  */
 
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -59,6 +75,14 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
   // Sem "voltar" a página é principal → ☰ à esquerda. Com "voltar" é de
   // detalhe → "‹ voltar" à esquerda.
   const ePaginaDetalhe = Boolean(cabecalho?.voltar)
+
+  // "undefined" (a página nem é "colapsavel") é diferente de "false"
+  // (colapsavel, mas ainda não rolado o suficiente) — só no primeiro caso
+  // é que nem vale a pena desenhar o título compacto (ver a nota em
+  // CabecalhoPagina.tsx): sem isso, TODA página principal ganharia um
+  // elemento extra na zona esquerda, mesmo sem nunca vir a mostrar nada.
+  const paginaColapsavel = cabecalho?.tituloCompacto !== undefined
+  const tituloCompacto = Boolean(cabecalho?.tituloCompacto)
 
   function aoVoltar() {
     // location.key é 'default' apenas na primeira entrada da sessão de
@@ -96,19 +120,42 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
             <IconeChevronEsquerda tamanho={22} />
           </button>
         ) : (
-          <button
-            type="button"
-            className={estilos.botao}
-            aria-label="Abrir menu"
-            onClick={aoAbrirMenu}
-          >
-            <IconeMenu tamanho={22} />
-          </button>
+          <>
+            <button
+              type="button"
+              className={estilos.botao}
+              aria-label="Abrir menu"
+              onClick={aoAbrirMenu}
+            >
+              <IconeMenu tamanho={22} />
+            </button>
+
+            {/* O título compacto de uma página principal "colapsavel" (ver
+                CabecalhoPagina.tsx) — à direita do ☰, não ao centro (ver a
+                nota no topo do ficheiro sobre o porquê). Só desenhado
+                quando a própria página É colapsavel ("paginaColapsavel");
+                nessas, fica SEMPRE no DOM (nunca condicionalmente montado/
+                desmontado), para a transição de entrada/saída poder
+                animar-se em CSS — só invisível até se rolar o suficiente. */}
+            {paginaColapsavel && (
+              <span
+                className={
+                  tituloCompacto && cabecalho?.titulo
+                    ? `${estilos.tituloCompacto} ${estilos.tituloCompactoVisivel}`
+                    : estilos.tituloCompacto
+                }
+                aria-hidden={!tituloCompacto}
+              >
+                {cabecalho?.titulo}
+              </span>
+            )}
+          </>
         )}
       </div>
 
-      {/* Título ao centro. Só nas páginas de detalhe — nas principais o
-          título é grande, no conteúdo (ver CabecalhoPagina). */}
+      {/* Título ao centro — só numa página de detalhe, estático, sem
+          transição nenhuma: sempre foi assim, e não há porque animar algo
+          que só aparece uma vez, ao entrar na página. */}
       {ePaginaDetalhe && cabecalho?.titulo && (
         <span className={estilos.titulo}>{cabecalho.titulo}</span>
       )}
