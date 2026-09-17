@@ -5,7 +5,8 @@
  * Um "hook" é uma função cujo nome começa por "use" e que dá a um
  * componente acesso a funcionalidades do React (estado, contexto, ciclo
  * de vida). Este hook devolve o valor do contexto de autenticação —
- * estado atual, dados do utilizador, e as funções registar/login/logout.
+ * estado atual, dados do utilizador, e as funções registar/login/logout/
+ * atualizarPreferencias.
  *
  * Uso típico dentro de um componente:
  *

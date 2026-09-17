@@ -4,10 +4,10 @@
  *
  * Este componente envolve a aplicação inteira (ver src/main.tsx) e é o
  * único sítio onde vive o estado "há sessão iniciada? de quem?". Expõe
- * esse estado, e as ações que o alteram (registar, login, logout), através
- * do contexto definido em contexto.ts. Qualquer componente abaixo lê tudo
- * isto com o hook useAuth (ver useAuth.ts), sem receber nada por
- * "props".
+ * esse estado, e as ações que o alteram (registar, login, logout,
+ * atualizarPreferencias), através do contexto definido em contexto.ts.
+ * Qualquer componente abaixo lê tudo isto com o hook useAuth (ver
+ * useAuth.ts), sem receber nada por "props".
  *
  * Ao montar, faz um pedido a GET /auth/me para descobrir se o browser já
  * tem um cookie de sessão válido de uma visita anterior — é isso que
@@ -22,6 +22,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   login as apiLogin,
   logout as apiLogout,
+  mudarPreferencias as apiMudarPreferencias,
   obterUtilizadorAtual,
   registar as apiRegistar,
   type Utilizador,
@@ -97,8 +98,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Muda a moeda principal do utilizador autenticado. Se apiMudarPreferencias
+  // rejeitar (ex.: 422 numa moeda não suportada, ou um erro de rede), a
+  // exceção propaga-se para quem chamou — "utilizador" só é atualizado em
+  // caso de sucesso, para o ecrã que mostra a moeda escolhida nunca
+  // avançar otimisticamente para um valor que o servidor não confirmou.
+  async function atualizarPreferencias(moedaPrincipal: string) {
+    const u = await apiMudarPreferencias(moedaPrincipal)
+    setUtilizador(u)
+  }
+
   return (
-    <AuthContexto.Provider value={{ estado, utilizador, registar, login, logout }}>
+    <AuthContexto.Provider
+      value={{ estado, utilizador, registar, login, logout, atualizarPreferencias }}
+    >
       {children}
     </AuthContexto.Provider>
   )

@@ -67,9 +67,12 @@
   white-space: nowrap;
 }
 
-/* Seta: em TELEMÓVEL fica ">" (o seletor abre uma folha que entra do
-   lado). No DESKTOP aponta para BAIXO ("v" — "abre uma lista aqui") e,
-   com a lista aberta, gira para "^". */
+/* Seta: por omissão fica ">" (em TELEMÓVEL, o seletor abre uma folha que
+   entra do lado). Aponta para BAIXO ("v" — "abre uma lista aqui") em dois
+   casos: sempre em DESKTOP, e em telemóvel quando a folha também sobe de
+   baixo (ver "direcaoPainel", em CampoSelecao.tsx) — os dois "abrem algo
+   por baixo", por isso a mesma seta. Só em desktop é que, com a lista
+   aberta, gira mais uma vez para "^" (".setaAberta"). */
 .linha .gatilhoSeta {
   display: flex;
   flex-shrink: 0;
@@ -78,7 +81,7 @@
   transition: transform 0.15s ease;
 }
 
-.linha .setaDesktop {
+.linha .apontaBaixo {
   transform: rotate(90deg);
 }
 

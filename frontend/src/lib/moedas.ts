@@ -21,17 +21,6 @@ export const MOEDAS: Record<string, { nome: string; simbolo: string }> = {
   CHF: { nome: 'Franco suíço', simbolo: 'Fr.' },
 }
 
-/*
- * MOEDA BASE (de apresentação)
- * ---------------------------
- * A moeda em que os totais são mostrados. Por agora está FIXA em euros.
- * Virá a ser uma definição do utilizador, e os saldos das contas noutras
- * moedas passarão a ser convertidos para ela (falta uma fonte de câmbios).
- * Enquanto isso não existe, o total em destaque é só o das contas que já
- * estão nesta moeda, e as outras aparecem resumidas à parte.
- */
-export const MOEDA_BASE = 'EUR'
-
 /**
  * Etiqueta de apresentação de uma moeda: "Nome (símbolo)" — ex.:
  * "Euro (€)". Usada tanto no seletor de moeda como na página de detalhe

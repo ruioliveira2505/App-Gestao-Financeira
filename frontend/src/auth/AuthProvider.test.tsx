@@ -19,8 +19,8 @@ import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from './AuthProvider'
 import { useAuth } from './useAuth'
 
-const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt' }
-const UTILIZADOR_NOVO = { id: '22222222-2222-2222-2222-222222222222', email: 'nova@exemplo.pt' }
+const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
+const UTILIZADOR_NOVO = { id: '22222222-2222-2222-2222-222222222222', email: 'nova@exemplo.pt', moeda_principal: 'EUR' }
 
 // Fábrica de respostas para "não há sessão": é o que o backend devolve em
 // GET /auth/me sem cookie válido. Tem de ser uma função que devolve uma

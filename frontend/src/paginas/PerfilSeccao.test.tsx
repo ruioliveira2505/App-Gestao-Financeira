@@ -2,8 +2,9 @@
  * TESTES DE PerfilSeccao
  * =======================
  *
- * O marcador partilhado pelas três secções do perfil ainda por construir
- * (Conta, Segurança, Preferências — ver a nota no topo de
+ * O marcador partilhado pelas secções do perfil ainda por construir a
+ * sério (Conta e Segurança — Preferências já ganhou o seu próprio
+ * ficheiro, PerfilPreferencias.tsx, ver a nota no topo de
  * PerfilSeccao.tsx). Cobre-se aqui só o que é seu: o título recebido por
  * prop chega ao cabeçalho, o "Em breve" aparece, e o "‹ voltar" leva a
  * /perfil.

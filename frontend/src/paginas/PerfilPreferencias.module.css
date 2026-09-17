@@ -1,0 +1,34 @@
+/*
+ * ESTILOS DE PerfilPreferencias.tsx
+ * ==================================
+ *
+ * ".grupo" é o mesmo padrão de cartão agrupado (estilo "Definições" do
+ * iOS) já usado em ContaFormulario.module.css — contorno em vez de
+ * sombra, cantos recortados, traço fino a separar linhas. Repetido aqui
+ * (não partilhado entre ficheiros: CSS Modules fica sempre por ficheiro)
+ * porque esta página, tendo só uma preferência por agora, ainda assim
+ * deve manter a mesma linguagem visual das outras fichas da app.
+ */
+
+.grupo {
+  padding: 0;
+  margin: var(--espaco-5) 0 0;
+
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+.grupo > div {
+  padding-left: var(--espaco-4);
+  padding-right: var(--espaco-4);
+}
+
+/* Enquanto o pedido de mudar a moeda está em curso — ver a nota "aGuardar"
+   no topo de PerfilPreferencias.tsx. */
+.aAtualizar {
+  margin: var(--espaco-3) 0 0;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}

@@ -14,12 +14,13 @@
  *   - IDENTIDADE: o avatar com a inicial, o nome e o email. Na falta de um
  *     campo de nome verdadeiro (o registo só recolhe o email), o "nome" é
  *     a parte do email antes do "@" — a mesma regra usada na navegação.
- *   - SECÇÕES: Conta, Segurança, Preferências — e Categorias. As três
- *     primeiras são cada uma uma linha de uma lista ao estilo da lista de
- *     contas — um ícone à esquerda (num quadrado arredondado), o título,
- *     um subtítulo com o que lá vive, e um chevron ">". Tocar leva ao
- *     sub-ecrã (/perfil/conta, etc.), que por agora é só um marcador "Em
- *     breve". CATEGORIAS é a excepção: não é uma secção da navegação
+ *   - SECÇÕES: Conta, Segurança, Preferências — e Categorias. As quatro
+ *     são cada uma uma linha de uma lista ao estilo da lista de contas —
+ *     um ícone à esquerda (num quadrado arredondado), o título, um
+ *     subtítulo com o que lá vive, e um chevron ">". Conta e Segurança
+ *     levam a um marcador "Em breve" (PerfilSeccao.tsx); Preferências já
+ *     leva a um sub-ecrã real (PerfilPreferencias.tsx — a moeda
+ *     principal). CATEGORIAS é a excepção: não é uma secção da navegação
  *     principal (Início/Movimentos/Contas são entidades reais do dia a
  *     dia; uma categoria é só uma classificação — ver a nota em
  *     src/lib/seccoes.ts), mas é uma página REAL, já construída
@@ -51,8 +52,10 @@ import {
 import { nomeApresentado } from '../lib/nomeUtilizador'
 import estilos from './Perfil.module.css'
 
-// As secções de definições. Cada uma tem um sub-ecrã próprio (ainda um
-// marcador "Em breve"); a ordem aqui é a ordem na lista.
+// As secções de definições. Cada uma tem um sub-ecrã próprio — Conta e
+// Segurança ainda são só um marcador "Em breve", Preferências já tem
+// conteúdo real (ver a nota no topo do ficheiro); a ordem aqui é a ordem
+// na lista.
 type SeccaoPerfil = {
   para: string
   titulo: string
@@ -76,7 +79,7 @@ const SECCOES_PERFIL: SeccaoPerfil[] = [
   {
     para: '/perfil/preferencias',
     titulo: 'Preferências',
-    subtitulo: 'Tema da aplicação',
+    subtitulo: 'Moeda principal',
     Icone: IconeAjustes,
   },
   {

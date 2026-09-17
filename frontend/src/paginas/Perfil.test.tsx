@@ -23,7 +23,7 @@ import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from '../auth/AuthProvider'
 import { Perfil } from './Perfil'
 
-const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt' }
+const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 
 function montar() {
   servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))

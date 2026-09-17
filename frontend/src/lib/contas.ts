@@ -20,6 +20,12 @@ import { pedido } from './http'
  *   - data_ancora / created_at / updated_at são strings ISO.
  *   - saldo é o saldo atual; enquanto não há movimentos, é igual a
  *     saldo_ancora.
+ *   - saldo_convertido é "saldo" já convertido para a moeda principal do
+ *     utilizador autenticado (ver src/paginas/PerfilPreferencias.tsx), à
+ *     taxa de câmbio de hoje — "null" só na falta genuína de taxas de
+ *     câmbio para converter (o backend nunca falha o pedido inteiro só
+ *     por isso). Nunca a moeda da PRÓPRIA CONTA (essa é sempre "moeda",
+ *     acima) — é a moeda em que se compara/soma valores ENTRE contas.
  */
 export type Conta = {
   id: string
@@ -30,6 +36,7 @@ export type Conta = {
   data_ancora: string
   saldo_ancora: string
   saldo: string
+  saldo_convertido: string | null
   created_at: string
   updated_at: string
 }

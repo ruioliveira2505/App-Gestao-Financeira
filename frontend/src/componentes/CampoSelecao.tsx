@@ -10,8 +10,9 @@
  *     — para formulários soltos.
  *   - "linha": uma linha de ficha — rótulo ténue em cima, e por baixo o
  *     valor selecionado + uma seta que abre a lista:
- *       · TELEMÓVEL — seta ">"; abre o PainelDeEscolha (folha que entra
- *         da direita);
+ *       · TELEMÓVEL — abre o PainelDeEscolha; a seta acompanha
+ *         "direcaoPainel" (ver abaixo) — ">" quando a folha entra da
+ *         direita, "v" quando sobe de baixo;
  *       · DESKTOP — seta "v" (gira para "^" com a lista aberta);
  *         divulgação EM LINHA: a lista aparece por baixo do campo, DENTRO
  *         da ficha, empurrando o que está abaixo (sem camada flutuante,
@@ -51,6 +52,13 @@ type Props = {
   permiteNovo?: boolean
   // Rótulo dessa linha (ex.: "Adicionar banco"). Só usado com "permiteNovo".
   rotuloNovo?: string
+  // Só em mobile (ver PainelDeEscolha.tsx, nota "DUAS DIREÇÕES"): "direita"
+  // (por omissão) quando este campo vive DENTRO de outra folha já aberta
+  // (ex.: a moeda de uma conta, no modal "Nova conta"); "baixo" quando o
+  // campo vive numa página normal, sem folha nenhuma por trás (ex.: a
+  // moeda principal em Preferências). Sem efeito em desktop, que nunca usa
+  // o PainelDeEscolha.
+  direcaoPainel?: 'direita' | 'baixo'
 }
 
 export function CampoSelecao({
@@ -62,6 +70,7 @@ export function CampoSelecao({
   rotuloVazio,
   permiteNovo = false,
   rotuloNovo,
+  direcaoPainel = 'direita',
 }: Props) {
   const id = useId()
   const eMobile = useMediaQuery('(max-width: 768px)')
@@ -142,7 +151,10 @@ export function CampoSelecao({
           <span
             className={[
               estilos.gatilhoSeta,
-              !eMobile && estilos.setaDesktop,
+              // Desktop: sempre a apontar para baixo (gira para cima com a
+              // lista aberta). Mobile: só quando a folha também sobe de
+              // baixo — ver a nota "direcaoPainel" no tipo Props, acima.
+              (!eMobile || direcaoPainel === 'baixo') && estilos.apontaBaixo,
               !eMobile && aberto && estilos.setaAberta,
             ]
               .filter(Boolean)
@@ -163,6 +175,7 @@ export function CampoSelecao({
               aoFechar={() => setAberto(false)}
               aoAdicionar={permiteNovo ? tratarNovo : undefined}
               rotuloAdicionar={rotuloNovo}
+              direcao={direcaoPainel}
             />
           ) : (
             <div className={estilos.painelLinha}>

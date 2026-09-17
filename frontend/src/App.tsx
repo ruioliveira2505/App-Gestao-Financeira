@@ -28,10 +28,12 @@
  *                              Categorias), terminar sessão; alcançada
  *                              pela zona de perfil da navegação, não é
  *                              uma secção
- *   /perfil/conta        ┐ sub-ecrãs de cada secção do perfil. Conta,
- *   /perfil/seguranca    │ Segurança e Preferências são marcadores "Em
- *   /perfil/preferencias ┘ breve" (PerfilSeccao); ganham conteúdo próprio
- *                          quando forem feitos
+ *   /perfil/conta        ┐ sub-ecrãs de cada secção do perfil. Conta e
+ *   /perfil/seguranca    ┘ Segurança são marcadores "Em breve"
+ *                          (PerfilSeccao); ganham conteúdo próprio quando
+ *                          forem feitos
+ *   /perfil/preferencias   a moeda principal (PerfilPreferencias) — a
+ *                          primeira das três secções a ter conteúdo real
  *   qualquer outro       → redireciona para /
  *
  * As rotas autenticadas são filhas de uma "rota de layout" sem caminho
@@ -58,6 +60,7 @@ import { Movimentos } from './paginas/Movimentos'
 import { MovimentoEditar } from './paginas/MovimentoEditar'
 import { MovimentoNovo } from './paginas/MovimentoNovo'
 import { Perfil } from './paginas/Perfil'
+import { PerfilPreferencias } from './paginas/PerfilPreferencias'
 import { PerfilSeccao } from './paginas/PerfilSeccao'
 import { Registo } from './paginas/Registo'
 
@@ -159,10 +162,7 @@ function App() {
           path="/perfil/seguranca"
           element={<PerfilSeccao titulo="Segurança" />}
         />
-        <Route
-          path="/perfil/preferencias"
-          element={<PerfilSeccao titulo="Preferências" />}
-        />
+        <Route path="/perfil/preferencias" element={<PerfilPreferencias />} />
       </Route>
 
       {/* path="*" corresponde a qualquer endereço não apanhado acima. */}

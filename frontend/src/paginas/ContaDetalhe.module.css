@@ -75,6 +75,21 @@
   color: var(--cor-negativo-text);
 }
 
+/* O valor original (a moeda da própria conta), só quando o saldo em
+   destaque acima é o CONVERTIDO — ver a nota em ContaDetalhe.tsx. Tinta
+   secundária e mais pequeno do que o hero: é uma referência, não o
+   herói. "--texto-ui" (não "--texto-sm"): um degrau só acima, ainda
+   claramente secundário, mas menos "legenda mínima" e mais legível —
+   sem mexer na cor nem no peso, para não competir com o hero pela
+   atenção. Sem margem própria: o "gap" de ".perfil" já dá o espaço
+   mínimo até ao saldo — o objectivo é ficar bem junto a ele, como uma
+   legenda. */
+.saldoOriginal {
+  font-size: var(--texto-ui);
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --- Secções (Detalhes, Reconciliações) --- */
 
 .seccao {

@@ -184,13 +184,19 @@
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-/* Linha de lista, ambos a 16px (o corpo): o NOME a semibold — é a âncora
-   da linha, o que se lê ao varrer — e o SALDO em peso normal. Ocupa o meio
-   da linha e empurra o saldo para a direita; "min-width: 0" deixa o nome
-   encurtar com reticências. */
-.cartaoNome {
+/* Envolve o nome (+ a moeda, com conversão) — ocupa o meio da linha e
+   empurra o saldo para a direita; "min-width: 0" é o que deixa o nome, lá
+   dentro, encurtar com reticências (sem isto, um flex item nunca encolhe
+   abaixo do tamanho do seu conteúdo). */
+.cartaoIdentidade {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-width: 0;
+}
+
+/* O NOME a semibold — é a âncora da linha, o que se lê ao varrer. */
+.cartaoNome {
   font-size: var(--texto-base);
   font-weight: 600;
   overflow: hidden;
@@ -198,9 +204,39 @@
   white-space: nowrap;
 }
 
+/* O código da moeda da conta ("USD"), só quando há conversão a mostrar —
+   mesmo tratamento secundário do valor original, do outro lado (ver
+   ".cartaoSaldoOriginal", abaixo). */
+.cartaoMoeda {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}
+
+/* Envolve o saldo (e, com conversão, a linha do valor original por
+   baixo) — alinhados à direita, tal como o saldo sozinho já ficava. */
+.cartaoValores {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
 .cartaoSaldo {
   font-size: var(--texto-base);
-  font-weight: 400;
+  /* Sempre em destaque (negrito) — sem conversão, é o único valor da
+     linha; com conversão, é o valor CONVERTIDO (ver a nota em
+     CartaoConta, acima). */
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* O valor original (a moeda da própria conta), só quando há conversão a
+   mostrar — mais pequeno e em tinta secundária, para não competir com o
+   valor convertido pela atenção. */
+.cartaoSaldoOriginal {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }

@@ -11,7 +11,10 @@ import { MemoryRouter } from 'react-router-dom'
 
 import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
+import { AuthProvider } from '../auth/AuthProvider'
 import { Contas } from './Contas'
+
+const UTILIZADOR = { id: 'u1', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 
 // As escolhas de ordenação/agrupamento ficam no localStorage; limpa-se
 // entre testes para um não influenciar o seguinte.
@@ -29,6 +32,7 @@ function conta(sobrepor: Record<string, unknown> = {}) {
     data_ancora: '2026-01-01',
     saldo_ancora: '100.00',
     saldo: '100.00',
+    saldo_convertido: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...sobrepor,
@@ -36,10 +40,15 @@ function conta(sobrepor: Record<string, unknown> = {}) {
 }
 
 function montar() {
+  // AuthProvider real: CartaoConta usa useAuth() para saber a moeda
+  // principal do utilizador (ver a nota "CONVERSÃO" em Contas.tsx).
+  servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
   return render(
-    <MemoryRouter>
-      <Contas />
-    </MemoryRouter>,
+    <AuthProvider>
+      <MemoryRouter>
+        <Contas />
+      </MemoryRouter>
+    </AuthProvider>,
   )
 }
 
@@ -251,5 +260,79 @@ describe('Página Contas', () => {
     montar()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Sessão inválida ou expirada.')
+  })
+
+  describe('conversão de moeda', () => {
+    it('mostra sempre o código da moeda por baixo do nome, mesmo já na moeda principal', async () => {
+      // UTILIZADOR.moeda_principal é "EUR" (ver o topo do ficheiro); a
+      // conta também — nada a CONVERTER, mas o código aparece sempre, por
+      // consistência entre todas as linhas da lista.
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([conta({ nome: 'À ordem', moeda: 'EUR', saldo: '100.00' })]),
+        ),
+      )
+
+      montar()
+
+      const linha = await screen.findByRole('link', { name: /À ordem/ })
+      expect(linha).toHaveTextContent('EUR')
+      expect(linha).toHaveTextContent(/100,00 ?€/)
+      // Só UM valor de saldo — sem conversão, não há segunda linha com o
+      // mesmo montante repetido.
+      expect(linha.textContent?.match(/100,00/g)?.length).toBe(1)
+    })
+
+    it('conta noutra moeda, com taxa disponível: código por baixo do nome + convertido em destaque + original por baixo', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({
+              nome: 'Conta em dólares',
+              moeda: 'USD',
+              saldo: '100.00',
+              saldo_convertido: '92.50',
+            }),
+          ]),
+        ),
+      )
+
+      montar()
+
+      const linha = await screen.findByRole('link', { name: /Conta em dólares/ })
+      // O código da moeda da conta, por baixo do nome.
+      expect(linha).toHaveTextContent('USD')
+      // O valor convertido (na moeda principal, EUR), em destaque.
+      expect(linha).toHaveTextContent(/92,50 ?€/)
+      // E o original, agora com símbolo (não código) — "US$100,00" ou
+      // semelhante, consoante o Intl.NumberFormat do ambiente.
+      expect(linha).toHaveTextContent(/100,00/)
+    })
+
+    it('conta noutra moeda, sem taxa disponível (saldo_convertido null): código aparece, mas o saldo fica só com um valor', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({
+              nome: 'Conta em dólares',
+              moeda: 'USD',
+              saldo: '100.00',
+              saldo_convertido: null,
+            }),
+          ]),
+        ),
+      )
+
+      montar()
+
+      const linha = await screen.findByRole('link', { name: /Conta em dólares/ })
+      // O código aparece sempre (por baixo do nome) — isto não depende de
+      // haver conversão disponível.
+      expect(linha).toHaveTextContent('USD')
+      expect(linha).toHaveTextContent(/100,00/)
+      // Só UM valor de saldo — sem taxa disponível, não há segunda linha
+      // com o mesmo montante repetido.
+      expect(linha.textContent?.match(/100,00/g)?.length).toBe(1)
+    })
   })
 })

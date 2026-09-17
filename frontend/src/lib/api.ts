@@ -28,6 +28,11 @@ export { ErroApi } from './http'
 export type Utilizador = {
   id: string
   email: string
+  // A moeda em que valores agregados entre contas (ex.: um futuro
+  // património total) são mostrados — nunca a moeda de uma conta
+  // concreta, essa continua sempre a sua própria (ver src/lib/moedas.ts).
+  // Por omissão "EUR"; muda-se com mudarPreferencias, abaixo.
+  moeda_principal: string
 }
 
 /**
@@ -72,4 +77,18 @@ export function logout(): Promise<void> {
  */
 export function obterUtilizadorAtual(): Promise<Utilizador> {
   return pedido<Utilizador>('/auth/me')
+}
+
+/**
+ * Muda as preferências do utilizador autenticado — por agora, só a moeda
+ * principal. Devolve o utilizador já atualizado, para quem chamar não
+ * precisar de um segundo pedido a obterUtilizadorAtual para refletir a
+ * mudança. Uma moeda fora do conjunto suportado (src/lib/moedas.ts) faz o
+ * backend responder 422.
+ */
+export function mudarPreferencias(moedaPrincipal: string): Promise<Utilizador> {
+  return pedido<Utilizador>('/auth/me', {
+    method: 'PATCH',
+    body: JSON.stringify({ moeda_principal: moedaPrincipal }),
+  })
 }

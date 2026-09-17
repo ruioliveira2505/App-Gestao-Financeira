@@ -124,4 +124,46 @@ describe('PainelDeEscolha', () => {
 
     await waitFor(() => expect(aoFechar).toHaveBeenCalledTimes(1))
   })
+
+  // "direcao='baixo'" — ver a nota "DUAS DIREÇÕES" no topo do ficheiro:
+  // usada quando não há nenhuma folha por trás (ex.: a moeda principal em
+  // Preferências), ao contrário da "direita" testada acima (usada dentro
+  // de um fluxo já aberto, ex.: a moeda de uma conta).
+  describe('direcao="baixo"', () => {
+    it('o botão de fechar chama-se "Fechar", não "Voltar" — não há para onde recuar', () => {
+      render(
+        <PainelDeEscolha
+          titulo="Moeda"
+          opcoes={OPCOES}
+          valor="EUR"
+          aoEscolher={vi.fn()}
+          aoFechar={vi.fn()}
+          direcao="baixo"
+        />,
+      )
+
+      expect(screen.getByRole('button', { name: 'Fechar' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Voltar' })).not.toBeInTheDocument()
+    })
+
+    it('tocar em "Fechar" fecha o painel sem escolher nada', async () => {
+      const aoEscolher = vi.fn()
+      const aoFechar = vi.fn()
+      render(
+        <PainelDeEscolha
+          titulo="Moeda"
+          opcoes={OPCOES}
+          valor="EUR"
+          aoEscolher={aoEscolher}
+          aoFechar={aoFechar}
+          direcao="baixo"
+        />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Fechar' }))
+
+      await waitFor(() => expect(aoFechar).toHaveBeenCalledTimes(1))
+      expect(aoEscolher).not.toHaveBeenCalled()
+    })
+  })
 })

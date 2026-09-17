@@ -1,16 +1,16 @@
 /*
- * SUB-ECRÃ DE UMA SECÇÃO DO PERFIL (/perfil/conta, /perfil/seguranca,
- * /perfil/preferencias)
+ * SUB-ECRÃ DE UMA SECÇÃO DO PERFIL (/perfil/conta, /perfil/seguranca)
  * =====================================================================
  *
- * Um marcador temporário, partilhado pelas três secções do perfil. Existe
- * para as linhas da lista da página de Perfil terem um destino real — com
- * "‹ voltar" para /perfil e o título certo na barra de topo — enquanto o
- * conteúdo de cada secção não está construído.
+ * Um marcador temporário, partilhado pelas secções do perfil ainda por
+ * construir a sério. Existe para as linhas da lista da página de Perfil
+ * terem um destino real — com "‹ voltar" para /perfil e o título certo na
+ * barra de topo — enquanto o conteúdo de cada secção não está construído.
  *
  * Quando uma secção for feita a sério (editar nome/email, mudar
- * palavra-passe, escolher o tema, …), passa a ter o seu próprio ficheiro e
- * esta rota deixa de a usar.
+ * palavra-passe, …), passa a ter o seu próprio ficheiro e esta rota deixa
+ * de a usar — foi o que já aconteceu a Preferências (a moeda principal),
+ * ver PerfilPreferencias.tsx.
  *
  * "voltar" no <CabecalhoPagina>: em mobile põe "‹ voltar" na barra de topo
  * em vez do botão ☰ (recua no histórico; /perfil é o recurso quando não há

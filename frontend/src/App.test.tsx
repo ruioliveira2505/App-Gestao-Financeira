@@ -20,7 +20,7 @@ import { definirEcraMobile, simularEntradaNoEcra, simularSaidaDoEcra } from './t
 import { AuthProvider } from './auth/AuthProvider'
 import App from './App'
 
-const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt' }
+const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 const semSessao = () =>
   HttpResponse.json({ detail: 'Sessão inválida ou expirada.' }, { status: 401 })
 
@@ -99,7 +99,7 @@ describe('Moldura da aplicação', () => {
     expect(definicoes().getByRole('link', { name: /Conta/ })).toBeInTheDocument()
     expect(definicoes().getByRole('link', { name: /Segurança/ })).toBeInTheDocument()
     expect(definicoes().getByRole('link', { name: /Preferências/ })).toBeInTheDocument()
-    expect(screen.getByText('Tema da aplicação')).toBeInTheDocument()
+    expect(screen.getByText('Moeda principal')).toBeInTheDocument()
 
     // Entrar numa secção leva ao sub-ecrã (marcador "Em breve" por agora).
     await userEvent.click(definicoes().getByRole('link', { name: /Segurança/ }))
@@ -157,6 +157,7 @@ describe('Moldura da aplicação', () => {
       data_ancora: '2026-01-01',
       saldo_ancora: '100.00',
       saldo: '100.00',
+      saldo_convertido: null,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     }
@@ -302,6 +303,7 @@ describe('Moldura da aplicação', () => {
             data_ancora: '2026-01-01',
             saldo_ancora: '100.00',
             saldo: '100.00',
+            saldo_convertido: null,
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-01T00:00:00Z',
           },
@@ -343,6 +345,7 @@ describe('Moldura da aplicação', () => {
             data_ancora: '2026-01-01',
             saldo_ancora: '100.00',
             saldo: '100.00',
+            saldo_convertido: null,
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-01T00:00:00Z',
           },
@@ -398,6 +401,7 @@ describe('Moldura da aplicação', () => {
             data_ancora: '2026-01-01',
             saldo_ancora: '100.00',
             saldo: '100.00',
+            saldo_convertido: null,
             created_at: '2026-01-01T00:00:00Z',
             updated_at: '2026-01-01T00:00:00Z',
           },

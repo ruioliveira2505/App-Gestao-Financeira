@@ -25,7 +25,7 @@ import { ErroApi, login, logout, obterUtilizadorAtual, registar } from './api'
 
 // Dados de utilizador reutilizados em vários testes, no mesmo formato que
 // o backend devolve (schema UserPublico).
-const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt' }
+const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 
 describe('cliente da API de autenticação', () => {
   it('registar devolve o utilizador criado quando a resposta é 201', async () => {

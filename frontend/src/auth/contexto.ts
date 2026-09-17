@@ -62,6 +62,13 @@ export type ValorAutenticacao = {
   // Termina a sessão atual. O estado local passa a 'anonimo' mesmo que o
   // pedido ao servidor falhe.
   logout: () => Promise<void>
+
+  // Muda as preferências do utilizador autenticado — por agora, só a
+  // moeda principal (ver Perfil → Preferências). O estado local
+  // ("utilizador") só é atualizado se o pedido tiver sucesso; a promessa
+  // é rejeitada com um ErroApi caso contrário, e cabe ao ecrã que a
+  // chama mostrar a mensagem.
+  atualizarPreferencias: (moedaPrincipal: string) => Promise<void>
 }
 
 /**

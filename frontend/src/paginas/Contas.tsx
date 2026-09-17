@@ -32,6 +32,7 @@ import { useEffect, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 
+import { useAuth } from '../auth/useAuth'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { Avatar } from '../componentes/Avatar'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
@@ -178,31 +179,56 @@ function Esqueleto() {
 }
 
 /** Uma linha da lista: o monograma do banco (círculo colorido com a
- *  inicial), o nome da conta e o saldo à direita. O mesmo monograma
- *  aparece na página de detalhe da conta, para a identidade visual ser a
- *  mesma nos dois sítios.
+ *  inicial), o nome da conta + o código da sua moeda por baixo, e o saldo
+ *  à direita. O mesmo monograma aparece na página de detalhe da conta,
+ *  para a identidade visual ser a mesma nos dois sítios.
  *
- *  Só o nome, sem banco nem tipo por baixo: banco e tipo servem para
- *  procurar e agrupar, e ter tudo em cada linha carregava a lista de
+ *  Sem banco nem tipo por baixo do nome (só a moeda): banco e tipo servem
+ *  para procurar e agrupar, e ter tudo em cada linha carregava a lista de
  *  informação a mais. Sem chevron: numa lista de lado a lado, sem cartão,
  *  a linha inteira lê-se como tocável e o realce ao toque confirma-o.
  *
- *  A moeda da conta só aparecerá aqui quando houver conversão de câmbios
- *  (nessa altura, junto ao saldo, o valor na moeda da conta; o valor a
- *  negrito passa a ser o convertido). */
+ *  O código da moeda ("EUR", "USD") aparece SEMPRE por baixo do nome,
+ *  mesmo quando é igual à moeda principal — para todas as linhas terem a
+ *  mesma forma (nome + moeda), em vez de umas terem uma segunda linha e
+ *  outras não, consoante a conta.
+ *
+ *  CONVERSÃO: já do lado do saldo — quando a moeda da conta é diferente
+ *  da moeda principal do utilizador (ver PerfilPreferencias.tsx) e o
+ *  backend conseguiu calcular a conversão (saldo_convertido não é null —
+ *  falta de taxas de câmbio, por exemplo, é o único caso em que é), o
+ *  saldo a negrito passa a ser o CONVERTIDO, com o valor original por
+ *  baixo, mais pequeno. Sem conversão disponível (mesma moeda, ou sem
+ *  taxa), mostra-se só o saldo, sem essa segunda linha — mostrar o mesmo
+ *  valor duas vezes seria só ruído. */
 function CartaoConta({ conta }: { conta: Conta }) {
+  const { utilizador } = useAuth()
   const negativo = Number(conta.saldo) < 0
+  const moedaPrincipal = utilizador?.moeda_principal ?? 'EUR'
+  const mostraConversao = conta.moeda !== moedaPrincipal && conta.saldo_convertido !== null
 
   return (
     <Link to={`/contas/${conta.id}`} className={estilos.cartao}>
       <Avatar nome={conta.banco || conta.nome} />
-      <span className={estilos.cartaoNome}>{conta.nome}</span>
-      <span
-        className={
-          negativo ? `${estilos.cartaoSaldo} ${estilos.negativo}` : estilos.cartaoSaldo
-        }
-      >
-        {formatarDinheiro(conta.saldo, conta.moeda)}
+      <span className={estilos.cartaoIdentidade}>
+        <span className={estilos.cartaoNome}>{conta.nome}</span>
+        <span className={estilos.cartaoMoeda}>{conta.moeda}</span>
+      </span>
+      <span className={estilos.cartaoValores}>
+        <span
+          className={
+            negativo ? `${estilos.cartaoSaldo} ${estilos.negativo}` : estilos.cartaoSaldo
+          }
+        >
+          {mostraConversao
+            ? formatarDinheiro(conta.saldo_convertido as string, moedaPrincipal)
+            : formatarDinheiro(conta.saldo, conta.moeda)}
+        </span>
+        {mostraConversao && (
+          <span className={estilos.cartaoSaldoOriginal}>
+            {formatarDinheiro(conta.saldo, conta.moeda)}
+          </span>
+        )}
       </span>
     </Link>
   )

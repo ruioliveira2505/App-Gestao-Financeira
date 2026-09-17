@@ -18,7 +18,7 @@ import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from './AuthProvider'
 import { RotaProtegida } from './RotaProtegida'
 
-const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt' }
+const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 const semSessao = () =>
   HttpResponse.json({ detail: 'Sessão inválida ou expirada.' }, { status: 401 })
 

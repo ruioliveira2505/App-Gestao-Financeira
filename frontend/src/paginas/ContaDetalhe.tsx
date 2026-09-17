@@ -34,6 +34,7 @@ import { useEffect, useState } from 'react'
 
 import { Link, useParams } from 'react-router-dom'
 
+import { useAuth } from '../auth/useAuth'
 import { Avatar } from '../componentes/Avatar'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { IconeGrafico, IconeLapis } from '../componentes/icones'
@@ -72,6 +73,7 @@ function Esqueleto() {
 
 export function ContaDetalhe() {
   const { id } = useParams<{ id: string }>()
+  const { utilizador } = useAuth()
 
   const [conta, setConta] = useState<Conta | null>(null)
   const [erro, setErro] = useState<string | null>(null)
@@ -95,6 +97,11 @@ export function ContaDetalhe() {
 
   const negativo = conta ? Number(conta.saldo) < 0 : false
   const rotuloMoeda = conta ? etiquetaMoeda(conta.moeda) : ''
+  const moedaPrincipal = utilizador?.moeda_principal ?? 'EUR'
+  // Só mostra a conversão quando há algo a converter — ver a mesma nota
+  // em Contas.tsx, CartaoConta.
+  const mostraConversao =
+    conta !== null && conta.moeda !== moedaPrincipal && conta.saldo_convertido !== null
 
   return (
     <PaginaDeslizante>
@@ -145,8 +152,19 @@ export function ContaDetalhe() {
                     negativo ? `${estilos.saldo} ${estilos.negativo}` : estilos.saldo
                   }
                 >
-                  {formatarDinheiro(conta.saldo, conta.moeda)}
+                  {mostraConversao
+                    ? formatarDinheiro(conta.saldo_convertido as string, moedaPrincipal)
+                    : formatarDinheiro(conta.saldo, conta.moeda)}
                 </span>
+                {/* O valor original, só quando o de cima é o convertido —
+                    ver a nota "CONVERSÃO" em Contas.tsx, CartaoConta, para
+                    a mesma lógica (moeda da conta diferente da principal,
+                    e taxa de câmbio disponível). */}
+                {mostraConversao && (
+                  <span className={estilos.saldoOriginal}>
+                    {formatarDinheiro(conta.saldo, conta.moeda)}
+                  </span>
+                )}
               </div>
 
               <section className={estilos.seccao}>
