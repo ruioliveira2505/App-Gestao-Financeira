@@ -108,7 +108,7 @@ Autenticação concluída — quatro endpoints, todos testados automaticamente:
 
 Contas — CRUD completo, testado, sempre no âmbito do utilizador autenticado:
 - `POST /contas` — cria uma conta (nome, banco, tipo, moeda, data e saldo de âncora). A data de início não pode ser no futuro.
-- `GET /contas` — lista as contas do utilizador, por ordem de nome, com o **saldo actual** — saldo de âncora + a soma dos seus movimentos.
+- `GET /contas` — lista as contas do utilizador, por ordem de nome, com o **saldo actual** — saldo de âncora + a soma dos seus movimentos. Cada conta inclui também `saldo_convertido`: o saldo actual convertido para a moeda principal do utilizador (ver "Conversão de moeda", abaixo), à taxa de hoje; `null` só na falta genuína de taxas de câmbio para converter (a conta continua a responder normalmente, sem esse valor).
 - `GET /contas/{id}` · `PATCH /contas/{id}` (campos descritivos; recusa mudar a moeda se a conta já tiver movimentos) · `DELETE /contas/{id}` (apaga também os seus movimentos, em cascata). Uma conta de outro utilizador responde 404, não 403.
 
 Movimentos — CRUD completo, testado, sempre em contas do utilizador autenticado. Todo o movimento tem uma categoria (obrigatória, nunca "sem categoria" — ver Categorias, abaixo):

@@ -31,7 +31,7 @@ Interface da aplicação, escrita em React com TypeScript, construída e servida
     - `Categorias.tsx` — lista dos GRUPOS de categorias, em duas secções fixas (Entradas / Saídas).
     - `CategoriaNova.tsx` — criar um grupo, como folha sobre a lista (`/categorias/novo`); é a única vez que se escolhe a direção (entrada/saída) — uma subcategoria herda-a sempre do grupo onde nasce.
     - `CategoriaGrupo.tsx` — o modal de um grupo (`/categorias/:grupoId`), como folha sobre a lista (tal como "Novo movimento"): as suas subcategorias e todas as ações (renomear, mover para outro grupo, eliminar) — sem detalhe e edição separados, ao contrário de Contas (um grupo não tem "perfil" para só consultar, nem página de detalhe própria).
-    - `Perfil.tsx` — a conta do utilizador: identidade, secções de definições e terminar sessão; `PerfilSeccao.tsx` é o sub-ecrã ("Em breve") de cada secção.
+    - `Perfil.tsx` — a conta do utilizador: identidade, secções de definições e terminar sessão; `PerfilSeccao.tsx` é o sub-ecrã ("Em breve") de Conta e Segurança; `PerfilPreferencias.tsx` é o de Preferências, já com conteúdo real (a moeda principal — grava ao escolher, sem botão "Guardar").
   - `componentes/` — peças de interface reutilizáveis, cada uma com o seu `.module.css`:
     - `LayoutApp.tsx` — a moldura das páginas autenticadas; escolhe, por `useMediaQuery`, entre a barra lateral (desktop) e a barra de topo + menu ☰ (mobile).
     - `BarraLateral.tsx` + `ItemNav.tsx` — a navegação em desktop (recolhível, com preferência guardada).
@@ -100,8 +100,8 @@ Tudo o que se segue tem testes automáticos.
 **Moldura:** adapta-se ao ecrã. Em desktop, barra lateral de navegação (Início · Movimentos · Contas), recolhível, com a preferência guardada no browser. Em mobile, uma barra de topo fixa (☰ ou "‹ voltar", título, acção) e o menu ☰ a ecrã inteiro. A navegação é só navegação; "terminar sessão" vive na página de Perfil.
 
 **Contas** (primeira entidade do domínio, de ponta a ponta):
-- `/contas` — lista com procura e um menu de ordenar/agrupar (preferências guardadas no browser).
-- `/contas/:id` — detalhe: identidade, saldo actual e os campos da conta.
+- `/contas` — lista com procura e um menu de ordenar/agrupar (preferências guardadas no browser). Quando a moeda de uma conta é diferente da moeda principal do utilizador (Perfil → Preferências) e o backend conseguiu convertê-la: por baixo do nome, o código da moeda da conta ("USD"); do lado do saldo, o valor já convertido em destaque, com o valor original por baixo, mais pequeno. Sem conversão disponível (mesma moeda, ou sem taxa de câmbio), mostra-se só o nome e só o saldo, sem nenhuma das duas linhas secundárias.
+- `/contas/:id` — detalhe: identidade, saldo actual (com a mesma conversão da lista, no hero) e os campos da conta — "Saldo de início" fica sempre na moeda da própria conta, nunca convertido.
 - `/contas/nova` e `/contas/:id/editar` — criar e editar num modal (folha em mobile, diálogo em desktop); é no fim do formulário de edição que se elimina a conta, com confirmação em *action sheet*.
 
 **Movimentos** (segunda entidade do domínio, de ponta a ponta):
@@ -115,7 +115,7 @@ Tudo o que se segue tem testes automáticos.
 - `/categorias/novo` — criar um grupo (nome + direção), como folha sobre a lista.
 - `/categorias/:grupoId` — um grupo abre como MODAL sobre a lista (folha que sobe de baixo, tal como "Novo movimento"), não como página própria: as suas subcategorias, cada uma com um menu "⋯" (Renomear — em linha, Mover para outro grupo, Eliminar); uma linha "Adicionar subcategoria" no fundo, também em linha. O grupo tem o seu próprio "⋯" no cabeçalho — com reticências NA VERTICAL, para se distinguir do "⋯" horizontal da subcategoria logo por baixo — com Renomear (numa folha pequena) e Eliminar (leva as subcategorias; não aparece nos dois refúgios "Outras Entradas"/"Outras Saídas"). Uma subcategoria protegida ("Outros" dos dois refúgios) não tem "⋯". Eliminar tenta sempre primeiro sem mais nada; só se o backend pedir (há movimentos a usar a categoria) é que aparece um seletor "Para onde migram os movimentos?", antes de repetir a eliminação — os erros de "Mover para" e de "Renomear grupo" aparecem dentro da própria folha, não escondidos atrás dela. Arrastar qualquer uma das três folhas aninhadas (Renomear grupo, Mover para, Migração) para baixo faz a folha do grupo descer com ela, tal como acontece com o seletor de moeda dentro de "Editar conta".
 
-**Perfil** (`/perfil`) — identidade (avatar, nome, email), as secções Conta · Segurança · Preferências (ainda marcadores "Em breve"), **Categorias** (esta já real — leva à gestão da árvore, ver acima) e o terminar sessão. Em mobile, cada secção entra e sai a deslizar lateralmente (o "push"/"pop" do iOS — `PaginaDeslizante.tsx`); em desktop não muda nada.
+**Perfil** (`/perfil`) — identidade (avatar, nome, email), as secções Conta · Segurança (ainda marcadores "Em breve") · Preferências (já real — a moeda principal do utilizador, usada para juntar/comparar valores entre contas em moedas diferentes; cada conta continua sempre na sua própria moeda), **Categorias** (também já real — leva à gestão da árvore, ver acima) e o terminar sessão. Em mobile, cada secção entra e sai a deslizar lateralmente (o "push"/"pop" do iOS — `PaginaDeslizante.tsx`); em desktop não muda nada.
 
 **Início** é um marcador de posição.
 
