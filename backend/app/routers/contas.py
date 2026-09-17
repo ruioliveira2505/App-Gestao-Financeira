@@ -28,6 +28,7 @@ from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
 from app.schemas.contas import ContaCriar, ContaEditar, ContaOut
+from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import obter_conta_do_utilizador
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
@@ -93,17 +94,38 @@ async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
     return resultado.first() is not None
 
 
-def _para_saida(conta: Conta, soma_movimentos: Decimal) -> ContaOut:
+async def _para_saida(
+    db: AsyncSession, conta: Conta, soma_movimentos: Decimal, moeda_principal: str
+) -> ContaOut:
     """
     Converte uma linha da tabela "contas" na forma devolvida pela API.
 
     É aqui que os valores decimais passam a texto e que o "saldo actual" é
     determinado: saldo_ancora + a soma (com sinal) dos movimentos da
     conta, já calculada por quem chama (_soma_movimentos /
-    _somas_de_movimentos) — esta função não faz queries, só formata.
+    _somas_de_movimentos). Ao contrário do que o nome sugere, já não é só
+    formatação: também converte esse saldo para "moeda_principal" (a
+    escolhida pelo utilizador — ver PATCH /auth/me), o que exige consultar
+    a tabela de taxas de câmbio (app/services/cambio.py) — daí ser
+    "async" e receber "db".
+
+    SemTaxaCambio (falta genuína de taxas — ex.: moeda acabada de
+    acrescentar, sem histórico ainda) é apanhada aqui: fica
+    saldo_convertido=None em vez de a rota inteira falhar com 500 só
+    porque uma conversão de apresentação não foi possível. A lista/o
+    detalhe da conta continuam a mostrar o essencial (o saldo na sua
+    própria moeda), mesmo sem conversão.
     """
     saldo_ancora_texto = f"{conta.saldo_ancora:.2f}"
-    saldo_texto = f"{conta.saldo_ancora + soma_movimentos:.2f}"
+    saldo = conta.saldo_ancora + soma_movimentos
+    saldo_texto = f"{saldo:.2f}"
+
+    try:
+        saldo_convertido = await converter(db, saldo, conta.moeda, moeda_principal, date.today())
+        saldo_convertido_texto: str | None = str(saldo_convertido.quantize(_DUAS_CASAS))
+    except SemTaxaCambio:
+        saldo_convertido_texto = None
+
     return ContaOut(
         id=conta.id,
         nome=conta.nome,
@@ -113,6 +135,7 @@ def _para_saida(conta: Conta, soma_movimentos: Decimal) -> ContaOut:
         data_ancora=conta.data_ancora,
         saldo_ancora=saldo_ancora_texto,
         saldo=saldo_texto,
+        saldo_convertido=saldo_convertido_texto,
         created_at=conta.created_at,
         updated_at=conta.updated_at,
     )
@@ -155,7 +178,7 @@ async def criar_conta(
 
     # Uma conta recém-criada nunca tem movimentos ainda — soma 0, sem
     # precisar de consultar a tabela de movimentos.
-    return _para_saida(conta, Decimal(0))
+    return await _para_saida(db, conta, Decimal(0), utilizador.moeda_principal)
 
 
 @router.get("", response_model=list[ContaOut])
@@ -169,7 +192,10 @@ async def listar_contas(
     )
     contas = list(resultado.scalars())
     somas = await _somas_de_movimentos(db, [conta.id for conta in contas])
-    return [_para_saida(conta, somas.get(conta.id, Decimal(0))) for conta in contas]
+    return [
+        await _para_saida(db, conta, somas.get(conta.id, Decimal(0)), utilizador.moeda_principal)
+        for conta in contas
+    ]
 
 
 @router.get("/{conta_id}", response_model=ContaOut)
@@ -181,7 +207,7 @@ async def obter_conta(
     """Devolve uma conta do utilizador autenticado. 404 se não for sua ou não existir."""
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
     soma = await _soma_movimentos(db, conta.id)
-    return _para_saida(conta, soma)
+    return await _para_saida(db, conta, soma, utilizador.moeda_principal)
 
 
 @router.patch("/{conta_id}", response_model=ContaOut)
@@ -216,7 +242,7 @@ async def editar_conta(
     await db.refresh(conta)
 
     soma = await _soma_movimentos(db, conta.id)
-    return _para_saida(conta, soma)
+    return await _para_saida(db, conta, soma, utilizador.moeda_principal)
 
 
 @router.delete("/{conta_id}", status_code=status.HTTP_204_NO_CONTENT)

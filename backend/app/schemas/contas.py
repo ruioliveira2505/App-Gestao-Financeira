@@ -109,5 +109,15 @@ class ContaOut(BaseModel):
     # movimentos é zero.
     saldo: str
 
+    # "saldo" convertido para a moeda principal do utilizador autenticado
+    # (User.moeda_principal — ver app/models/user.py), à taxa de câmbio de
+    # HOJE (nunca a data-âncora: isto é sempre "quanto vale isto agora",
+    # não um registo histórico — ver a nota "PORQUÊ A DATA É UMA COLUNA"
+    # em app/models/taxa_cambio.py). "None" só na falta genuína de taxas
+    # de câmbio para converter (SemTaxaCambio, em app/services/cambio.py)
+    # — nunca por a moeda da conta já ser a principal, caso em que
+    # converter() devolve o mesmo valor sem precisar de taxa nenhuma.
+    saldo_convertido: str | None
+
     created_at: datetime
     updated_at: datetime

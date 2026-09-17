@@ -7,10 +7,14 @@ sessão, as validações (data futura, moeda inválida), e o âmbito por
 utilizador (um utilizador nunca vê contas de outro).
 """
 
+from datetime import date
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import select
 
 from app.models.categoria import Categoria
+from app.models.taxa_cambio import TaxaCambio
 from app.models.user import User
 
 # Corpo mínimo válido para criar uma conta, reutilizado e ajustado nos
@@ -454,3 +458,53 @@ async def test_editar_conta_permite_manter_a_mesma_moeda_com_movimentos(cliente_
 
     assert resposta.status_code == 200
     assert resposta.json()["nome"] == "Novo nome"
+
+
+@pytest.mark.asyncio
+async def test_criar_conta_com_a_mesma_moeda_da_principal_devolve_saldo_convertido_igual(
+    cliente_autenticado,
+):
+    # Utilizador novo -> moeda_principal "EUR" por omissão; CONTA_VALIDA
+    # também é "EUR" -> sem conversão nenhuma a fazer, e sem precisar de
+    # nenhuma taxa de câmbio guardada (ver o atalho "mesma moeda" em
+    # app/services/cambio.py, converter()).
+    resposta = await cliente_autenticado.post("/contas", json=CONTA_VALIDA)
+
+    corpo = resposta.json()
+    assert corpo["saldo_convertido"] == corpo["saldo"]
+
+
+@pytest.mark.asyncio
+async def test_listar_contas_converte_o_saldo_para_a_moeda_principal(
+    cliente_autenticado, db_session
+):
+    # 1 EUR = 1.10 USD, hoje.
+    db_session.add(TaxaCambio(data=date.today(), moeda="USD", por_1_eur=Decimal("1.10")))
+    await db_session.commit()
+    await cliente_autenticado.patch("/auth/me", json={"moeda_principal": "USD"})
+
+    await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "saldo_ancora": "100.00"})
+
+    resposta = await cliente_autenticado.get("/contas")
+
+    corpo = resposta.json()[0]
+    assert corpo["saldo"] == "100.00"
+    assert corpo["saldo_convertido"] == "110.00"
+
+
+@pytest.mark.asyncio
+async def test_obter_conta_sem_taxa_de_cambio_disponivel_devolve_saldo_convertido_none(
+    cliente_autenticado,
+):
+    # moeda_principal passa a "USD", mas nenhuma taxa de câmbio foi
+    # guardada na base de dados de teste — SemTaxaCambio é apanhada em
+    # _para_saida (app/routers/contas.py), e a rota continua a responder
+    # 200, só sem o valor convertido (ver a nota nesse ficheiro sobre não
+    # deixar a rota inteira falhar por uma conversão de apresentação).
+    await cliente_autenticado.patch("/auth/me", json={"moeda_principal": "USD"})
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+
+    resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["saldo_convertido"] is None
