@@ -18,9 +18,9 @@ API da aplicação, escrita em Python com o FastAPI.
   - `core/deps.py` — dependências partilhadas por várias rotas, sobretudo `obter_utilizador_atual` (identifica o utilizador autenticado a partir do cookie de sessão).
   - `db/session.py` — ligação à base de dados.
   - `core/moedas.py` — conjunto fechado de moedas suportadas (código, símbolo, nome).
-  - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py`, `models/categoria.py` — tabelas `users`, `sessions`, `contas`, `movimentos` e `categorias`.
+  - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py`, `models/categoria.py`, `models/taxa_cambio.py` — tabelas `users`, `sessions`, `contas`, `movimentos`, `categorias` e `taxas_cambio`.
   - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py`, `schemas/categorias.py` — formato dos pedidos e respostas dos endpoints.
-  - `routers/auth.py` — endpoints de autenticação (registo, login, logout, "quem sou eu").
+  - `routers/auth.py` — endpoints de autenticação (registo, login, logout, "quem sou eu", preferências).
   - `routers/contas.py` — endpoints de contas (criar, listar, obter, editar, apagar).
   - `routers/movimentos.py` — endpoints de movimentos (criar, listar — global ou por conta —, obter, editar, apagar).
   - `routers/categorias.py` — endpoints de categorias (árvore, criar, editar, eliminar — com a regra de migração obrigatória de movimentos, ver "Estado actual").
@@ -28,8 +28,10 @@ API da aplicação, escrita em Python com o FastAPI.
   - `services/categorias.py` — verificação de posse de uma categoria (partilhada pelos routers de categorias e movimentos).
   - `services/categorias_seed.py` — a árvore de categorias por omissão (`ARVORE_PADRAO`) e a função que a semeia para um utilizador, chamada no registo.
   - `services/sessions.py` — apagar sessões expiradas (ver `scripts/limpar_sessoes.py`, abaixo).
+  - `services/cambio.py` — conversão entre moedas (`obter_taxa`, `converter`), a partir da tabela `taxas_cambio`; e o apoio ao script de actualização (`guardar_taxas`, `proxima_data_a_pedir`, `normalizar_resposta_frankfurter`) — ver "Conversão de moeda", em "Estado actual".
 - `scripts/` — pequenos programas de linha de comandos, à parte da API (correm-se com `uv run python -m scripts.<nome>`):
   - `limpar_sessoes.py` — apaga da base de dados as sessões cujo prazo já passou.
+  - `actualizar_taxas_cambio.py` — vai buscar à Frankfurter API as taxas de câmbio em falta e grava-as em `taxas_cambio`.
   - `semear_dados.py` — repõe um conjunto realista de contas e movimentos (categorizados) para um utilizador, determinístico e seguro de correr várias vezes; usado em desenvolvimento, nunca em produção.
 - `tests/` — testes automatizados:
   - `conftest.py` — fixtures partilhadas por todos os testes (base de dados de teste, isolamento por transacção, cliente HTTP).
@@ -37,10 +39,12 @@ API da aplicação, escrita em Python com o FastAPI.
   - `test_auth_login.py` — testes ao endpoint `POST /auth/login`.
   - `test_auth_logout.py` — testes ao endpoint `POST /auth/logout`.
   - `test_auth_me.py` — testes à rota `GET /auth/me`.
+  - `test_auth_preferencias.py` — testes à rota `PATCH /auth/me` (moeda principal).
   - `test_contas.py` — testes aos endpoints de contas (criar, listar, obter, editar, apagar; saldo com movimentos; eliminação em cascata).
   - `test_movimentos.py` — testes aos endpoints de movimentos.
   - `test_categorias.py` — testes aos endpoints de categorias (árvore semeada, criar, editar, eliminar — incluindo a migração obrigatória de movimentos).
   - `test_sessions.py` — testes à limpeza de sessões expiradas.
+  - `test_cambio.py` — testes ao serviço de câmbio (obter a taxa de um dia, converter, guardar taxas, decidir a partir de que data pedir — tudo sem depender da Frankfurter API real).
 - `alembic/` — migrações da base de dados; `env.py` liga o Alembic à configuração e aos modelos da aplicação.
 - `alembic.ini` — configuração do Alembic (onde ficam as migrações, o logging).
 - `pyproject.toml` — nome, versão e dependências do projecto (o que o `uv` lê para saber o que instalar); inclui também a configuração do pytest.
@@ -100,6 +104,7 @@ Autenticação concluída — quatro endpoints, todos testados automaticamente:
 - `POST /auth/login` — autentica um utilizador existente e inicia uma sessão (cookie httpOnly, válida por 30 minutos de inactividade), devolvendo sempre o mesmo erro genérico para email inexistente ou password incorrecta. O email é normalizado da mesma forma antes de procurar o utilizador, por isso o login não é sensível a maiúsculas/minúsculas no email.
 - `POST /auth/logout` — termina a sessão actual (apaga-a da base de dados e remove o cookie); não falha mesmo sem sessão activa.
 - `GET /auth/me` — devolve os dados do utilizador autenticado, a partir do cookie de sessão; renova a validade dessa sessão a cada pedido.
+- `PATCH /auth/me` — muda as preferências do utilizador; por agora, só `moeda_principal` (por omissão "EUR", ver "Conversão de moeda", abaixo).
 
 Contas — CRUD completo, testado, sempre no âmbito do utilizador autenticado:
 - `POST /contas` — cria uma conta (nome, banco, tipo, moeda, data e saldo de âncora). A data de início não pode ser no futuro.
@@ -121,4 +126,9 @@ Categorias — CRUD completo, testado, sempre no âmbito do utilizador autentica
 
 Sessões expiradas — não se apagam sozinhas ao expirar (só um logout explícito remove uma sessão); `uv run python -m scripts.limpar_sessoes` (a partir desta pasta) apaga as que já passaram do prazo. Corre-se à mão por agora; mais tarde agenda-se por cron.
 
-O frontend de contas, movimentos e categorias está feito (ver `../frontend/README.md`). A seguir: a categorização automática de movimentos com um LLM; e, mais tarde, a importação por Open Banking.
+Conversão de moeda — cada conta continua sempre na sua própria moeda; esta capacidade serve para juntar/comparar valores ENTRE contas em moedas diferentes (ex.: um futuro património total), na moeda principal que cada utilizador escolher (`PATCH /auth/me`):
+- A tabela `taxas_cambio` guarda, por dia, a taxa de cada moeda suportada relativamente a 1 EUR (a moeda-pivot) — nunca um par por cada combinação de moedas.
+- `converter` usa a taxa em vigor na DATA pedida — a de um movimento, para um valor histórico que não deve mudar com o câmbio de hoje; a de hoje, para "quanto tenho agora". Um dia sem taxa publicada (fim de semana, feriado do Banco Central Europeu) usa a taxa mais recente igual ou anterior a essa data.
+- `uv run python -m scripts.actualizar_taxas_cambio` (a partir desta pasta) vai buscar as taxas em falta à [Frankfurter API](https://frankfurter.dev), preenchendo sozinho qualquer intervalo desde a última execução — incluindo, na primeira vez (ou sempre que uma conta com uma âncora mais antiga apareça depois), o recuo até à data-âncora mais antiga de todas as contas. Corre-se à mão por agora; mais tarde agenda-se por cron, tal como a limpeza de sessões.
+
+O frontend de contas, movimentos e categorias está feito (ver `../frontend/README.md`); o de conversão de moeda ainda não tem nenhuma peça de interface (falta a escolha da moeda principal, em Perfil → Preferências). A seguir: essa peça de frontend, e depois a análise entre contas que a conversão de moeda existe para tornar possível. Mais tarde: a categorização automática de movimentos com um LLM, e a importação por Open Banking.
