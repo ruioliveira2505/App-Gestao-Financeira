@@ -28,7 +28,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.moedas import MOEDA_OMISSAO, MOEDAS
+from app.core.moedas import MOEDA_OMISSAO, moeda_suportada
 
 
 class _CamposDescritivos(BaseModel):
@@ -60,13 +60,10 @@ class _CamposDescritivos(BaseModel):
         # Uma string só com espaços equivale a "não indicado".
         return valor or None
 
-    @field_validator("moeda")
-    @classmethod
-    def _moeda_suportada(cls, valor: str) -> str:
-        valor = valor.upper()
-        if valor not in MOEDAS:
-            raise ValueError(f"Moeda não suportada: {valor}")
-        return valor
+    # Função partilhada com app/schemas/auth.py (UserPreferencias) — ver
+    # a nota em app/core/moedas.py, moeda_suportada, sobre porquê não é
+    # um validador escrito aqui à parte.
+    _moeda_suportada = field_validator("moeda")(moeda_suportada)
 
 
 class ContaCriar(_CamposDescritivos):

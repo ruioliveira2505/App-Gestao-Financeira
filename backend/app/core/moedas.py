@@ -27,3 +27,23 @@ MOEDAS: dict[str, dict[str, str]] = {
 
 # Moeda assumida quando o pedido não indica nenhuma.
 MOEDA_OMISSAO = "EUR"
+
+
+def moeda_suportada(valor: str) -> str:
+    """
+    Valida que "valor" é um dos códigos em MOEDAS (maiúsculas primeiro,
+    para "usd" e "USD" serem tratados da mesma forma) — levanta ValueError
+    caso contrário, que é o que o Pydantic espera de um "field_validator"
+    para rejeitar o pedido com um erro 422 claro.
+
+    Função partilhada (não um validador dentro de um único schema)
+    porque mais do que um schema precisa exactamente desta regra: a moeda
+    de uma conta (app/schemas/contas.py) e a moeda principal escolhida no
+    perfil de um utilizador (app/schemas/auth.py, UserPreferencias) — sem
+    isto, seriam duas cópias da mesma validação a divergirem com o tempo
+    se MOEDAS alguma vez mudasse.
+    """
+    valor = valor.upper()
+    if valor not in MOEDAS:
+        raise ValueError(f"Moeda não suportada: {valor}")
+    return valor

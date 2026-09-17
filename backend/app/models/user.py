@@ -44,6 +44,17 @@ class User(Base):
     # torna esta intenção explícita.
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
 
+    # A moeda em que o utilizador vê valores agregados entre contas (ex.:
+    # um património total, algo que uma única conta não tem — cada conta
+    # já mostra sempre o SEU saldo na SUA própria moeda, isto não muda
+    # nada aí). server_default="EUR": ao acrescentar esta coluna a
+    # utilizadores já existentes, o Postgres preenche-a sozinho com "EUR"
+    # em cada linha já lá — sem um valor por omissão, a coluna não podia
+    # ser NOT NULL numa tabela que já tem linhas (ver a mesma nota nas
+    # migrações de categorias, onde nullable=False sem omissão só foi
+    # seguro por a tabela estar vazia nesse momento; aqui não está).
+    moeda_principal: Mapped[str] = mapped_column(String(3), nullable=False, server_default="EUR")
+
     # DateTime(timezone=True): a coluna regista também o fuso horário, e não
     # apenas a hora isolada.
     # server_default=func.now(): na ausência de um valor indicado, é a

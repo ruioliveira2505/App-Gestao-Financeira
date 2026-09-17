@@ -17,4 +17,5 @@ from app.models.categoria import Categoria  # noqa: F401
 from app.models.conta import Conta  # noqa: F401
 from app.models.movimento import Movimento  # noqa: F401
 from app.models.session import UserSession  # noqa: F401
+from app.models.taxa_cambio import TaxaCambio  # noqa: F401
 from app.models.user import User  # noqa: F401

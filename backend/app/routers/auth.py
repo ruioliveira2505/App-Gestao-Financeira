@@ -47,7 +47,7 @@ from app.core.sessions import SESSION_DURATION, gerar_token_sessao, hash_token
 from app.db.session import get_db
 from app.models.session import UserSession
 from app.models.user import User
-from app.schemas.auth import UserLogin, UserPublico, UserRegisto
+from app.schemas.auth import UserLogin, UserPreferencias, UserPublico, UserRegisto
 from app.services.categorias_seed import semear_categorias
 
 # APIRouter agrupa rotas relacionadas entre si; é depois incluído na
@@ -294,4 +294,26 @@ async def obter_utilizador_autenticado(
     para qualquer outro endpoint que exigisse um utilizador autenticado,
     só muda o que devolve depois de o obter.
     """
+    return utilizador
+
+
+@router.patch("/me", response_model=UserPublico)
+async def mudar_preferencias(
+    dados: UserPreferencias,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """
+    Muda as preferências do utilizador autenticado — por agora, só a
+    moeda principal (ver UserPreferencias, em app/schemas/auth.py).
+
+    PATCH, não PUT: mesmo só existindo um campo hoje, PATCH deixa claro
+    que este pedido actualiza preferências existentes, não substitui o
+    utilizador inteiro — coerente com o resto da API (ex.: PATCH /contas/
+    {id}), e sem ter de mudar de método se um dia houver mais do que uma
+    preferência e um pedido só quiser mudar uma delas.
+    """
+    utilizador.moeda_principal = dados.moeda_principal
+    await db.commit()
+    await db.refresh(utilizador)
     return utilizador

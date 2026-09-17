@@ -15,4 +15,6 @@ rotas. Contém, por agora:
   - sessions.py — apagar_sessoes_expiradas: a limpeza periódica de
     sessões cujo prazo já passou (ver scripts/limpar_sessoes.py, o ponto
     de entrada que a chama a partir da linha de comandos).
+  - cambio.py — obter_taxa/converter: conversão entre moedas, a partir das
+    taxas guardadas em taxas_cambio (ver app/models/taxa_cambio.py).
 """

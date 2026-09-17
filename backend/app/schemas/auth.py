@@ -25,6 +25,8 @@ import uuid
 # EmailStr já valida sozinho.
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.moedas import moeda_suportada
+
 
 def _normalizar_email(valor: str) -> str:
     """
@@ -93,9 +95,29 @@ class UserPublico(BaseModel):
     # nome e tipo nos dois.
     email: EmailStr
 
+    # A moeda em que valores agregados entre contas (ex.: um futuro
+    # "património total") são mostrados — nunca a moeda de uma conta
+    # concreta, que continua a ser sempre a sua própria (ver a nota em
+    # app/models/user.py). Muda-se através de PATCH /auth/me.
+    moeda_principal: str
+
     # from_attributes=True permite construir esta classe directamente a
     # partir de um objecto User (o modelo da base de dados), lendo os seus
     # atributos, em vez de exigir um dicionário já pronto. É o que permite
     # a um endpoint devolver directamente um User e o FastAPI converter
     # automaticamente para este formato, usando response_model.
     model_config = {"from_attributes": True}
+
+
+class UserPreferencias(BaseModel):
+    """
+    Dados recebidos no pedido de mudar as preferências do utilizador
+    (PATCH /auth/me). Por agora, só a moeda principal — mas fica já como
+    um schema à parte de UserRegisto/UserLogin (e não, por exemplo,
+    reaproveitando um deles), porque "preferências" e "credenciais" são
+    conceitos diferentes, que só por acaso vivem no mesmo utilizador.
+    """
+
+    moeda_principal: str
+
+    _validar_moeda = field_validator("moeda_principal")(moeda_suportada)
