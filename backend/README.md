@@ -19,16 +19,17 @@ API da aplicação, escrita em Python com o FastAPI.
   - `db/session.py` — ligação à base de dados.
   - `core/moedas.py` — conjunto fechado de moedas suportadas (código, símbolo, nome).
   - `models/user.py`, `models/session.py`, `models/conta.py`, `models/movimento.py`, `models/categoria.py`, `models/taxa_cambio.py` — tabelas `users`, `sessions`, `contas`, `movimentos`, `categorias` e `taxas_cambio`.
-  - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py`, `schemas/categorias.py` — formato dos pedidos e respostas dos endpoints.
+  - `schemas/auth.py`, `schemas/contas.py`, `schemas/movimentos.py`, `schemas/categorias.py`, `schemas/resumo.py` — formato dos pedidos e respostas dos endpoints.
   - `routers/auth.py` — endpoints de autenticação (registo, login, logout, "quem sou eu", preferências).
   - `routers/contas.py` — endpoints de contas (criar, listar, obter, editar, apagar).
   - `routers/movimentos.py` — endpoints de movimentos (criar, listar — global ou por conta —, obter, editar, apagar).
   - `routers/categorias.py` — endpoints de categorias (árvore, criar, editar, eliminar — com a regra de migração obrigatória de movimentos, ver "Estado actual").
-  - `services/contas.py` — verificação de posse de uma conta (partilhada pelos routers de contas e movimentos).
+  - `routers/resumo.py` — o endpoint de resumo (saldo total, entradas, saídas, líquido do mês actual) — ver "Estado actual".
+  - `services/contas.py` — verificação de posse de uma conta, e a soma dos seus movimentos (partilhadas pelos routers de contas, movimentos e resumo).
   - `services/categorias.py` — verificação de posse de uma categoria (partilhada pelos routers de categorias e movimentos).
   - `services/categorias_seed.py` — a árvore de categorias por omissão (`ARVORE_PADRAO`) e a função que a semeia para um utilizador, chamada no registo.
   - `services/sessions.py` — apagar sessões expiradas (ver `scripts/limpar_sessoes.py`, abaixo).
-  - `services/cambio.py` — conversão entre moedas (`obter_taxa`, `converter`), a partir da tabela `taxas_cambio`; e o apoio ao script de actualização (`guardar_taxas`, `proxima_data_a_pedir`, `normalizar_resposta_frankfurter`) — ver "Conversão de moeda", em "Estado actual".
+  - `services/cambio.py` — conversão entre moedas: `obter_taxa`/`converter` (um valor de cada vez) e `obter_taxas_do_periodo`/`converter_com_taxas` (muitos valores do mesmo período, sem uma consulta por valor — usada pelo resumo), a partir da tabela `taxas_cambio`; e o apoio ao script de actualização (`guardar_taxas`, `proxima_data_a_pedir`, `normalizar_resposta_frankfurter`) — ver "Conversão de moeda", em "Estado actual".
 - `scripts/` — pequenos programas de linha de comandos, à parte da API (correm-se com `uv run python -m scripts.<nome>`):
   - `limpar_sessoes.py` — apaga da base de dados as sessões cujo prazo já passou.
   - `actualizar_taxas_cambio.py` — vai buscar à Frankfurter API as taxas de câmbio em falta e grava-as em `taxas_cambio`.
@@ -44,7 +45,8 @@ API da aplicação, escrita em Python com o FastAPI.
   - `test_movimentos.py` — testes aos endpoints de movimentos.
   - `test_categorias.py` — testes aos endpoints de categorias (árvore semeada, criar, editar, eliminar — incluindo a migração obrigatória de movimentos).
   - `test_sessions.py` — testes à limpeza de sessões expiradas.
-  - `test_cambio.py` — testes ao serviço de câmbio (obter a taxa de um dia, converter, guardar taxas, decidir a partir de que data pedir — tudo sem depender da Frankfurter API real).
+  - `test_cambio.py` — testes ao serviço de câmbio (obter a taxa de um dia, converter, as variantes em lote, guardar taxas, decidir a partir de que data pedir — tudo sem depender da Frankfurter API real).
+  - `test_resumo.py` — testes aos dois endpoints de resumo: saldo total entre contas, entradas/saídas/líquido do mês actual, repartição por grupo de categoria (agregação de subcategorias, ordem, percentagem), e a repartição por subcategoria dentro de um grupo (percentagem face ao grupo, movimento directo no grupo como linha própria, ownership); conversão à taxa do dia certo, tolerância à falta de taxa, âmbito por utilizador — em ambos.
 - `alembic/` — migrações da base de dados; `env.py` liga o Alembic à configuração e aos modelos da aplicação.
 - `alembic.ini` — configuração do Alembic (onde ficam as migrações, o logging).
 - `pyproject.toml` — nome, versão e dependências do projecto (o que o `uv` lê para saber o que instalar); inclui também a configuração do pytest.
@@ -131,4 +133,8 @@ Conversão de moeda — cada conta continua sempre na sua própria moeda; esta c
 - `converter` usa a taxa em vigor na DATA pedida — a de um movimento, para um valor histórico que não deve mudar com o câmbio de hoje; a de hoje, para "quanto tenho agora". Um dia sem taxa publicada (fim de semana, feriado do Banco Central Europeu) usa a taxa mais recente igual ou anterior a essa data.
 - `uv run python -m scripts.actualizar_taxas_cambio` (a partir desta pasta) vai buscar as taxas em falta à [Frankfurter API](https://frankfurter.dev), preenchendo sozinho qualquer intervalo desde a última execução — incluindo, na primeira vez (ou sempre que uma conta com uma âncora mais antiga apareça depois), o recuo até à data-âncora mais antiga de todas as contas. Corre-se à mão por agora; mais tarde agenda-se por cron, tal como a limpeza de sessões.
 
-O frontend de contas, movimentos e categorias está feito (ver `../frontend/README.md`); o de conversão de moeda ainda não tem nenhuma peça de interface (falta a escolha da moeda principal, em Perfil → Preferências). A seguir: essa peça de frontend, e depois a análise entre contas que a conversão de moeda existe para tornar possível. Mais tarde: a categorização automática de movimentos com um LLM, e a importação por Open Banking.
+Resumo — um único endpoint, o primeiro a usar a conversão de moeda para juntar valores ENTRE contas:
+- `GET /resumo` — o resumo da página Início: `saldo_total` (soma do saldo actual de todas as contas, convertido à taxa de hoje), `entradas`/`saidas`/`liquido` do MÊS ACTUAL (do dia 1 até hoje — devolvido em `periodo_inicio`/`periodo_fim`), e `categorias_entradas`/`categorias_saidas` — a repartição desses valores por GRUPO de categoria (`grupo_id`, `nome`, `valor`, `percentagem`), agregando uma subcategoria ao seu grupo-pai, só com grupos que tiveram movimentos no período, por ordem decrescente de valor. Cada movimento é convertido à taxa em vigor no seu PRÓPRIO dia, não a de hoje. Uma conta ou um movimento sem taxa disponível fica de fora da soma respectiva (incluindo da sua categoria), em silêncio — nunca faz o pedido falhar.
+- `GET /resumo/categorias/{grupo_id}` — um nível mais fundo, só pedido quando se "abre" uma barra de categoria: a repartição desse grupo por SUBCATEGORIA (`subcategoria_id`, `nome`, `valor`, `percentagem`), no mesmo período. A `percentagem` aqui é face ao TOTAL DO GRUPO, não ao total geral de entradas/saídas — pergunta diferente ("quanto de Alimentação foi para Supermercado", não "quanto do mês"). Um movimento categorizado directamente no grupo (sem subcategoria) aparece como a sua própria linha, com o nome do próprio grupo. 404 se o grupo não for do utilizador; 400 se o id pedido não for de um grupo (ex.: é o de uma subcategoria).
+
+O frontend de contas, movimentos, categorias e a escolha da moeda principal (Perfil → Preferências) está feito (ver `../frontend/README.md`); o de resumo/análise ainda não tem nenhuma peça de interface — é o que falta para a página Início deixar de ser um marcador de posição. Mais tarde: gráficos de categorias e de evolução no tempo, a categorização automática de movimentos com um LLM, e a importação por Open Banking.
