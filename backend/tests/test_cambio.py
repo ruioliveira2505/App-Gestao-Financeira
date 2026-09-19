@@ -4,10 +4,12 @@ TESTES DO SERVIÇO DE CÂMBIO
 
 Semeiam directamente a tabela taxas_cambio (sem passar por nenhuma rota
 da API — esta tabela não tem endpoints próprios, só é escrita pelo script
-de actualização) e verificam a matemática de obter_taxa/converter. Nenhum
-destes testes faz um pedido de rede: é precisamente a vantagem de separar
-"quem escreve as taxas" de "quem as usa" (ver a nota no topo de
-app/services/cambio.py).
+de actualização) e verificam a matemática de obter_taxa/converter, e das
+suas variantes "em lote" (obter_taxas_do_periodo/converter_com_taxas, que
+convertem muitos valores do mesmo período sem uma consulta por valor —
+ver app/routers/resumo.py). Nenhum destes testes faz um pedido de rede: é
+precisamente a vantagem de separar "quem escreve as taxas" de "quem as
+usa" (ver a nota no topo de app/services/cambio.py).
 """
 
 from datetime import date
@@ -22,10 +24,12 @@ from app.models.taxa_cambio import TaxaCambio
 from app.services.cambio import (
     SemTaxaCambio,
     converter,
+    converter_com_taxas,
     data_inicio_do_historico,
     guardar_taxas,
     normalizar_resposta_frankfurter,
     obter_taxa,
+    obter_taxas_do_periodo,
     primeira_data_guardada,
     proxima_data_a_pedir,
     ultima_data_guardada,
@@ -157,6 +161,158 @@ async def test_converter_propaga_sem_taxa_cambio_se_faltar_a_taxa_de_qualquer_da
 
     with pytest.raises(SemTaxaCambio):
         await converter(db_session, Decimal("100"), "GBP", "USD", date(2026, 1, 15))
+
+
+@pytest.mark.asyncio
+async def test_obter_taxas_do_periodo_sem_moedas_devolve_dicionario_vazio(db_session):
+    tabela = await obter_taxas_do_periodo(db_session, set(), date(2026, 1, 1), date(2026, 1, 31))
+
+    assert tabela == {}
+
+
+@pytest.mark.asyncio
+async def test_obter_taxas_do_periodo_ignora_eur_mesmo_se_pedido(db_session):
+    await _semear_taxa(db_session, "USD", date(2026, 1, 15), "1.10")
+
+    tabela = await obter_taxas_do_periodo(
+        db_session, {"EUR", "USD"}, date(2026, 1, 1), date(2026, 1, 31)
+    )
+
+    # "EUR" nunca tem linha própria na tabela (é o pivot) — não deve
+    # aparecer no dicionário devolvido, mesmo tendo sido pedido.
+    assert "EUR" not in tabela
+    assert tabela["USD"] == [(date(2026, 1, 15), Decimal("1.10"))]
+
+
+@pytest.mark.asyncio
+async def test_obter_taxas_do_periodo_traz_so_as_taxas_dentro_do_intervalo_pedido(db_session):
+    await _semear_taxa(db_session, "USD", date(2026, 1, 10), "1.09")  # antes do intervalo
+    await _semear_taxa(db_session, "USD", date(2026, 1, 15), "1.10")  # dentro
+    await _semear_taxa(db_session, "USD", date(2026, 1, 20), "1.12")  # dentro
+    await _semear_taxa(db_session, "USD", date(2026, 1, 31), "1.20")  # depois do intervalo
+
+    tabela = await obter_taxas_do_periodo(db_session, {"USD"}, date(2026, 1, 12), date(2026, 1, 25))
+
+    # As duas de dentro, ordenadas por data — mais a âncora do dia 10
+    # (antes do intervalo), sem a qual o dia 12 não teria nenhuma taxa
+    # "igual ou anterior" dentro da lista.
+    assert tabela["USD"] == [
+        (date(2026, 1, 10), Decimal("1.09")),
+        (date(2026, 1, 15), Decimal("1.10")),
+        (date(2026, 1, 20), Decimal("1.12")),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_obter_taxas_do_periodo_sem_nenhuma_taxa_anterior_ao_inicio(db_session):
+    # Nenhuma taxa antes do próprio dia 15 (o início do intervalo pedido)
+    # — a lista fica só com o que existe dentro do intervalo, sem âncora.
+    await _semear_taxa(db_session, "USD", date(2026, 1, 15), "1.10")
+
+    tabela = await obter_taxas_do_periodo(db_session, {"USD"}, date(2026, 1, 15), date(2026, 1, 31))
+
+    assert tabela["USD"] == [(date(2026, 1, 15), Decimal("1.10"))]
+
+
+@pytest.mark.asyncio
+async def test_obter_taxas_do_periodo_nao_traz_moedas_nao_pedidas(db_session):
+    await _semear_taxa(db_session, "USD", date(2026, 1, 15), "1.10")
+    await _semear_taxa(db_session, "GBP", date(2026, 1, 15), "0.85")
+
+    tabela = await obter_taxas_do_periodo(db_session, {"USD"}, date(2026, 1, 1), date(2026, 1, 31))
+
+    assert "GBP" not in tabela
+
+
+def test_converter_com_taxas_para_a_mesma_moeda_devolve_o_valor_tal_e_qual():
+    # Tabela vazia: se a função fosse mesmo procurar uma taxa, isto
+    # levantaria SemTaxaCambio. Confirma que o atalho evita a pesquisa.
+    valor = converter_com_taxas(Decimal("42.50"), "USD", "USD", date(2026, 1, 15), {})
+
+    assert valor == Decimal("42.50")
+
+
+def test_converter_com_taxas_entre_eur_e_uma_outra_moeda():
+    tabela = {"USD": [(date(2026, 1, 15), Decimal("1.10"))]}
+
+    de_eur_para_usd = converter_com_taxas(Decimal("100"), "EUR", "USD", date(2026, 1, 15), tabela)
+    de_usd_para_eur = converter_com_taxas(Decimal("110"), "USD", "EUR", date(2026, 1, 15), tabela)
+
+    assert de_eur_para_usd == Decimal("110")
+    assert de_usd_para_eur == Decimal("100")
+
+
+def test_converter_com_taxas_entre_duas_moedas_que_nao_sao_o_eur_passa_pelo_pivot():
+    tabela = {
+        "USD": [(date(2026, 1, 15), Decimal("1.10"))],
+        "GBP": [(date(2026, 1, 15), Decimal("0.85"))],
+    }
+
+    valor = converter_com_taxas(Decimal("110"), "USD", "GBP", date(2026, 1, 15), tabela)
+
+    # 110 USD -> 100 EUR -> 85 GBP (mesma conta de converter(), ver acima).
+    assert valor == Decimal("85.00")
+
+
+def test_converter_com_taxas_usa_a_taxa_mais_recente_igual_ou_anterior_dentro_da_tabela():
+    # Uma lista com várias datas — confirma que a pesquisa (bisect)
+    # encontra a taxa certa para uma data ENTRE duas linhas da tabela, tal
+    # como obter_taxa/converter fazem directamente na base de dados.
+    tabela = {
+        "USD": [
+            (date(2026, 1, 10), Decimal("1.05")),
+            (date(2026, 1, 20), Decimal("1.10")),
+        ]
+    }
+
+    # Dia 17: sem taxa própria, usa-se a mais recente anterior (dia 10).
+    valor = converter_com_taxas(Decimal("100"), "EUR", "USD", date(2026, 1, 17), tabela)
+
+    assert valor == Decimal("105.00")
+
+
+def test_converter_com_taxas_ignora_taxas_futuras_face_a_data_referencia():
+    tabela = {
+        "USD": [
+            (date(2026, 1, 10), Decimal("1.05")),
+            (date(2026, 1, 20), Decimal("1.20")),  # posterior à data pedida
+        ]
+    }
+
+    valor = converter_com_taxas(Decimal("100"), "EUR", "USD", date(2026, 1, 15), tabela)
+
+    assert valor == Decimal("105.00")
+
+
+def test_converter_com_taxas_sem_taxa_disponivel_levanta_sem_taxa_cambio():
+    with pytest.raises(SemTaxaCambio):
+        converter_com_taxas(Decimal("100"), "EUR", "USD", date(2026, 1, 15), {})
+
+
+def test_converter_com_taxas_sem_taxa_anterior_a_data_pedida_levanta_sem_taxa_cambio():
+    tabela = {"USD": [(date(2026, 2, 1), Decimal("1.10"))]}
+
+    with pytest.raises(SemTaxaCambio):
+        # A única taxa da tabela é POSTERIOR à data pedida.
+        converter_com_taxas(Decimal("100"), "EUR", "USD", date(2026, 1, 1), tabela)
+
+
+@pytest.mark.asyncio
+async def test_converter_com_taxas_da_o_mesmo_resultado_que_converter_a_partir_da_bd(db_session):
+    # Confirma que as duas vias (uma consulta por conversão, via
+    # converter(); ou uma tabela pré-carregada, via
+    # obter_taxas_do_periodo() + converter_com_taxas()) concordam sempre
+    # — não é suposto haver NENHUMA diferença de comportamento entre elas,
+    # só de quantas consultas fazem à base de dados.
+    await _semear_taxa(db_session, "USD", date(2026, 1, 10), "1.05")
+    await _semear_taxa(db_session, "USD", date(2026, 1, 20), "1.12")
+
+    tabela = await obter_taxas_do_periodo(db_session, {"USD"}, date(2026, 1, 1), date(2026, 1, 31))
+
+    for data_referencia in [date(2026, 1, 10), date(2026, 1, 15), date(2026, 1, 20), date(2026, 1, 25)]:
+        esperado = await converter(db_session, Decimal("100"), "EUR", "USD", data_referencia)
+        obtido = converter_com_taxas(Decimal("100"), "EUR", "USD", data_referencia, tabela)
+        assert obtido == esperado
 
 
 @pytest.mark.asyncio

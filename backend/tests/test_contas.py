@@ -369,7 +369,8 @@ async def test_saldo_actual_soma_os_movimentos_ao_saldo_da_ancora(cliente_autent
 @pytest.mark.asyncio
 async def test_saldo_actual_com_varias_contas_nao_soma_entre_contas(cliente_autenticado, db_session):
     # A soma agrupada de GET /contas (uma única consulta para todas as
-    # contas do utilizador, não uma por conta — ver _somas_de_movimentos)
+    # contas do utilizador, não uma por conta — ver
+    # app/services/contas.py:somas_de_movimentos)
     # tem de atribuir cada movimento à SUA conta, nunca misturar entre
     # elas.
     conta_a_id = (

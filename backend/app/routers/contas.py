@@ -19,7 +19,7 @@ from decimal import Decimal
 # constantes com nome.
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
@@ -29,7 +29,7 @@ from app.models.movimento import Movimento
 from app.models.user import User
 from app.schemas.contas import ContaCriar, ContaEditar, ContaOut
 from app.services.cambio import SemTaxaCambio, converter
-from app.services.contas import obter_conta_do_utilizador
+from app.services.contas import obter_conta_do_utilizador, soma_movimentos, somas_de_movimentos
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -38,47 +38,6 @@ router = APIRouter(prefix="/contas", tags=["contas"])
 # Usado para arredondar/normalizar os valores monetários a 2 casas
 # decimais, coerente com a coluna Numeric(14, 2).
 _DUAS_CASAS = Decimal("0.01")
-
-
-async def _soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
-    """
-    Soma o "valor" (com sinal) de todos os movimentos de uma conta. 0 se
-    não houver nenhum.
-
-    SEM filtro por data aqui, mesmo sabendo que um movimento nunca pode
-    ser anterior à data-âncora da conta (ver app/models/conta.py): essa
-    regra já é imposta noutro sítio — _validar_data, em
-    app/routers/movimentos.py, chamada tanto ao criar como ao editar um
-    movimento, incluindo ao "mover" um movimento de uma conta para outra.
-    Como nenhum movimento anterior à âncora chega a existir na base de
-    dados, somar sem filtro de data dá exactamente o mesmo resultado que
-    somar só os posteriores à âncora — mas sem repetir aqui uma
-    verificação que já está garantida noutro lado.
-    """
-    resultado = await db.execute(
-        select(func.coalesce(func.sum(Movimento.valor), 0)).where(
-            Movimento.conta_id == conta_id
-        )
-    )
-    return resultado.scalar_one()
-
-
-async def _somas_de_movimentos(
-    db: AsyncSession, conta_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, Decimal]:
-    """
-    A mesma soma que _soma_movimentos, mas para várias contas de uma vez
-    (uma query, agrupada por conta_id) — usada na listagem, para não
-    repetir uma query por conta (problema "N+1").
-    """
-    if not conta_ids:
-        return {}
-    resultado = await db.execute(
-        select(Movimento.conta_id, func.sum(Movimento.valor))
-        .where(Movimento.conta_id.in_(conta_ids))
-        .group_by(Movimento.conta_id)
-    )
-    return dict(resultado.all())
 
 
 async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
@@ -95,19 +54,21 @@ async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
 
 
 async def _para_saida(
-    db: AsyncSession, conta: Conta, soma_movimentos: Decimal, moeda_principal: str
+    db: AsyncSession, conta: Conta, soma: Decimal, moeda_principal: str
 ) -> ContaOut:
     """
     Converte uma linha da tabela "contas" na forma devolvida pela API.
 
     É aqui que os valores decimais passam a texto e que o "saldo actual" é
     determinado: saldo_ancora + a soma (com sinal) dos movimentos da
-    conta, já calculada por quem chama (_soma_movimentos /
-    _somas_de_movimentos). Ao contrário do que o nome sugere, já não é só
-    formatação: também converte esse saldo para "moeda_principal" (a
-    escolhida pelo utilizador — ver PATCH /auth/me), o que exige consultar
-    a tabela de taxas de câmbio (app/services/cambio.py) — daí ser
-    "async" e receber "db".
+    conta, já calculada por quem chama (soma_movimentos /
+    somas_de_movimentos, em app/services/contas.py — o parâmetro chama-se
+    aqui só "soma", não "soma_movimentos" como antes, para não sombrear o
+    nome dessas funções importadas neste ficheiro). Ao contrário do que o
+    nome sugere, já não é só formatação: também converte esse saldo para
+    "moeda_principal" (a escolhida pelo utilizador — ver PATCH /auth/me),
+    o que exige consultar a tabela de taxas de câmbio
+    (app/services/cambio.py) — daí ser "async" e receber "db".
 
     SemTaxaCambio (falta genuína de taxas — ex.: moeda acabada de
     acrescentar, sem histórico ainda) é apanhada aqui: fica
@@ -117,11 +78,13 @@ async def _para_saida(
     própria moeda), mesmo sem conversão.
     """
     saldo_ancora_texto = f"{conta.saldo_ancora:.2f}"
-    saldo = conta.saldo_ancora + soma_movimentos
-    saldo_texto = f"{saldo:.2f}"
+    saldo_atual = conta.saldo_ancora + soma
+    saldo_texto = f"{saldo_atual:.2f}"
 
     try:
-        saldo_convertido = await converter(db, saldo, conta.moeda, moeda_principal, date.today())
+        saldo_convertido = await converter(
+            db, saldo_atual, conta.moeda, moeda_principal, date.today()
+        )
         saldo_convertido_texto: str | None = str(saldo_convertido.quantize(_DUAS_CASAS))
     except SemTaxaCambio:
         saldo_convertido_texto = None
@@ -191,7 +154,7 @@ async def listar_contas(
         select(Conta).where(Conta.user_id == utilizador.id).order_by(Conta.nome)
     )
     contas = list(resultado.scalars())
-    somas = await _somas_de_movimentos(db, [conta.id for conta in contas])
+    somas = await somas_de_movimentos(db, [conta.id for conta in contas])
     return [
         await _para_saida(db, conta, somas.get(conta.id, Decimal(0)), utilizador.moeda_principal)
         for conta in contas
@@ -206,7 +169,7 @@ async def obter_conta(
 ) -> ContaOut:
     """Devolve uma conta do utilizador autenticado. 404 se não for sua ou não existir."""
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
-    soma = await _soma_movimentos(db, conta.id)
+    soma = await soma_movimentos(db, conta.id)
     return await _para_saida(db, conta, soma, utilizador.moeda_principal)
 
 
@@ -241,7 +204,7 @@ async def editar_conta(
     await db.commit()
     await db.refresh(conta)
 
-    soma = await _soma_movimentos(db, conta.id)
+    soma = await soma_movimentos(db, conta.id)
     return await _para_saida(db, conta, soma, utilizador.moeda_principal)
 
 

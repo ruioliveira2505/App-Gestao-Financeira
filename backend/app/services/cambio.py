@@ -16,6 +16,7 @@ conversão sem qualquer dependência de rede: um teste semeia a tabela com
 taxas conhecidas e verifica a matemática, sem chamar nenhuma API externa.
 """
 
+from bisect import bisect_right
 from datetime import date
 from decimal import Decimal
 
@@ -115,6 +116,118 @@ async def converter(
 
     taxa_origem = await obter_taxa(db, moeda_origem, data_referencia)
     taxa_destino = await obter_taxa(db, moeda_destino, data_referencia)
+    valor_em_eur = valor / taxa_origem
+    return valor_em_eur * taxa_destino
+
+
+async def obter_taxas_do_periodo(
+    db: AsyncSession, moedas: set[str], data_inicio: date, data_fim: date
+) -> dict[str, list[tuple[date, Decimal]]]:
+    """
+    Traz, de UMA SÓ VEZ, todas as taxas necessárias para converter, à
+    respectiva data de cada um, muitos valores espalhados por
+    [data_inicio, data_fim] — ex.: todos os movimentos de um mês, no
+    resumo de entradas/saídas (app/routers/resumo.py). Chamar converter()
+    (que faz duas consultas por valor, uma por moeda) um valor de cada
+    vez repetiria, à escala do número de movimentos, o mesmo problema
+    "N+1" já corrigido antes nesta aplicação para o saldo_apos dos
+    movimentos (ver app/services/contas.py:somas_de_movimentos).
+
+    Devolve, por moeda, uma lista de (data, taxa) ordenada por data
+    ascendente — passar isto a converter_com_taxas(), abaixo, permite
+    converter cada valor com uma pesquisa em memória, sem nenhuma
+    consulta adicional à base de dados.
+
+    Inclui, quando existir, a taxa mais recente ANTES de "data_inicio" —
+    uma linha extra por moeda, fora do intervalo pedido. Sem ela, um
+    valor logo nos primeiros dias do período (ex.: dia 1, um sábado, sem
+    taxa própria) não teria nenhuma taxa "igual ou anterior" dentro da
+    lista, apesar de a regra geral (obter_taxa, acima) aceitar
+    perfeitamente uma taxa de antes da data pedida.
+
+    "EUR" nunca aparece no dicionário devolvido, mesmo que esteja em
+    "moedas" — não tem linha própria na tabela taxas_cambio (é a
+    moeda-pivot, ver a nota em app/models/taxa_cambio.py); quem usa este
+    resultado trata o EUR à parte, tal como obter_taxa já faz.
+    """
+    moedas_a_pesquisar = moedas - {"EUR"}
+    if not moedas_a_pesquisar:
+        return {}
+
+    tabela: dict[str, list[tuple[date, Decimal]]] = {moeda: [] for moeda in moedas_a_pesquisar}
+
+    linhas_no_periodo = await db.execute(
+        select(TaxaCambio.moeda, TaxaCambio.data, TaxaCambio.por_1_eur)
+        .where(
+            TaxaCambio.moeda.in_(moedas_a_pesquisar),
+            TaxaCambio.data.between(data_inicio, data_fim),
+        )
+        .order_by(TaxaCambio.data)
+    )
+    for moeda, data_taxa, taxa in linhas_no_periodo:
+        tabela[moeda].append((data_taxa, taxa))
+
+    # A âncora anterior ao período, por moeda — uma query por moeda, não
+    # por movimento: o número de moedas envolvidas num período é sempre
+    # pequeno (o conjunto suportado inteiro, em app/core/moedas.py, já é
+    # pequeno), ao contrário do número de movimentos.
+    for moeda in moedas_a_pesquisar:
+        linha_anterior = (
+            await db.execute(
+                select(TaxaCambio.data, TaxaCambio.por_1_eur)
+                .where(TaxaCambio.moeda == moeda, TaxaCambio.data < data_inicio)
+                .order_by(TaxaCambio.data.desc())
+                .limit(1)
+            )
+        ).first()
+        if linha_anterior is not None:
+            tabela[moeda].insert(0, (linha_anterior.data, linha_anterior.por_1_eur))
+
+    return tabela
+
+
+def _taxa_na_tabela(
+    tabela: dict[str, list[tuple[date, Decimal]]], moeda: str, data_referencia: date
+) -> Decimal:
+    """
+    A mesma regra de obter_taxa ("a taxa mais recente igual ou anterior a
+    data_referencia"), mas lendo de uma tabela já carregada em memória
+    (obter_taxas_do_periodo), não da base de dados — daí não ser "async".
+
+    bisect_right encontra o primeiro elemento ESTRITAMENTE DEPOIS de
+    data_referencia numa lista ordenada por data ("key=" compara só a
+    data de cada tuplo, ignorando a taxa); o elemento mais recente IGUAL
+    OU ANTERIOR fica sempre imediatamente antes desse ponto — daí o "-1".
+    """
+    if moeda == "EUR":
+        return Decimal("1")
+
+    lista = tabela.get(moeda, [])
+    indice = bisect_right(lista, data_referencia, key=lambda item: item[0]) - 1
+    if indice < 0:
+        raise SemTaxaCambio(moeda, data_referencia)
+    return lista[indice][1]
+
+
+def converter_com_taxas(
+    valor: Decimal,
+    moeda_origem: str,
+    moeda_destino: str,
+    data_referencia: date,
+    tabela: dict[str, list[tuple[date, Decimal]]],
+) -> Decimal:
+    """
+    Faz exactamente a mesma conversão que converter() (o mesmo pivot via
+    EUR — ver a nota nessa função), mas a partir de uma tabela já
+    carregada em memória (obter_taxas_do_periodo), sem nenhuma consulta à
+    base de dados — pensada para converter MUITOS valores do MESMO
+    período de uma só vez, não um valor isolado.
+    """
+    if moeda_origem == moeda_destino:
+        return valor
+
+    taxa_origem = _taxa_na_tabela(tabela, moeda_origem, data_referencia)
+    taxa_destino = _taxa_na_tabela(tabela, moeda_destino, data_referencia)
     valor_em_eur = valor / taxa_origem
     return valor_em_eur * taxa_destino
 
