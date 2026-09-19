@@ -24,6 +24,22 @@ const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exe
 const semSessao = () =>
   HttpResponse.json({ detail: 'Sessão inválida ou expirada.' }, { status: 401 })
 
+// Início (a página em "/") pede GET /resumo ao montar — mockado aqui, uma
+// só vez, para os vários testes deste ficheiro que passam por "/" sem
+// serem sobre o CONTEÚDO de Início (ver Inicio.test.tsx para esses).
+// Valores arbitrários: nenhum destes testes olha para eles.
+const RESUMO_PADRAO = {
+  saldo_total: '0.00',
+  entradas: '0.00',
+  saidas: '0.00',
+  liquido: '0.00',
+  categorias_entradas: [],
+  categorias_saidas: [],
+  periodo_inicio: '2026-09-01',
+  periodo_fim: '2026-09-18',
+}
+const mockResumo = () => http.get('/api/resumo', () => HttpResponse.json(RESUMO_PADRAO))
+
 function montar(rotaInicial = '/') {
   return render(
     <AuthProvider>
@@ -42,13 +58,11 @@ afterEach(() => {
 
 describe('Moldura da aplicação', () => {
   it('mostra a barra lateral e a página Início quando há sessão', async () => {
-    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)), mockResumo())
 
     montar('/')
 
-    expect(
-      await screen.findByText(/Em breve: a análise das tuas contas/),
-    ).toBeInTheDocument()
+    expect(await screen.findByText('Saldo total')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Início' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Movimentos' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Contas' })).toBeInTheDocument()
@@ -64,6 +78,7 @@ describe('Moldura da aplicação', () => {
     servidorMsw.use(
       http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
       http.get('/api/contas', () => HttpResponse.json([])),
+      mockResumo(),
     )
     montar('/')
     await screen.findByRole('link', { name: 'Contas' })
@@ -75,7 +90,7 @@ describe('Moldura da aplicação', () => {
   })
 
   it('abre o Perfil ao clicar na zona de perfil da barra lateral', async () => {
-    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)), mockResumo())
     montar('/')
 
     // A zona de perfil tem o nome ("ana") como nome acessível (o avatar
@@ -191,6 +206,7 @@ describe('Moldura da aplicação', () => {
         logoutChamado = true
         return new HttpResponse(null, { status: 204 })
       }),
+      mockResumo(),
     )
     montar('/')
 
@@ -212,9 +228,10 @@ describe('Moldura da aplicação', () => {
         logoutChamado = true
         return new HttpResponse(null, { status: 204 })
       }),
+      mockResumo(),
     )
     montar('/')
-    await screen.findByText(/Em breve: a análise das tuas contas/)
+    await screen.findByText('Saldo total')
 
     const abrir = () => userEvent.click(screen.getByRole('button', { name: 'Abrir menu' }))
     const menu = () => screen.getByRole('dialog', { name: 'Menu de navegação' })
@@ -263,6 +280,7 @@ describe('Moldura da aplicação', () => {
       http.get('/api/contas', () => HttpResponse.json([])),
       http.get('/api/movimentos', () => HttpResponse.json([])),
       http.get('/api/categorias/arvore', () => HttpResponse.json([])),
+      mockResumo(),
     )
     montar('/contas')
     await screen.findByText('Ainda não tens contas.')
@@ -285,7 +303,7 @@ describe('Moldura da aplicação', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Abrir menu' }))
     await userEvent.click(within(menu()).getByRole('link', { name: 'Início' }))
-    expect(await screen.findByText(/Em breve: a análise das tuas contas/)).toBeInTheDocument()
+    expect(await screen.findByText('Saldo total')).toBeInTheDocument()
   })
 
   it('em mobile, a barra de topo mostra ☰, o título e a ação ("+") nas páginas principais', async () => {
@@ -442,7 +460,7 @@ describe('Moldura da aplicação', () => {
   })
 
   it('recolhe e expande a barra lateral, guardando a preferência', async () => {
-    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)), mockResumo())
     montar('/')
 
     await userEvent.click(await screen.findByRole('button', { name: 'Recolher menu' }))
@@ -456,7 +474,7 @@ describe('Moldura da aplicação', () => {
 
   it('arranca recolhida quando essa é a preferência guardada', async () => {
     localStorage.setItem('barraLateralRecolhida', 'true')
-    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+    servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)), mockResumo())
 
     montar('/')
 

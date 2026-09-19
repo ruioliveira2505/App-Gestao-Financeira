@@ -1,12 +1,346 @@
 /*
- * ESTILOS DA PÁGINA RESUMO
+ * ESTILOS DA PÁGINA INÍCIO
  * ========================
  *
- * Ficheiro ".module.css": a classe fica limitada ao componente que o
- * importa (Resumo.tsx).
+ * Deliberadamente diferente do resto da app (ver a nota "DESENHO
+ * DELIBERADAMENTE DIFERENTE" no topo de Inicio.tsx): sem nenhum título de
+ * página, por agora; o Saldo Total num cartão com fundo destacado; e a
+ * repartição por categoria (Entradas OU Saídas, nunca as duas visíveis ao
+ * mesmo tempo — ver a nota "CORREÇÃO DE DESENHO" em Inicio.tsx) atrás de
+ * um controlo segmentado, à maneira do iOS. Cor mantida conservadora — só
+ * as duas cores semânticas já estabelecidas (positivo/negativo, ver
+ * Movimentos.module.css), sem nenhum acento novo.
  */
 
 .nota {
-  margin-top: var(--espaco-3);
   color: var(--cor-texto-2);
+}
+
+/* --- Saldo Total: cartão com fundo destacado --- */
+
+.cartaoSaldo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-1);
+  text-align: center;
+  padding: var(--espaco-6) var(--espaco-4);
+  margin-bottom: var(--espaco-6);
+  background: var(--cor-superficie);
+  border-radius: var(--raio-lg);
+}
+
+.rotulo {
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-2);
+}
+
+.saldo {
+  font-size: var(--texto-3xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* As duas cores semânticas já estabelecidas para entrada/saída (ver
+   Movimentos.module.css) — aqui usadas também no Saldo Total (quando
+   negativo), no Líquido e no total da direcção activa (consoante o seu
+   próprio sinal). Deliberadamente as ÚNICAS cores novas nesta página —
+   ver a nota no topo do ficheiro. */
+.positivo {
+  color: var(--cor-positivo-text);
+}
+
+.negativo {
+  color: var(--cor-negativo-text);
+}
+
+/* --- Cabeçalho da secção: "Setembro 2026" + "Líquido X" --- */
+
+.cabecalhoFluxo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--espaco-3);
+  margin-bottom: var(--espaco-4);
+}
+
+.seccao {
+  margin-bottom: var(--espaco-6);
+}
+
+.seccaoTitulo {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+  margin: 0;
+}
+
+.liquidoInline {
+  flex-shrink: 0;
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Controlo segmentado "Entradas" / "Saídas" --- */
+
+.segmentado {
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--cor-superficie);
+  border-radius: var(--raio-md);
+  margin-bottom: var(--espaco-4);
+}
+
+.segmentoBotao {
+  flex: 1;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: none;
+  border-radius: calc(var(--raio-md) - 2px);
+  background: none;
+  font: inherit;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+.segmentoActivo {
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  box-shadow: var(--sombra-flutuante);
+}
+
+/* O total da direcção ACTIVA no controlo segmentado — o "herói" desta
+   secção, mais pequeno do que o Saldo Total (que continua a ser o
+   principal da página), mas ainda em destaque. */
+.totalDirecao {
+  display: block;
+  font-size: var(--texto-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: var(--espaco-4);
+}
+
+.semCategorias {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+}
+
+/* --- Repartição por categoria da direcção activa --- */
+
+.listaCategorias {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+/* O botão inteiro (nome + valor + seta + barra) é clicável — reset dos
+   estilos nativos de <button>, mantendo a mesma disposição em coluna que
+   a barra de categoria já tinha. O invólucro à sua volta, no JSX, não
+   tem "className" nenhum — ver a nota aí. */
+.categoriaBotao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* "gap" (não "justify-content: space-between"): com a seta a acrescentar
+   um TERCEIRO elemento nas linhas de grupo (nome, valor, seta —
+   space-between distribuiria o espaço TAMBÉM entre valor e seta, que
+   devem ficar juntos), ".categoriaNome" cresce para preencher o que
+   sobra ("flex: 1"), empurrando valor (+ seta, quando existe) para o
+   fim, sempre com o mesmo espaçamento pequeno entre si. */
+.categoriaCabecalho {
+  display: flex;
+  align-items: baseline;
+  gap: var(--espaco-2);
+}
+
+.categoriaNome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "--texto-ui" (não "--texto-sm") + peso 600: o mesmo tratamento que o
+   valor de um movimento já tem em Movimentos.module.css (".linhaValor")
+   — desde que a percentagem deixou de acompanhar este valor (ver a nota
+   em Inicio.tsx), ficava pequeno a mais para ser o único número da
+   linha. Cor secundária mantida — o nome da categoria continua a ser a
+   leitura principal da linha. */
+.categoriaValor {
+  flex-shrink: 0;
+  font-size: var(--texto-ui);
+  font-weight: 600;
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A largura de ".categoriaBarraEntrada"/".categoriaBarraSaida" vem de
+   "style" inline (a "percentagem" já calculada pelo backend — ver a nota
+   em Inicio.tsx). */
+.categoriaBarraFundo {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--cor-superficie-2);
+}
+
+.categoriaBarraEntrada {
+  display: block;
+  height: 100%;
+  background: var(--cor-positivo);
+}
+
+.categoriaBarraSaida {
+  display: block;
+  height: 100%;
+  background: var(--cor-negativo);
+}
+
+/* A seta de abrir/fechar um grupo — aponta para o lado fechada, para
+   baixo aberta (a mesma rotação de 90°, com o mesmo significado, já
+   usada em CampoSelecao.module.css). */
+.categoriaSeta {
+  display: flex;
+  flex-shrink: 0;
+  align-self: center;
+  color: var(--cor-texto-3);
+  transition: transform 0.15s ease;
+}
+
+.categoriaSetaAberta {
+  transform: rotate(90deg);
+}
+
+/* --- Painel de subcategorias de um grupo aberto --- */
+
+.subcategorias {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+  margin-top: var(--espaco-3);
+  padding: var(--espaco-3) 0 0 var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+.subcategoria {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+/* Um degrau abaixo da linha de grupo (nome esbatido, valor mais pequeno)
+   — reaproveita as MESMAS classes de ".categoriaCabecalho" (o nome e o
+   valor têm a mesma estrutura), só com este par de excepções, tal como
+   ".cartaoSaldoEsq .esqRotulo" já faz mais abaixo, no esqueleto. */
+.subcategoria .categoriaNome {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}
+
+.subcategoria .categoriaValor {
+  font-size: var(--texto-sm);
+  font-weight: 500;
+}
+
+.subcategoriaNota {
+  margin: 0;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}
+
+.subcategoriasEsq {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+}
+
+.esqSubcategoria {
+  width: 100%;
+  height: 1.5rem;
+}
+
+/* "Ver mais"/"Ver menos" — texto simples, sem aspecto de botão principal
+   (é uma acção secundária, discreta). */
+.verMais {
+  display: block;
+  margin-top: var(--espaco-4);
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+.esq {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* Dentro do cartão, o esqueleto reaproveita ".cartaoSaldo" (mesmo fundo e
+   forma) só com as barras cinzentas no lugar do texto. */
+.cartaoSaldoEsq {
+  background: var(--cor-superficie);
+}
+
+.cartaoSaldoEsq .esqRotulo {
+  width: 30%;
+  height: 0.75rem;
+}
+
+.cartaoSaldoEsq .esqSaldo {
+  width: 55%;
+  height: 2rem;
+  margin-top: var(--espaco-2);
+}
+
+.esqTitulo {
+  width: 35%;
+  height: 0.9rem;
+  margin-bottom: var(--espaco-4);
+}
+
+.esqSegmentado {
+  width: 100%;
+  height: 2.25rem;
+  border-radius: var(--raio-md);
+  margin-bottom: var(--espaco-4);
+}
+
+.esqBarraCategoria {
+  width: 100%;
+  height: 2.25rem;
+  margin-bottom: var(--espaco-3);
 }
