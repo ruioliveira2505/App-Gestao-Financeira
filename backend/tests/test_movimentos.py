@@ -693,8 +693,8 @@ async def test_listar_movimentos_filtro_de_datas_inclui_os_extremos(cliente_aute
 async def test_listar_movimentos_com_id_invalido_em_contas_devolve_422(cliente_autenticado):
     # "contas"/"categorias" chegam como texto livre (separado por
     # vírgulas), não como uuid.UUID na assinatura da rota — por isso não
-    # ganham a validação automática do FastAPI; _uuids_de_csv tem de
-    # validar isto à mão (ver a nota no próprio ficheiro).
+    # ganham a validação automática do FastAPI; uuids_de_csv (app/core/
+    # params.py) tem de validar isto à mão.
     resposta = await cliente_autenticado.get("/movimentos", params={"contas": "nao-e-um-uuid"})
 
     assert resposta.status_code == 422

@@ -103,6 +103,7 @@ from sqlalchemy import delete, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
+from app.core.params import uuids_de_csv
 from app.db.session import get_db
 from app.models.categoria import Categoria
 from app.models.conta import Conta
@@ -181,36 +182,6 @@ async def _obter_movimentos_do_utilizador(
             detail="Um ou mais movimentos não foram encontrados.",
         )
     return movimentos
-
-
-def _uuids_de_csv(valor: str | None) -> list[uuid.UUID] | None:
-    """
-    Converte "id1,id2,id3" (a forma que "contas"/"categorias" já têm no URL
-    do frontend — ver src/lib/filtrosMovimentos.ts) numa lista de UUID.
-    None quando o parâmetro não veio, ou veio vazio — para o chamador
-    conseguir distinguir "sem filtro" de "filtro com zero ids" (que nunca
-    devia acontecer, mas não há razão para tratar os dois casos de forma
-    diferente aqui).
-
-    422 (não 500) se algum dos ids não for um UUID válido: ao contrário de
-    "conta_id" ou "movimento_id" (validados automaticamente pelo FastAPI,
-    por serem parte da assinatura da rota como uuid.UUID), este parâmetro
-    chega como texto livre e só se converte aqui dentro — sem este
-    try/except, um id mal formado (um URL escrito à mão, um bug no
-    cliente) levantaria um ValueError não apanhado, que o FastAPI devolve
-    como 500, em vez do 422 que qualquer outro id inválido já dá nesta
-    API.
-    """
-    if not valor:
-        return None
-    try:
-        ids = [uuid.UUID(parte) for parte in valor.split(",") if parte]
-    except ValueError as erro:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="Um ou mais ids em 'contas'/'categorias' não são UUID válidos.",
-        ) from erro
-    return ids or None
 
 
 def _escapar_curinga_ilike(termo: str) -> str:
@@ -405,11 +376,11 @@ async def listar_movimentos(
         await obter_conta_do_utilizador(db, utilizador, conta_id)
         query = query.where(Movimento.conta_id == conta_id)
 
-    ids_contas = _uuids_de_csv(contas)
+    ids_contas = uuids_de_csv(contas)
     if ids_contas is not None:
         query = query.where(Movimento.conta_id.in_(ids_contas))
 
-    ids_categorias = _uuids_de_csv(categorias)
+    ids_categorias = uuids_de_csv(categorias)
     if ids_categorias is not None:
         query = query.where(Movimento.categoria_id.in_(ids_categorias))
 

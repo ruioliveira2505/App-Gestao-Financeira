@@ -59,6 +59,52 @@ categoria/subcategoria), em silêncio — a mesma tolerância já usada em
 GET /contas (saldo_convertido=None nesse caso, em vez de a rota inteira
 falhar). Na prática, quase nunca acontece: o script de actualização
 (scripts/actualizar_taxas_cambio.py) mantém as taxas em dia.
+
+FILTRO DE CONTAS ("contas", em ambos os endpoints): a mesma forma já
+usada em GET /movimentos — uma lista de ids separados por vírgulas (ver
+app/core/params.py:uuids_de_csv), sem exigir que pertençam todos ao
+utilizador (um id alheio ou inexistente simplesmente não corresponde a
+nada). É um filtro GLOBAL: restringe TANTO "saldo_total" (só soma as
+contas seleccionadas) COMO "entradas"/"saidas"/a repartição por
+categoria (só conta os movimentos dessas contas) — ao contrário do
+filtro de período (abaixo) ou de um futuro filtro de categoria, que só
+farão sentido para a segunda metade. GET /resumo/categorias/{grupo_id}
+aceita o mesmo parâmetro, para a repartição por subcategoria respeitar a
+mesma selecção de contas que já filtrava a lista de grupos que a
+originou.
+
+FILTRO DE PERÍODO ("de"/"ate", em ambos os endpoints): ao contrário de
+"contas", NUNCA afecta "saldo_total" — esse continua a ser sempre "quanto
+tenho agora" (ver a nota PERÍODO, acima), independente de que período se
+esteja a consultar no fluxo. Os dois parâmetros são opcionais mas
+ANDAM A PAR: dar um sem o outro é 422 (ver _periodo, abaixo) — um
+intervalo só faz sentido com as duas pontas. Sem nenhum dos dois, o
+período por omissão continua a ser o mês actual (dia 1 até hoje). GET
+/resumo/categorias/{grupo_id} aceita os mesmos "de"/"ate", pela mesma
+razão de "contas": a repartição por subcategoria tem de respeitar o
+MESMO período que já filtrava a lista de grupos que a originou.
+
+FILTRO DE CATEGORIA — DOIS PARÂMETROS, NÃO UM (GET /resumo): ao
+contrário de "contas" (um só filtro, para as duas direcções), o filtro
+de categoria é "categorias_entradas" e "categorias_saidas" EM SEPARADO —
+cada um só restringe a sua própria lista ("categorias_entradas" nunca
+mexe em "categorias_saidas", e vice-versa). Isto porque o frontend
+mostraria o filtro só para a direcção actualmente escolhida no
+alternador "+/−" do cartão de categorias de Início (o componente que o
+suporta, FiltroCategoriasResumo, existe mas está, por agora, desligado
+dessa página) — se fosse um único parâmetro partilhado, filtrar dentro
+de Saídas (uma lista de ids só de saída) deixaria Entradas com ZERO
+categorias, porque nenhum id de entrada estaria nessa lista
+("categorias" é uma lista de INCLUSÃO: vazia ou ausente inclui tudo, não
+vazia inclui SÓ o que lá está). Cada parâmetro é uma lista de ids
+separados por vírgulas, ao nível da SUBCATEGORIA (a mesma convenção de
+"categorias" em GET /movimentos) — mas inclui também o id do PRÓPRIO
+GRUPO quando a interface marca o grupo inteiro de uma vez, para não
+excluir por engano um movimento categorizado directamente nele (ver a
+nota "REPARTIÇÃO POR GRUPO", acima). GET /resumo/categorias/{grupo_id}
+aceita um único "categorias" (não dois): o grupo já pedido fixa a
+direcção, por isso só faz sentido UMA lista — a do mesmo lado que já
+filtrava a barra que originou este pedido.
 """
 
 import uuid
@@ -72,6 +118,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.deps import obter_utilizador_atual
+from app.core.params import uuids_de_csv
 from app.db.session import get_db
 from app.models.categoria import Categoria
 from app.models.conta import Conta
@@ -95,18 +142,25 @@ router = APIRouter(prefix="/resumo", tags=["resumo"])
 _DUAS_CASAS = Decimal("0.01")
 
 
-async def _saldo_total(db: AsyncSession, utilizador: User) -> Decimal:
+async def _saldo_total(
+    db: AsyncSession, utilizador: User, ids_contas: list[uuid.UUID] | None
+) -> Decimal:
     """
-    Soma o saldo ACTUAL (saldo_ancora + movimentos) de todas as contas do
+    Soma o saldo ACTUAL (saldo_ancora + movimentos) das contas do
     utilizador, cada uma convertida para a sua moeda principal à taxa de
     HOJE — a mesma conversão que app/routers/contas.py, _para_saida, faz
     por conta, aqui somada entre todas. Uma conta sem taxa disponível
     fica de fora da soma, em silêncio (ver a nota "TOLERÂNCIA A FALTA DE
     TAXA" no topo do ficheiro) — nunca faz este cálculo falhar.
+
+    "ids_contas": quando não é None (ver a nota "FILTRO DE CONTAS" no
+    topo do ficheiro), restringe a soma só a estas contas — None soma
+    todas, tal como antes deste filtro existir.
     """
-    contas = list(
-        (await db.execute(select(Conta).where(Conta.user_id == utilizador.id))).scalars()
-    )
+    query = select(Conta).where(Conta.user_id == utilizador.id)
+    if ids_contas is not None:
+        query = query.where(Conta.id.in_(ids_contas))
+    contas = list((await db.execute(query)).scalars())
     somas = await somas_de_movimentos(db, [conta.id for conta in contas])
 
     total = Decimal("0")
@@ -136,16 +190,22 @@ class _Fluxo:
 
 
 async def _fluxo_do_periodo(
-    db: AsyncSession, utilizador: User, data_inicio: date, data_fim: date
+    db: AsyncSession,
+    utilizador: User,
+    data_inicio: date,
+    data_fim: date,
+    ids_contas: list[uuid.UUID] | None,
+    ids_categorias_entrada: list[uuid.UUID] | None,
+    ids_categorias_saida: list[uuid.UUID] | None,
 ) -> _Fluxo:
     """
     Soma, separadamente, os movimentos POSITIVOS (entradas) e NEGATIVOS
-    (saídas) de todas as contas do utilizador, com data entre
-    "data_inicio" e "data_fim" (inclusive), cada um convertido para a
-    moeda principal à taxa do SEU PRÓPRIO dia — nunca a de hoje (ver a
-    nota "CONVERSÃO ENTRE MOEDAS" no topo do ficheiro) — e, ao mesmo
-    tempo, a soma de cada um por GRUPO de categoria (ver a nota
-    "REPARTIÇÃO POR GRUPO" no topo do ficheiro).
+    (saídas) das contas do utilizador, com data entre "data_inicio" e
+    "data_fim" (inclusive), cada um convertido para a moeda principal à
+    taxa do SEU PRÓPRIO dia — nunca a de hoje (ver a nota "CONVERSÃO
+    ENTRE MOEDAS" no topo do ficheiro) — e, ao mesmo tempo, a soma de
+    cada um por GRUPO de categoria (ver a nota "REPARTIÇÃO POR GRUPO" no
+    topo do ficheiro).
 
     Uma só consulta, com um "outer join" a uma segunda referência à
     própria tabela categorias (CategoriaPai, abaixo) para resolver, já em
@@ -156,27 +216,41 @@ async def _fluxo_do_periodo(
     Um movimento cuja moeda de origem não tem taxa disponível para a sua
     data fica de fora de TODAS as somas (entradas/saídas E o grupo a que
     pertence), em silêncio (mesma tolerância de _saldo_total, acima).
+
+    "ids_contas": quando não é None (ver a nota "FILTRO DE CONTAS" no
+    topo do ficheiro), restringe tudo isto às contas indicadas — None
+    inclui todas, tal como antes deste filtro existir.
+
+    "ids_categorias_entrada"/"ids_categorias_saida": quando não é None
+    (ver a nota "FILTRO DE CATEGORIA" no topo do ficheiro), restringe os
+    movimentos dessa direcção a terem a sua PRÓPRIA categoria (não o
+    grupo resolvido) nessa lista — cada filtro só actua sobre a sua
+    própria direcção, nunca sobre a outra. Aplicado em Python (não em
+    SQL), depois de já se saber o sinal de "valor", porque o filtro certo
+    a usar depende desse sinal.
     """
     CategoriaPai = aliased(Categoria)
 
-    linhas = (
-        await db.execute(
-            select(
-                Movimento.valor,
-                Movimento.data,
-                Conta.moeda,
-                Categoria.id,
-                Categoria.nome,
-                Categoria.parent_id,
-                CategoriaPai.id,
-                CategoriaPai.nome,
-            )
-            .join(Conta, Movimento.conta_id == Conta.id)
-            .join(Categoria, Movimento.categoria_id == Categoria.id)
-            .outerjoin(CategoriaPai, Categoria.parent_id == CategoriaPai.id)
-            .where(Conta.user_id == utilizador.id, Movimento.data.between(data_inicio, data_fim))
+    query = (
+        select(
+            Movimento.valor,
+            Movimento.data,
+            Conta.moeda,
+            Categoria.id,
+            Categoria.nome,
+            Categoria.parent_id,
+            CategoriaPai.id,
+            CategoriaPai.nome,
         )
-    ).all()
+        .join(Conta, Movimento.conta_id == Conta.id)
+        .join(Categoria, Movimento.categoria_id == Categoria.id)
+        .outerjoin(CategoriaPai, Categoria.parent_id == CategoriaPai.id)
+        .where(Conta.user_id == utilizador.id, Movimento.data.between(data_inicio, data_fim))
+    )
+    if ids_contas is not None:
+        query = query.where(Conta.id.in_(ids_contas))
+
+    linhas = (await db.execute(query)).all()
 
     # As moedas de ORIGEM (das contas dos movimentos) MAIS a moeda
     # PRINCIPAL (o destino de toda a conversão) — as duas pontas de que
@@ -191,6 +265,11 @@ async def _fluxo_do_periodo(
 
     fluxo = _Fluxo()
     for valor, data_movimento, moeda, cat_id, cat_nome, cat_parent_id, pai_id, pai_nome in linhas:
+        if valor > 0 and ids_categorias_entrada is not None and cat_id not in ids_categorias_entrada:
+            continue
+        if valor < 0 and ids_categorias_saida is not None and cat_id not in ids_categorias_saida:
+            continue
+
         try:
             convertido = converter_com_taxas(
                 valor, moeda, utilizador.moeda_principal, data_movimento, tabela_taxas
@@ -261,18 +340,60 @@ def _linhas_ordenadas(
     return linhas
 
 
+def _periodo(de: date | None, ate: date | None) -> tuple[date, date]:
+    """
+    Resolve o par (periodo_inicio, periodo_fim) a partir dos parâmetros
+    opcionais "de"/"ate" (ver a nota "FILTRO DE PERÍODO" no topo do
+    ficheiro) — partilhada pelos dois endpoints deste ficheiro, para o
+    resolverem sempre da mesma forma.
+
+    Sem nenhum dos dois: o mês actual (dia 1 até hoje), tal como antes
+    deste filtro existir. Com os dois: usa-os directamente, sem impor
+    nenhum limite (um "ate" no futuro simplesmente não encontra
+    movimentos além de hoje). Com só um: 422 — um intervalo aberto de um
+    só lado não corresponde a nenhuma escolha que a interface ofereça.
+    """
+    if de is None and ate is None:
+        hoje = date.today()
+        return hoje.replace(day=1), hoje
+    if de is None or ate is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="'de' e 'ate' têm de ser indicados em conjunto.",
+        )
+    return de, ate
+
+
 @router.get("", response_model=ResumoOut)
 async def obter_resumo(
+    contas: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    categorias_entradas: str | None = None,
+    categorias_saidas: str | None = None,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> ResumoOut:
     """Devolve o resumo estático do utilizador autenticado — ver a
-    docstring no topo do ficheiro quanto ao período e à conversão."""
-    hoje = date.today()
-    periodo_inicio = hoje.replace(day=1)
+    docstring no topo do ficheiro quanto ao período, à conversão e aos
+    filtros "contas" (GLOBAL), "de"/"ate" (só o fluxo, nunca
+    saldo_total) e "categorias_entradas"/"categorias_saidas" (um por
+    direcção, cada um só actua na sua)."""
+    periodo_inicio, periodo_fim = _periodo(de, ate)
+    ids_contas = uuids_de_csv(contas)
+    ids_categorias_entrada = uuids_de_csv(categorias_entradas)
+    ids_categorias_saida = uuids_de_csv(categorias_saidas)
 
-    saldo_total = await _saldo_total(db, utilizador)
-    fluxo = await _fluxo_do_periodo(db, utilizador, periodo_inicio, hoje)
+    saldo_total = await _saldo_total(db, utilizador, ids_contas)
+    fluxo = await _fluxo_do_periodo(
+        db,
+        utilizador,
+        periodo_inicio,
+        periodo_fim,
+        ids_contas,
+        ids_categorias_entrada,
+        ids_categorias_saida,
+    )
 
     return ResumoOut(
         saldo_total=str(saldo_total.quantize(_DUAS_CASAS)),
@@ -288,22 +409,35 @@ async def obter_resumo(
             for l in _linhas_ordenadas(fluxo.grupos_saida, fluxo.saidas)
         ],
         periodo_inicio=periodo_inicio,
-        periodo_fim=hoje,
+        periodo_fim=periodo_fim,
     )
 
 
 @router.get("/categorias/{grupo_id}", response_model=GrupoDetalheOut)
 async def obter_detalhe_grupo(
     grupo_id: uuid.UUID,
+    contas: str | None = None,
+    de: date | None = None,
+    ate: date | None = None,
+    categorias: str | None = None,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> GrupoDetalheOut:
     """
-    A repartição por SUBCATEGORIA de um único grupo, no mês actual (o
-    mesmo período de GET /resumo) — ver a nota "REPARTIÇÃO POR
-    SUBCATEGORIA" no topo do ficheiro. Só pedida quando o utilizador
-    "abre" essa barra em Início — GET /resumo já soma tudo ao nível do
-    grupo; esta rota vai um nível mais fundo, sob pedido.
+    A repartição por SUBCATEGORIA de um único grupo, no mesmo período de
+    GET /resumo — ver a nota "REPARTIÇÃO POR SUBCATEGORIA" no topo do
+    ficheiro. Só pedida quando o utilizador "abre" essa barra em Início —
+    GET /resumo já soma tudo ao nível do grupo; esta rota vai um nível
+    mais fundo, sob pedido.
+
+    "contas", "de"/"ate" e "categorias" (ver as notas "FILTRO DE CONTAS",
+    "FILTRO DE PERÍODO" e "FILTRO DE CATEGORIA" no topo do ficheiro): a
+    mesma selecção de contas, o mesmo período, e a mesma selecção de
+    categorias (um só parâmetro aqui, não dois — o grupo pedido já fixa
+    a direcção) que já filtravam a chamada a GET /resumo que originou
+    esta barra — sem isto, abrir um grupo "esqueceria" os filtros
+    activos e misturaria dados que a lista de grupos, por cima, já tinha
+    excluído.
 
     400 se "grupo_id" existir e for do utilizador, mas não for um GRUPO
     (ex.: é o id de uma subcategoria) — os dois níveis desta app não têm
@@ -316,31 +450,36 @@ async def obter_detalhe_grupo(
             detail="Este id não é de um grupo de categorias.",
         )
 
-    hoje = date.today()
-    periodo_inicio = hoje.replace(day=1)
+    periodo_inicio, periodo_fim = _periodo(de, ate)
+    ids_contas = uuids_de_csv(contas)
+    ids_categorias = uuids_de_csv(categorias)
 
     # As subcategorias DESTE grupo, mais o próprio grupo (para apanhar
     # movimentos categorizados directamente nele, sem subcategoria — ver
     # a nota no topo do ficheiro).
-    linhas = (
-        await db.execute(
-            select(Movimento.valor, Movimento.data, Conta.moeda, Categoria.id, Categoria.nome)
-            .join(Conta, Movimento.conta_id == Conta.id)
-            .join(Categoria, Movimento.categoria_id == Categoria.id)
-            .where(
-                Conta.user_id == utilizador.id,
-                Movimento.data.between(periodo_inicio, hoje),
-                (Categoria.id == grupo.id) | (Categoria.parent_id == grupo.id),
-            )
+    query = (
+        select(Movimento.valor, Movimento.data, Conta.moeda, Categoria.id, Categoria.nome)
+        .join(Conta, Movimento.conta_id == Conta.id)
+        .join(Categoria, Movimento.categoria_id == Categoria.id)
+        .where(
+            Conta.user_id == utilizador.id,
+            Movimento.data.between(periodo_inicio, periodo_fim),
+            (Categoria.id == grupo.id) | (Categoria.parent_id == grupo.id),
         )
-    ).all()
+    )
+    if ids_contas is not None:
+        query = query.where(Conta.id.in_(ids_contas))
+
+    linhas = (await db.execute(query)).all()
 
     moedas = {linha[2] for linha in linhas} | {utilizador.moeda_principal}
-    tabela_taxas = await obter_taxas_do_periodo(db, moedas, periodo_inicio, hoje)
+    tabela_taxas = await obter_taxas_do_periodo(db, moedas, periodo_inicio, periodo_fim)
 
     total = Decimal("0")
     por_subcategoria: dict[uuid.UUID, tuple[str, Decimal]] = {}
     for valor, data_movimento, moeda, cat_id, cat_nome in linhas:
+        if ids_categorias is not None and cat_id not in ids_categorias:
+            continue
         try:
             convertido = converter_com_taxas(
                 valor, moeda, utilizador.moeda_principal, data_movimento, tabela_taxas

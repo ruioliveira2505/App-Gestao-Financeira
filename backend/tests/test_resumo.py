@@ -18,6 +18,29 @@ TOTAL DO GRUPO (não ao total geral), um movimento categorizado
 directamente no grupo a aparecer como a sua própria linha, ownership
 (404 de outro utilizador), e a recusa (400) quando o id pedido não é o
 de um grupo.
+
+E o filtro "contas" (GLOBAL — ver a nota "FILTRO DE CONTAS" em
+app/routers/resumo.py) nos dois endpoints: restringe saldo_total e o
+fluxo a só as contas indicadas, um id alheio/inexistente não corresponde
+a nada (sem 404), e um id mal formado dá 422.
+
+E o filtro de período ("de"/"ate" — ver a nota "FILTRO DE PERÍODO" em
+app/routers/resumo.py) nos dois endpoints: nunca afecta saldo_total, um
+intervalo escolhido substitui o mês actual por omissão, e dar só um dos
+dois parâmetros dá 422.
+
+E o filtro de categoria ("categorias_entradas"/"categorias_saidas" em
+GET /resumo, "categorias" em GET /resumo/categorias/{grupo_id} — ver a
+nota "FILTRO DE CATEGORIA" em app/routers/resumo.py): cada um só actua
+na sua própria direcção (filtrar saídas não esvazia entradas), o id do
+próprio grupo inclui também os movimentos categorizados directamente
+nele, e a repartição por subcategoria de um grupo respeita a mesma
+selecção.
+
+E os TRÊS filtros de GET /resumo COMBINADOS na mesma chamada (contas +
+período + categoria) — os testes acima exercitam cada filtro isolado;
+"test_filtros_de_contas_periodo_e_categorias_actuam_todos_ao_mesmo_tempo"
+confirma que continuam todos a agir em conjunto, não só um de cada vez.
 """
 
 from datetime import date
@@ -422,6 +445,352 @@ async def test_categorias_excluem_movimento_fora_do_mes_actual(cliente_autentica
 
 
 @pytest.mark.asyncio
+async def test_filtro_contas_restringe_saldo_total_as_contas_seleccionadas(cliente_autenticado):
+    conta_a_id = await _criar_conta(cliente_autenticado, saldo_ancora="1000.00")
+    await _criar_conta(cliente_autenticado, saldo_ancora="500.00")
+
+    resposta = await cliente_autenticado.get("/resumo", params={"contas": conta_a_id})
+
+    # Só a conta A entra na soma — sem o filtro seria "1500.00" (ver o
+    # teste "sem filtro" mais acima, com as mesmas duas contas).
+    assert resposta.json()["saldo_total"] == "1000.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_contas_restringe_entradas_saidas_e_categorias(
+    cliente_autenticado, db_session
+):
+    grupo_id, _, subcategoria_id = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "entrada"
+    )
+    conta_a_id = await _criar_conta(cliente_autenticado)
+    conta_b_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_a_id, "100.00", _INICIO_MES, categoria_id=subcategoria_id
+    )
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_b_id, "999.00", _INICIO_MES, categoria_id=subcategoria_id
+    )
+
+    resposta = await cliente_autenticado.get("/resumo", params={"contas": conta_a_id})
+
+    corpo = resposta.json()
+    # Só o movimento da conta A conta — o de B (999.00) fica de fora,
+    # tanto do total como da repartição por grupo.
+    assert corpo["entradas"] == "100.00"
+    assert len(corpo["categorias_entradas"]) == 1
+    assert corpo["categorias_entradas"][0]["grupo_id"] == grupo_id
+    assert corpo["categorias_entradas"][0]["valor"] == "100.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_contas_com_varios_ids_soma_as_contas_indicadas(cliente_autenticado):
+    conta_a_id = await _criar_conta(cliente_autenticado, saldo_ancora="1000.00")
+    conta_b_id = await _criar_conta(cliente_autenticado, saldo_ancora="500.00")
+    await _criar_conta(cliente_autenticado, saldo_ancora="9999.00")
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"contas": f"{conta_a_id},{conta_b_id}"}
+    )
+
+    # A e B somam-se; a terceira conta (9999.00) fica de fora.
+    assert resposta.json()["saldo_total"] == "1500.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_contas_com_id_alheio_ou_inexistente_nao_da_erro(cliente_autenticado):
+    conta_id = await _criar_conta(cliente_autenticado, saldo_ancora="100.00")
+    id_inexistente = "00000000-0000-0000-0000-000000000000"
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"contas": f"{conta_id},{id_inexistente}"}
+    )
+
+    # O id inexistente simplesmente não corresponde a nenhuma conta — sem
+    # 404, tal como o mesmo comportamento já em GET /movimentos.
+    assert resposta.status_code == 200
+    assert resposta.json()["saldo_total"] == "100.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_contas_com_id_invalido_devolve_422(cliente_autenticado):
+    resposta = await cliente_autenticado.get("/resumo", params={"contas": "nao-e-um-uuid"})
+
+    assert resposta.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_filtro_periodo_nunca_afecta_o_saldo_total(cliente_autenticado):
+    await _criar_conta(cliente_autenticado, saldo_ancora="1000.00")
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"de": "2020-01-01", "ate": "2020-01-31"}
+    )
+
+    # Saldo Total é sempre "quanto tenho agora" — um período no passado
+    # não muda nada (ver a nota "FILTRO DE PERÍODO" em app/routers/
+    # resumo.py).
+    assert resposta.json()["saldo_total"] == "1000.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_periodo_substitui_o_mes_actual(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    # Um movimento no mês actual (fora do período pedido) e outro em
+    # _MES_ANTERIOR (dentro dele).
+    await _criar_movimento(cliente_autenticado, db_session, conta_id, "999.00", _HOJE)
+    await _criar_movimento(cliente_autenticado, db_session, conta_id, "50.00", _MES_ANTERIOR)
+
+    resposta = await cliente_autenticado.get(
+        "/resumo",
+        params={"de": _MES_ANTERIOR.isoformat(), "ate": _MES_ANTERIOR.isoformat()},
+    )
+
+    corpo = resposta.json()
+    assert corpo["entradas"] == "50.00"
+    assert corpo["periodo_inicio"] == _MES_ANTERIOR.isoformat()
+    assert corpo["periodo_fim"] == _MES_ANTERIOR.isoformat()
+
+
+@pytest.mark.asyncio
+async def test_filtro_periodo_so_com_de_ou_so_com_ate_devolve_422(cliente_autenticado):
+    resposta_so_de = await cliente_autenticado.get("/resumo", params={"de": "2026-01-01"})
+    resposta_so_ate = await cliente_autenticado.get("/resumo", params={"ate": "2026-01-31"})
+
+    assert resposta_so_de.status_code == 422
+    assert resposta_so_ate.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_obter_detalhe_grupo_respeita_o_filtro_de_periodo(cliente_autenticado, db_session):
+    grupo_id, _, subcategoria_id = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "entrada"
+    )
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "999.00", _HOJE, categoria_id=subcategoria_id
+    )
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "50.00",
+        _MES_ANTERIOR,
+        categoria_id=subcategoria_id,
+    )
+
+    resposta = await cliente_autenticado.get(
+        f"/resumo/categorias/{grupo_id}",
+        params={"de": _MES_ANTERIOR.isoformat(), "ate": _MES_ANTERIOR.isoformat()},
+    )
+
+    assert resposta.json()["valor"] == "50.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_categorias_saidas_restringe_saidas_sem_afectar_entradas(
+    cliente_autenticado, db_session
+):
+    # Regressão do design: um filtro de categoria partilhado entre as
+    # duas direcções deixaria "entradas" a zero (nenhum id de entrada
+    # estaria na lista de saída) — os dois parâmetros têm de ser
+    # independentes.
+    _, _, sub_entrada = await _grupo_e_subcategoria(db_session, "teste@example.com", "entrada")
+    grupo_saida_id, _, sub_saida_incluida = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "saida"
+    )
+    sub_saida_excluida, _ = await _subcategoria_de(db_session, grupo_saida_id, 1)
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "100.00", _INICIO_MES, categoria_id=sub_entrada
+    )
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "-50.00",
+        _INICIO_MES,
+        categoria_id=sub_saida_incluida,
+    )
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "-999.00",
+        _INICIO_MES,
+        categoria_id=sub_saida_excluida,
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"categorias_saidas": sub_saida_incluida}
+    )
+
+    corpo = resposta.json()
+    assert corpo["entradas"] == "100.00"
+    assert corpo["saidas"] == "-50.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_categorias_entradas_restringe_entradas_sem_afectar_saidas(
+    cliente_autenticado, db_session
+):
+    grupo_entrada_id, _, sub_entrada_incluida = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "entrada"
+    )
+    sub_entrada_excluida, _ = await _subcategoria_de(db_session, grupo_entrada_id, 1)
+    _, _, sub_saida = await _grupo_e_subcategoria(db_session, "teste@example.com", "saida")
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "100.00",
+        _INICIO_MES,
+        categoria_id=sub_entrada_incluida,
+    )
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "999.00",
+        _INICIO_MES,
+        categoria_id=sub_entrada_excluida,
+    )
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "-50.00", _INICIO_MES, categoria_id=sub_saida
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"categorias_entradas": sub_entrada_incluida}
+    )
+
+    corpo = resposta.json()
+    assert corpo["entradas"] == "100.00"
+    assert corpo["saidas"] == "-50.00"
+
+
+@pytest.mark.asyncio
+async def test_filtro_categorias_com_id_do_grupo_inclui_movimento_directo_no_grupo(
+    cliente_autenticado, db_session
+):
+    # O id do PRÓPRIO GRUPO (não só das suas subcategorias) tem de estar
+    # na lista para um movimento categorizado directamente nele (sem
+    # escolher subcategoria) não ficar de fora por engano.
+    grupo_id, _, subcategoria_id = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "saida"
+    )
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "-100.00", _INICIO_MES, categoria_id=grupo_id
+    )
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_id,
+        "-50.00",
+        _INICIO_MES,
+        categoria_id=subcategoria_id,
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"categorias_saidas": f"{grupo_id},{subcategoria_id}"}
+    )
+
+    assert resposta.json()["saidas"] == "-150.00"
+
+
+@pytest.mark.asyncio
+async def test_filtros_de_contas_periodo_e_categorias_actuam_todos_ao_mesmo_tempo(
+    cliente_autenticado, db_session
+):
+    # Nenhum teste, até aqui, combinava os três filtros de GET /resumo na
+    # MESMA chamada — cada um só era exercitado isoladamente (ver os
+    # testes "test_filtro_contas_*"/"test_filtro_periodo_*"/
+    # "test_filtro_categorias_*", acima). O filtro de categoria é
+    # aplicado em Python DEPOIS de a query SQL já ter sido restringida
+    # por "contas" (ver _fluxo_do_periodo, em app/routers/resumo.py) —
+    # uma regressão que trocasse essa ordem, ou que aplicasse o filtro de
+    # categoria às contas erradas, passaria despercebida sem um teste
+    # como este.
+    grupo_incluido_id, _, sub_incluida = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "saida"
+    )
+    _, _, sub_excluida_por_categoria = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "saida", indice=1
+    )
+    conta_a_id = await _criar_conta(cliente_autenticado)
+    conta_b_id = await _criar_conta(cliente_autenticado)
+
+    # Só este devia sobreviver aos três filtros em conjunto: conta A,
+    # dentro do período, na categoria incluída.
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_a_id, "-100.00", _INICIO_MES, categoria_id=sub_incluida
+    )
+    # Excluído só pelo filtro de CATEGORIA (outro grupo de saída).
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_a_id,
+        "-50.00",
+        _INICIO_MES,
+        categoria_id=sub_excluida_por_categoria,
+    )
+    # Excluído só pelo filtro de CONTAS (conta B, não A).
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_b_id, "-999.00", _INICIO_MES, categoria_id=sub_incluida
+    )
+    # Excluído só pelo filtro de PERÍODO (mês anterior).
+    await _criar_movimento(
+        cliente_autenticado,
+        db_session,
+        conta_a_id,
+        "-777.00",
+        _MES_ANTERIOR,
+        categoria_id=sub_incluida,
+    )
+
+    resposta = await cliente_autenticado.get(
+        "/resumo",
+        params={
+            "contas": conta_a_id,
+            "de": _INICIO_MES.isoformat(),
+            "ate": _HOJE.isoformat(),
+            "categorias_saidas": sub_incluida,
+        },
+    )
+
+    corpo = resposta.json()
+    # Só o primeiro movimento sobrevive aos três filtros AO MESMO TEMPO —
+    # se algum estivesse a ser ignorado (ou aplicado às contas/movimentos
+    # errados), este total seria diferente.
+    assert corpo["saidas"] == "-100.00"
+    assert len(corpo["categorias_saidas"]) == 1
+    assert corpo["categorias_saidas"][0]["grupo_id"] == grupo_incluido_id
+    assert corpo["categorias_saidas"][0]["valor"] == "-100.00"
+
+
+@pytest.mark.asyncio
+async def test_obter_detalhe_grupo_respeita_o_filtro_de_categorias(cliente_autenticado, db_session):
+    grupo_id, _, sub_incluida = await _grupo_e_subcategoria(db_session, "teste@example.com", "saida")
+    sub_excluida, _ = await _subcategoria_de(db_session, grupo_id, 1)
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "-100.00", _INICIO_MES, categoria_id=sub_incluida
+    )
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_id, "-999.00", _INICIO_MES, categoria_id=sub_excluida
+    )
+
+    resposta = await cliente_autenticado.get(
+        f"/resumo/categorias/{grupo_id}", params={"categorias": sub_incluida}
+    )
+
+    corpo = resposta.json()
+    assert corpo["valor"] == "-100.00"
+    assert len(corpo["subcategorias"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_resumo_nunca_soma_contas_ou_movimentos_de_outro_utilizador(client, db_session):
     # Utilizador A: uma conta com saldo e um movimento.
     a = {"email": "a@example.com", "password": "palavrapasse123"}
@@ -626,3 +995,30 @@ async def test_obter_detalhe_grupo_ignora_movimentos_de_outro_grupo_e_fora_do_pe
     corpo = resposta.json()
     assert corpo["valor"] == "100.00"
     assert len(corpo["subcategorias"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_obter_detalhe_grupo_respeita_o_filtro_de_contas(cliente_autenticado, db_session):
+    # A mesma selecção de contas que já filtrava GET /resumo tem de se
+    # manter ao "abrir" um grupo — ver a nota "contas" na docstring de
+    # obter_detalhe_grupo.
+    grupo_id, _, subcategoria_id = await _grupo_e_subcategoria(
+        db_session, "teste@example.com", "entrada"
+    )
+    conta_a_id = await _criar_conta(cliente_autenticado)
+    conta_b_id = await _criar_conta(cliente_autenticado)
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_a_id, "100.00", _INICIO_MES, categoria_id=subcategoria_id
+    )
+    await _criar_movimento(
+        cliente_autenticado, db_session, conta_b_id, "999.00", _INICIO_MES, categoria_id=subcategoria_id
+    )
+
+    resposta = await cliente_autenticado.get(
+        f"/resumo/categorias/{grupo_id}", params={"contas": conta_a_id}
+    )
+
+    corpo = resposta.json()
+    assert corpo["valor"] == "100.00"
+    assert len(corpo["subcategorias"]) == 1
+    assert corpo["subcategorias"][0]["valor"] == "100.00"
