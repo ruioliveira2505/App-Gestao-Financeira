@@ -20,11 +20,19 @@
  *   - "linha" — uma linha de um formulário em ficha: o nome do campo em
  *     cima, ténue, e o valor por baixo. Sem contorno próprio (o contorno e
  *     os traços de separação vêm da ficha à volta).
+ *
+ * tipo="date"/"month" mostram sempre um ícone de calendário, decorativo,
+ * do lado direito (nas duas disposições) — só um sinal visual de "isto é
+ * um campo tocável" (o toque já abre o seletor nativo do browser, o
+ * ícone não intercepta nada); em disposição "linha", ganham também um
+ * traço por baixo (ver CampoTexto.module.css), porque essa disposição
+ * tira a borda a TODOS os campos, e sem nenhuma delas um campo de
+ * data/mês vazio era indistinguível de texto solto.
  */
 
 import { useId, useState } from 'react'
 
-import { IconeOlho, IconeOlhoFechado } from './icones'
+import { IconeCalendario, IconeOlho, IconeOlhoFechado } from './icones'
 import estilos from './CampoTexto.module.css'
 
 type Props = {
@@ -51,6 +59,10 @@ type Props = {
   // Arranjo: "empilhado" (rótulo por cima, com contorno) ou "linha" (linha
   // de ficha: rótulo ténue em cima, valor por baixo). Ver docstring.
   disposicao?: 'empilhado' | 'linha'
+  // Limite superior nativo do campo — só relevante em tipo="date"/"month"
+  // (ex.: impedir escolher um mês no futuro). Mesmo formato do valor
+  // ("AAAA-MM-DD"/"AAAA-MM").
+  max?: string
 }
 
 export function CampoTexto({
@@ -62,12 +74,14 @@ export function CampoTexto({
   sugestoes,
   autoComplete,
   disposicao = 'empilhado',
+  max,
 }: Props) {
   const id = useId()
   const idSugestoes = useId()
   const [passwordVisivel, setPasswordVisivel] = useState(false)
 
   const ePassword = tipo === 'password'
+  const eData = tipo === 'date' || tipo === 'month'
   // Quando é uma password e o utilizador pediu para a ver, o <input> passa
   // a "text" (mostra os caracteres); caso contrário mantém o tipo pedido.
   const tipoEfetivo = ePassword && passwordVisivel ? 'text' : tipo
@@ -82,6 +96,7 @@ export function CampoTexto({
         required={obrigatorio}
         autoComplete={autoComplete}
         list={sugestoes ? idSugestoes : undefined}
+        max={max}
       />
       {sugestoes && (
         <datalist id={idSugestoes}>
@@ -100,16 +115,23 @@ export function CampoTexto({
   )
 
   const controlo = ePassword ? (
-    <div className={estilos.comBotao}>
+    <div className={estilos.comIcone}>
       {campo}
       <button
         type="button"
-        className={estilos.botaoOlho}
+        className={estilos.botaoIcone}
         onClick={() => setPasswordVisivel((visivel) => !visivel)}
         aria-label={passwordVisivel ? 'Ocultar password' : 'Mostrar password'}
       >
         {passwordVisivel ? <IconeOlhoFechado /> : <IconeOlho />}
       </button>
+    </div>
+  ) : eData ? (
+    <div className={estilos.comIcone}>
+      {campo}
+      <span className={estilos.iconeDecorativo} aria-hidden="true">
+        <IconeCalendario tamanho={18} />
+      </span>
     </div>
   ) : (
     campo

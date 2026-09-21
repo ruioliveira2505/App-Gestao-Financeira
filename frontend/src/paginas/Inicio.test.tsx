@@ -7,20 +7,50 @@
  * Cobre: a ausência de qualquer título de página (por agora — ver a nota
  * "DESENHO DELIBERADAMENTE DIFERENTE" em Inicio.tsx); o saldo total e o
  * líquido, formatados na moeda principal; o mês mostrado no cabeçalho da
- * secção; o controlo segmentado Entradas/Saídas (a aba "Saídas" activa
- * por omissão, a troca ao clicar, cada uma com o seu total e a sua
- * repartição por categoria); "Ver mais"/"Ver menos" quando há mais do
- * que 5 categorias; o estado vazio de uma direcção sem categorias; abrir
- * um grupo (pede GET /resumo/categorias/{id} só na primeira vez, fecha
- * ao clicar outra vez, fecha o anterior ao abrir outro, fecha ao trocar
- * de direcção, estados de carregamento/vazio/erro); o esqueleto enquanto
- * o pedido está em curso; e a falha do pedido.
+ * secção; o cartão de categorias com o alternador "+/−" (aria-label
+ * "Entradas"/"Saídas" — o texto visível é só "+"/"−", ver a nota "NONA
+ * FATIA" em Inicio.tsx; "Saídas" activo por omissão, a troca ao clicar,
+ * cada um com a sua lista de categorias); o estado vazio de uma direcção
+ * sem categorias; o esqueleto enquanto o pedido está em curso; e a falha
+ * do pedido. Sem "Ver mais"/"Ver menos" nem acordeão de subcategoria —
+ * saíram nesta fatia (ver a mesma nota) — por isso não há testes deles
+ * aqui; `GrupoDetalhe`/`obterDetalheGrupo` (em src/lib/resumo.ts)
+ * continuam a existir e a ser testados no backend, só não são chamados
+ * por esta página.
+ *
+ * E o filtro global de contas (FiltroContas, em componentes/
+ * FiltroContas.tsx): invisível com 0 ou 1 conta; com várias, escolher
+ * uma seleção pede de novo GET /resumo com "contas" no URL, mostra o
+ * esqueleto entretanto (a própria lista de categorias muda por baixo).
+ *
+ * E o filtro de período (SeletorPeriodo, em componentes/
+ * SeletorPeriodo.tsx), numa linha própria logo a seguir ao Saldo Total —
+ * a mesma lógica de ListaDatas em FiltroMovimentos.tsx (mostrador, "Mês
+ * específico"/"Data personalizada"), começando sempre em "Mês
+ * específico" já preenchido com o mês em vista: escolher um mês, ou
+ * preencher "De"/"Até", pede de novo GET /resumo com "de"/"ate" no URL e
+ * troca o título.
+ *
+ * O filtro de categoria/subcategoria (FiltroCategoriasResumo) existe
+ * como componente e como parâmetros de GET /resumo, mas não está
+ * montado nesta página por agora (ver a nota "SÉTIMA FATIA" em
+ * Inicio.tsx) — por isso não há testes de integração dele aqui (tem os
+ * seus próprios, em FiltroCategoriasResumo.test.tsx).
+ *
+ * Cobre também: com mais categorias do que LIMITE_CATEGORIAS, só as 4
+ * maiores aparecem na lista e a barra empilhada ganha um 5.º segmento
+ * ("outras", com a largura do que ficou de fora); com 4 ou menos, esse
+ * segmento não aparece; e que o título "Categorias" é um link que leva
+ * sempre "de"/"ate" (e "contas", quando há uma selecção) — a mesma
+ * classe de bug que já aconteceu uma vez nesta fatia (o "‹ Categorias"
+ * de CategoriaResumoDetalhe.tsx, que perdia o querystring ao voltar).
  */
 
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
 import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from '../auth/AuthProvider'
@@ -46,13 +76,71 @@ const RESUMO = {
   periodo_fim: '2026-09-18',
 }
 
-function montar() {
+function conta(overrides: Partial<{ id: string; nome: string; banco: string | null }> = {}) {
+  return {
+    id: 'c1',
+    nome: 'Conta',
+    banco: null,
+    tipo: null,
+    moeda: 'USD',
+    data_ancora: '2020-01-01',
+    saldo_ancora: '0.00',
+    saldo: '0.00',
+    saldo_convertido: '0.00',
+    created_at: '2020-01-01T00:00:00Z',
+    updated_at: '2020-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+// "contas" é um parâmetro de montar() (não um servidorMsw.use() à parte,
+// chamado pelo próprio teste) porque o MSW resolve pedidos pelo handler
+// registado MAIS RECENTEMENTE — um servidorMsw.use() do teste, chamado
+// ANTES de montar(), perderia sempre para o handler por omissão que
+// montar() registaria a seguir. Por omissão, [] — o FiltroContas fica
+// invisível (menos de 2 contas) e não interfere com os testes que não
+// são sobre ele.
+function montar({ contas = [] as ReturnType<typeof conta>[] } = {}) {
   servidorMsw.use(http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)))
+  servidorMsw.use(http.get('/api/contas', () => HttpResponse.json(contas)))
+  // <MemoryRouter>: o título "Categorias" é agora um <Link> para
+  // "/resumo/categorias" (ver a nota "DÉCIMA TERCEIRA FATIA" em
+  // Inicio.tsx) — precisa de um contexto de router para renderizar, tal
+  // como em ContaDetalhe.test.tsx. O destino é só um marcador (esta
+  // página não testa a navegação em si, só que o link existe e aponta
+  // para o sítio certo).
   return render(
     <AuthProvider>
-      <Inicio />
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<Inicio />} />
+          <Route path="/resumo/categorias" element={<p>página de categorias</p>} />
+        </Routes>
+      </MemoryRouter>
     </AuthProvider>,
   )
+}
+
+/** O valor ao lado de um rótulo da linha Entradas/Saídas/Líquido (ver
+ *  ".resumoFluxo" em Inicio.tsx) — rótulo e valor são dois <span>
+ *  irmãos, por isso já chega encontrar o rótulo, por texto, para
+ *  navegar até ao valor, sem depender de nenhuma classe CSS. Filtra-se
+ *  por "<span>" por segurança — "Entradas"/"Saídas" são também o NOME
+ *  ACESSÍVEL (aria-label) dos botões "+"/"−" do cartão de categorias,
+ *  ver a nota "NONA FATIA" em Inicio.tsx, mas esses não têm esse TEXTO
+ *  visível, por isso "getAllByText" nunca os encontra de qualquer forma. */
+function valorAoLadoDoRotulo(rotulo: string): HTMLElement {
+  const rotulos = screen.getAllByText(rotulo).filter((elemento) => elemento.tagName === 'SPAN')
+  if (rotulos.length !== 1) {
+    throw new Error(
+      `Esperava um único rótulo "${rotulo}" (span); encontrei ${rotulos.length}.`,
+    )
+  }
+  const elemento = rotulos[0].nextElementSibling
+  if (!(elemento instanceof HTMLElement)) {
+    throw new Error(`Não encontrei nenhum valor ao lado do rótulo "${rotulo}".`)
+  }
+  return elemento
 }
 
 describe('Início', () => {
@@ -78,7 +166,7 @@ describe('Início', () => {
     // moeda_principal é "USD" — confirma que a formatação usa mesmo essa
     // moeda, não um "EUR" por omissão.
     expect(screen.getByText(/3.?000,00 ?US\$/)).toBeInTheDocument()
-    expect(screen.getByText(/Líquido 1.?200,00 ?US\$/)).toBeInTheDocument()
+    expect(valorAoLadoDoRotulo('Líquido')).toHaveTextContent(/1.?200,00 ?US\$/)
   })
 
   it('mostra o mês do período devolvido pelo servidor', async () => {
@@ -96,23 +184,25 @@ describe('Início', () => {
     )
 
     montar()
+    await screen.findByText('Saldo total')
 
-    const liquido = await screen.findByText(/Líquido -300,00 ?US\$/)
-    // A aba "Saídas" está activa por omissão — o seu total usa a mesma
-    // classe semântica ".negativo" (cada elemento traz também a sua
-    // própria classe estrutural — ".liquidoInline"/".totalDirecao" — por
-    // isso comparam-se as classes por conteúdo, não por igualdade exacta).
-    // SEM "-": dentro da aba "Saídas" o sinal é redundante com o
-    // contexto (ver formatarSemSinal, em Inicio.tsx) — só "Líquido",
-    // acima, pode ser positivo ou negativo consoante o mês, por isso
-    // mantém sempre o sinal.
-    const totalSaidas = screen.getByText(/500,00 ?US\$/)
+    // A coluna "Saídas" (mesma linha do Líquido — ver ".resumoFluxo" em
+    // Inicio.tsx) usa a mesma classe semântica ".negativo" (cada
+    // elemento traz também a sua própria classe estrutural —
+    // ".resumoValor" — por isso comparam-se as classes por conteúdo, não
+    // por igualdade exacta). SEM "-": o sinal é redundante com a cor
+    // (ver formatarSemSinal, em Inicio.tsx) — só "Líquido" pode ser
+    // positivo ou negativo consoante o mês, por isso mantém sempre o
+    // sinal.
+    const liquido = valorAoLadoDoRotulo('Líquido')
+    const totalSaidas = valorAoLadoDoRotulo('Saídas')
+    expect(liquido).toHaveTextContent(/-300,00 ?US\$/)
     expect(liquido.className).toMatch(/negativo/)
     expect(totalSaidas.className).toMatch(/negativo/)
   })
 
-  describe('controlo segmentado Entradas/Saídas', () => {
-    it('"Saídas" está activa por omissão, com o seu total e as suas categorias', async () => {
+  describe('cartão de categorias — alternador "+/−"', () => {
+    it('"Saídas" está activo por omissão, com a sua lista de categorias', async () => {
       servidorMsw.use(
         http.get('/api/resumo', () =>
           HttpResponse.json({
@@ -124,6 +214,9 @@ describe('Início', () => {
 
       montar()
 
+      // O nome acessível dos botões é "Entradas"/"Saídas" (aria-label) —
+      // o texto visível é só "+"/"−", ver a nota "NONA FATIA" em
+      // Inicio.tsx.
       expect(await screen.findByRole('button', { name: 'Saídas' })).toHaveAttribute(
         'aria-pressed',
         'true',
@@ -132,9 +225,9 @@ describe('Início', () => {
         'aria-pressed',
         'false',
       )
-      // Sem "-": dentro da aba "Saídas" já activa, o sinal é redundante
-      // (ver formatarSemSinal, em Inicio.tsx).
-      expect(screen.getByText(/500,00 ?US\$/)).toBeInTheDocument()
+      // Sem "-": dentro de "Saídas" já activo, o sinal é redundante (ver
+      // formatarSemSinal, em Inicio.tsx).
+      expect(screen.getByText(/300,00 ?US\$/)).toBeInTheDocument()
       expect(screen.getByText('Alimentação')).toBeInTheDocument()
     })
 
@@ -153,21 +246,18 @@ describe('Início', () => {
       montar()
       await screen.findByText('Alimentação')
 
-      // Nem o total da aba, nem o valor da categoria — nenhum "-" em
-      // lado nenhum desta secção.
+      // Nem a coluna "Saídas" da linha de resumo, nem o valor da
+      // categoria — nenhum "-" em lado nenhum desta página (as duas
+      // mostram o mesmo valor: a categoria única vale o total inteiro).
       expect(screen.queryByText(/-500,00/)).not.toBeInTheDocument()
       expect(screen.getAllByText(/500,00 ?US\$/)).toHaveLength(2)
     })
 
-    it('clicar em "Entradas" troca o total e a lista de categorias mostrados', async () => {
+    it('clicar em "Entradas" troca a lista de categorias mostrada', async () => {
       servidorMsw.use(
         http.get('/api/resumo', () =>
           HttpResponse.json({
             ...RESUMO,
-            // Duas categorias (não uma só) — de propósito, para o total
-            // (1700.00) nunca coincidir em texto com o valor de nenhuma
-            // categoria isolada, o que tornaria a asserção do total
-            // ambígua (haveria dois elementos com o mesmo texto).
             categorias_entradas: [
               grupo({ grupo_id: 'e1', nome: 'Salário', valor: '1200.00', percentagem: 70.6 }),
               grupo({ grupo_id: 'e2', nome: 'Outras Entradas', valor: '500.00', percentagem: 29.4 }),
@@ -186,7 +276,6 @@ describe('Início', () => {
         'aria-pressed',
         'true',
       )
-      expect(screen.getByText(/1.?700,00 ?US\$/)).toBeInTheDocument()
       expect(screen.getByText('Salário')).toBeInTheDocument()
       expect(screen.getByText('Outras Entradas')).toBeInTheDocument()
       expect(screen.queryByText('Alimentação')).not.toBeInTheDocument()
@@ -200,297 +289,256 @@ describe('Início', () => {
       // "Saídas" activa por omissão, "categorias_saidas" vazio.
       expect(await screen.findByText('Sem saídas este mês.')).toBeInTheDocument()
     })
+
+    it('com mais categorias do que LIMITE_CATEGORIAS, só as 4 maiores aparecem na lista, e a barra ganha um segmento "outras"', async () => {
+      servidorMsw.use(
+        http.get('/api/resumo', () =>
+          HttpResponse.json({
+            ...RESUMO,
+            categorias_saidas: [
+              grupo({ grupo_id: 's1', nome: 'Habitação', valor: '-300.00', percentagem: 30 }),
+              grupo({ grupo_id: 's2', nome: 'Alimentação', valor: '-250.00', percentagem: 25 }),
+              grupo({ grupo_id: 's3', nome: 'Transportes', valor: '-200.00', percentagem: 20 }),
+              grupo({ grupo_id: 's4', nome: 'Lazer', valor: '-150.00', percentagem: 15 }),
+              grupo({ grupo_id: 's5', nome: 'Saúde', valor: '-100.00', percentagem: 10 }),
+            ],
+          }),
+        ),
+      )
+
+      const { container } = montar()
+      await screen.findByText('Habitação')
+
+      // Só as 4 maiores (LIMITE_CATEGORIAS) — a 5.ª fica de fora da lista.
+      expect(screen.getByText('Alimentação')).toBeInTheDocument()
+      expect(screen.getByText('Transportes')).toBeInTheDocument()
+      expect(screen.getByText('Lazer')).toBeInTheDocument()
+      expect(screen.queryByText('Saúde')).not.toBeInTheDocument()
+
+      // A barra empilhada (única "div[aria-hidden]" desta página — ver a
+      // nota "aria-hidden" em BarraEmpilhada, Inicio.tsx) ganha um 5.º
+      // segmento, "outras", com a largura do que ficou de fora: 100 -
+      // (30+25+20+15) = 10%.
+      const barra = container.querySelector('div[aria-hidden="true"]')
+      expect(barra?.children).toHaveLength(5)
+      const segmentoOutras = barra?.children[4] as HTMLElement
+      expect(segmentoOutras.style.width).toBe('10%')
+    })
+
+    it('com 4 categorias ou menos (nada escondido), a barra NÃO ganha um segmento "outras"', async () => {
+      servidorMsw.use(
+        http.get('/api/resumo', () =>
+          HttpResponse.json({
+            ...RESUMO,
+            categorias_saidas: [
+              grupo({ grupo_id: 's1', nome: 'Habitação', valor: '-500.00', percentagem: 50 }),
+              grupo({ grupo_id: 's2', nome: 'Alimentação', valor: '-300.00', percentagem: 30 }),
+              grupo({ grupo_id: 's3', nome: 'Transportes', valor: '-200.00', percentagem: 20 }),
+            ],
+          }),
+        ),
+      )
+
+      const { container } = montar()
+      await screen.findByText('Habitação')
+
+      const barra = container.querySelector('div[aria-hidden="true"]')
+      expect(barra?.children).toHaveLength(3)
+    })
   })
 
-  describe('"Ver mais" / "Ver menos"', () => {
-    const SEIS_GRUPOS: GrupoResumo[] = Array.from({ length: 6 }, (_, indice) =>
-      grupo({
-        grupo_id: `g${indice}`,
-        nome: `Categoria ${indice + 1}`,
-        valor: `${100 - indice * 10}.00`,
-        percentagem: 100 - indice * 10,
-      }),
+  it('o título "Categorias" é um link que leva o período e as contas seleccionadas', async () => {
+    servidorMsw.use(http.get('/api/resumo', () => HttpResponse.json(RESUMO)))
+
+    montar()
+    await screen.findByText('Saldo total')
+
+    // "RESUMO.periodo_inicio"/"periodo_fim" resolvidos por esta própria
+    // página — o mesmo padrão de bug do "‹ Categorias" em
+    // CategoriaResumoDetalhe.tsx (querystring perdido ao navegar):
+    // este link é a ORIGEM de "de"/"ate" para toda a navegação seguinte,
+    // por isso tem de os levar sempre, mesmo sem nenhuma conta
+    // seleccionada (0/1 contas — "contas" fica de fora do querystring,
+    // ver a nota "linkCategorias" em Inicio.tsx).
+    expect(screen.getByRole('link', { name: /Categorias/ })).toHaveAttribute(
+      'href',
+      '/resumo/categorias?de=2026-09-01&ate=2026-09-18',
     )
+  })
 
-    it('só mostra as 5 maiores categorias por omissão, com "Ver mais N" para o resto', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () =>
-          HttpResponse.json({ ...RESUMO, categorias_saidas: SEIS_GRUPOS }),
-        ),
-      )
+  describe('filtro global de contas', () => {
+    it('não aparece com menos de duas contas', async () => {
+      servidorMsw.use(http.get('/api/resumo', () => HttpResponse.json(RESUMO)))
 
-      montar()
+      montar({ contas: [conta()] })
 
-      await screen.findByText('Categoria 1')
-      expect(screen.getByText('Categoria 5')).toBeInTheDocument()
-      expect(screen.queryByText('Categoria 6')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Ver mais 1' })).toBeInTheDocument()
+      await screen.findByText('Saldo total')
+      expect(screen.queryByRole('button', { name: /Contas/ })).not.toBeInTheDocument()
     })
 
-    it('"Ver mais" mostra as restantes, e passa a "Ver menos"', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () =>
-          HttpResponse.json({ ...RESUMO, categorias_saidas: SEIS_GRUPOS }),
-        ),
-      )
-      montar()
-      await screen.findByText('Categoria 1')
+    it('aparece com duas ou mais contas, "Todas" por omissão', async () => {
+      servidorMsw.use(http.get('/api/resumo', () => HttpResponse.json(RESUMO)))
 
-      await userEvent.click(screen.getByRole('button', { name: 'Ver mais 1' }))
+      montar({ contas: [conta({ id: 'c1', nome: 'Conta A' }), conta({ id: 'c2', nome: 'Conta B' })] })
 
-      expect(screen.getByText('Categoria 6')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Ver menos' })).toBeInTheDocument()
+      expect(await screen.findByRole('button', { name: 'Contas: Todas' })).toBeInTheDocument()
     })
 
-    it('trocar de direcção repõe a lista recolhida (não herda "expandido" da aba anterior)', async () => {
+    it('escolher uma conta pede de novo o resumo com "contas" no URL, e mostra o esqueleto entretanto', async () => {
+      let ultimoPedidoContas: string | null = null
       servidorMsw.use(
-        http.get('/api/resumo', () =>
-          HttpResponse.json({
+        http.get('/api/resumo', async ({ request }) => {
+          const url = new URL(request.url)
+          ultimoPedidoContas = url.searchParams.get('contas')
+          // Um pequeno atraso na segunda chamada dá tempo de observar o
+          // esqueleto a reaparecer antes dos novos números.
+          if (ultimoPedidoContas) await delay(20)
+          return HttpResponse.json(RESUMO)
+        }),
+      )
+      montar({ contas: [conta({ id: 'c1', nome: 'Conta A' }), conta({ id: 'c2', nome: 'Conta B' })] })
+      await screen.findByRole('button', { name: 'Contas: Todas' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Contas: Todas' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Conta A' }))
+
+      expect(await screen.findByRole('status', { name: 'A carregar o resumo' })).toBeInTheDocument()
+      await screen.findByRole('button', { name: 'Contas: Conta A' })
+      expect(ultimoPedidoContas).toBe('c1')
+    })
+
+    it('escolher uma conta muda a lista de categorias mostrada', async () => {
+      let ultimoPedidoContas: string | null = null
+      servidorMsw.use(
+        http.get('/api/resumo', ({ request }) => {
+          const url = new URL(request.url)
+          ultimoPedidoContas = url.searchParams.get('contas')
+          return HttpResponse.json({
             ...RESUMO,
-            categorias_entradas: SEIS_GRUPOS,
-            categorias_saidas: SEIS_GRUPOS,
-          }),
-        ),
+            categorias_saidas: ultimoPedidoContas
+              ? [grupo({ grupo_id: 's2', nome: 'Transporte', valor: '-80.00', percentagem: 100 })]
+              : [grupo({ grupo_id: 's1', nome: 'Alimentação', valor: '-320.00', percentagem: 100 })],
+          })
+        }),
       )
-      montar()
-      await screen.findByText('Categoria 1')
-      await userEvent.click(screen.getByRole('button', { name: 'Ver mais 1' }))
-      await screen.findByText('Categoria 6')
+      montar({ contas: [conta({ id: 'c1', nome: 'Conta A' }), conta({ id: 'c2', nome: 'Conta B' })] })
+      await screen.findByText('Alimentação')
 
-      await userEvent.click(screen.getByRole('button', { name: 'Entradas' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Contas: Todas' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Conta A' }))
 
-      expect(screen.queryByText('Categoria 6')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Ver mais 1' })).toBeInTheDocument()
+      expect(await screen.findByText('Transporte')).toBeInTheDocument()
+      expect(screen.queryByText('Alimentação')).not.toBeInTheDocument()
     })
   })
 
-  describe('abrir um grupo revela as suas subcategorias', () => {
-    const GRUPO_A = grupo({ grupo_id: 'g1', nome: 'Alimentação', valor: '-320.00', percentagem: 64 })
-    const GRUPO_B = grupo({ grupo_id: 'g2', nome: 'Transportes', valor: '-100.00', percentagem: 20 })
-
-    function mockDetalhe(subcategorias: { subcategoria_id: string; nome: string; valor: string; percentagem: number }[] = []) {
-      return http.get('/api/resumo/categorias/:grupoId', ({ params }) =>
-        HttpResponse.json({
-          grupo_id: params.grupoId,
-          nome: 'Alimentação',
-          valor: '-320.00',
-          subcategorias,
-        }),
-      )
-    }
-
-    it('está fechado por omissão, sem pedir o detalhe', async () => {
-      let pedidos = 0
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        http.get('/api/resumo/categorias/:grupoId', () => {
-          pedidos += 1
-          return HttpResponse.json({ grupo_id: 'g1', nome: 'Alimentação', valor: '-320.00', subcategorias: [] })
-        }),
-      )
-
+  describe('filtro de período', () => {
+    it('o campo de mês abre já preenchido com o mês em curso', async () => {
+      servidorMsw.use(http.get('/api/resumo', () => HttpResponse.json(RESUMO)))
       montar()
+      await screen.findByRole('button', { name: 'Setembro 2026' })
 
-      expect(await screen.findByRole('button', { name: /Alimentação/ })).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      )
-      expect(pedidos).toBe(0)
+      await userEvent.click(screen.getByRole('button', { name: 'Setembro 2026' }))
+
+      // RESUMO.periodo_inicio é "2026-09-01" (dia 1) e periodo_fim
+      // ("2026-09-18") cai no MESMO mês — mesEmVista (SeletorPeriodo.tsx)
+      // reconhece isto como "o mês em vista", mesmo sem chegar ao último
+      // dia. O campo de mês já mostra "2026-09", não vazio.
+      expect(await screen.findByLabelText('Mês')).toHaveValue('2026-09')
     })
 
-    it('clicar abre, pede o detalhe, e mostra as subcategorias; clicar outra vez fecha', async () => {
+    it('escolher outro mês pede de novo o resumo com "de"/"ate" no URL, e mostra esse mês', async () => {
+      let ultimoDe: string | null = null
+      let ultimoAte: string | null = null
       servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        mockDetalhe([
-          { subcategoria_id: 'sub1', nome: 'Supermercado', valor: '-200.00', percentagem: 62.5 },
-        ]),
-      )
-
-      montar()
-      await screen.findByText('Alimentação')
-
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-
-      expect(await screen.findByText('Supermercado')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Alimentação/ })).toHaveAttribute(
-        'aria-expanded',
-        'true',
-      )
-
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-
-      expect(screen.queryByText('Supermercado')).not.toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Alimentação/ })).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      )
-    })
-
-    it('reabrir o mesmo grupo não volta a pedir o detalhe', async () => {
-      let pedidos = 0
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        http.get('/api/resumo/categorias/:grupoId', () => {
-          pedidos += 1
-          return HttpResponse.json({ grupo_id: 'g1', nome: 'Alimentação', valor: '-320.00', subcategorias: [] })
-        }),
-      )
-      montar()
-      await screen.findByText('Alimentação')
-      const botao = () => screen.getByRole('button', { name: /Alimentação/ })
-
-      await userEvent.click(botao())
-      await screen.findByText('Sem detalhe este mês.')
-      await userEvent.click(botao())
-      await userEvent.click(botao())
-
-      await screen.findByText('Sem detalhe este mês.')
-      expect(pedidos).toBe(1)
-    })
-
-    it('abrir outro grupo fecha o anterior', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () =>
-          HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A, GRUPO_B] }),
-        ),
-        http.get('/api/resumo/categorias/:grupoId', ({ params }) =>
-          HttpResponse.json({
-            grupo_id: params.grupoId,
-            nome: params.grupoId === 'g1' ? 'Alimentação' : 'Transportes',
-            valor: '0.00',
-            subcategorias: [
-              {
-                subcategoria_id: `${String(params.grupoId)}-sub`,
-                nome: `Sub de ${String(params.grupoId)}`,
-                valor: '0.00',
-                percentagem: 100,
-              },
-            ],
-          }),
-        ),
-      )
-      montar()
-      await screen.findByText('Alimentação')
-
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-      await screen.findByText('Sub de g1')
-
-      await userEvent.click(screen.getByRole('button', { name: /Transportes/ }))
-
-      expect(await screen.findByText('Sub de g2')).toBeInTheDocument()
-      expect(screen.queryByText('Sub de g1')).not.toBeInTheDocument()
-    })
-
-    it('trocar de direcção fecha qualquer grupo aberto', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () =>
-          HttpResponse.json({
-            ...RESUMO,
-            categorias_entradas: [
-              grupo({ grupo_id: 'e1', nome: 'Salário', valor: '1700.00', percentagem: 100 }),
-            ],
-            categorias_saidas: [GRUPO_A],
-          }),
-        ),
-        mockDetalhe([]),
-      )
-      montar()
-      await screen.findByText('Alimentação')
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-      await screen.findByText('Sem detalhe este mês.')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Entradas' }))
-
-      expect(screen.queryByText('Sem detalhe este mês.')).not.toBeInTheDocument()
-    })
-
-    it('"Ver menos" fecha um grupo aberto que a lista recolhida deixa de mostrar', async () => {
-      // 6 grupos: o 6º só aparece depois de "Ver mais" — se ficasse
-      // "aberto" em memória ao recolher de novo, reapareceria já
-      // expandido ao clicar "Ver mais" outra vez.
-      const seisGrupos = Array.from({ length: 6 }, (_, indice) =>
-        grupo({
-          grupo_id: `s${indice}`,
-          nome: `Categoria ${indice + 1}`,
-          valor: `${100 - indice * 10}.00`,
-          percentagem: 100 - indice * 10,
-        }),
-      )
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: seisGrupos })),
-        http.get('/api/resumo/categorias/:grupoId', () =>
-          HttpResponse.json({ grupo_id: 's5', nome: 'Categoria 6', valor: '50.00', subcategorias: [] }),
-        ),
-      )
-      montar()
-      await screen.findByText('Categoria 1')
-      await userEvent.click(screen.getByRole('button', { name: 'Ver mais 1' }))
-      await userEvent.click(screen.getByRole('button', { name: /Categoria 6/ }))
-      await screen.findByText('Sem detalhe este mês.')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Ver menos' }))
-      expect(screen.queryByText('Categoria 6')).not.toBeInTheDocument()
-
-      await userEvent.click(screen.getByRole('button', { name: 'Ver mais 1' }))
-
-      expect(await screen.findByRole('button', { name: /Categoria 6/ })).toHaveAttribute(
-        'aria-expanded',
-        'false',
-      )
-      expect(screen.queryByText('Sem detalhe este mês.')).not.toBeInTheDocument()
-    })
-
-    it('sem subcategorias no mês, mostra um estado vazio', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        mockDetalhe([]),
-      )
-      montar()
-      await screen.findByText('Alimentação')
-
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-
-      expect(await screen.findByText('Sem detalhe este mês.')).toBeInTheDocument()
-    })
-
-    it('mostra um aviso se o pedido do detalhe falhar', async () => {
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        http.get('/api/resumo/categorias/:grupoId', () =>
-          HttpResponse.json({ detail: 'Falha.' }, { status: 500 }),
-        ),
-      )
-      montar()
-      await screen.findByText('Alimentação')
-
-      await userEvent.click(screen.getByRole('button', { name: /Alimentação/ }))
-
-      expect(await screen.findByText('Não foi possível carregar.')).toBeInTheDocument()
-    })
-
-    it('reabrir depois de o pedido falhar tenta outra vez, não fica preso em erro', async () => {
-      let tentativas = 0
-      servidorMsw.use(
-        http.get('/api/resumo', () => HttpResponse.json({ ...RESUMO, categorias_saidas: [GRUPO_A] })),
-        http.get('/api/resumo/categorias/:grupoId', () => {
-          tentativas += 1
-          if (tentativas === 1) {
-            return HttpResponse.json({ detail: 'Falha.' }, { status: 500 })
+        http.get('/api/resumo', ({ request }) => {
+          const url = new URL(request.url)
+          ultimoDe = url.searchParams.get('de')
+          ultimoAte = url.searchParams.get('ate')
+          if (ultimoDe) {
+            return HttpResponse.json({
+              ...RESUMO,
+              periodo_inicio: '2026-08-01',
+              periodo_fim: '2026-08-31',
+            })
           }
-          return HttpResponse.json({ grupo_id: 'g1', nome: 'Alimentação', valor: '-320.00', subcategorias: [] })
+          return HttpResponse.json(RESUMO)
+        }),
+      )
+      montar()
+      await screen.findByRole('button', { name: 'Setembro 2026' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Setembro 2026' }))
+      fireEvent.change(await screen.findByLabelText('Mês'), { target: { value: '2026-08' } })
+
+      expect(await screen.findByRole('button', { name: 'Agosto 2026' })).toBeInTheDocument()
+      // intervaloDoMes (src/lib/filtrosMovimentos.ts) resolve sempre até
+      // ao ÚLTIMO DIA do mês escolhido.
+      expect(ultimoDe).toBe('2026-08-01')
+      expect(ultimoAte).toBe('2026-08-31')
+    })
+
+    it('preencher "De" e "Até" pede de novo o resumo com esse intervalo, mesmo não sendo um mês inteiro', async () => {
+      // Ecoa "de"/"ate" tal como recebidos — para "resumo.periodo_inicio"/
+      // "periodo_fim" (as props de/ate de SeletorPeriodo) reflectirem
+      // sempre o ÚLTIMO pedido, tal como o backend real faria.
+      let ultimoDe: string | null = null
+      let ultimoAte: string | null = null
+      servidorMsw.use(
+        http.get('/api/resumo', ({ request }) => {
+          const url = new URL(request.url)
+          ultimoDe = url.searchParams.get('de')
+          ultimoAte = url.searchParams.get('ate')
+          return HttpResponse.json({
+            ...RESUMO,
+            periodo_inicio: ultimoDe ?? RESUMO.periodo_inicio,
+            periodo_fim: ultimoAte ?? RESUMO.periodo_fim,
+          })
+        }),
+      )
+      montar()
+      await screen.findByRole('button', { name: 'Setembro 2026' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Setembro 2026' }))
+      await userEvent.click(await screen.findByRole('button', { name: 'Data personalizada' }))
+      fireEvent.change(await screen.findByLabelText('De'), { target: { value: '2026-08-10' } })
+      // Espera que este primeiro pedido (ainda com o "Até" antigo)
+      // resolva antes de editar "Até" — tal como um utilizador real, que
+      // não preenche os dois campos no mesmo instante; sem esperar, o
+      // segundo campo aplicaria com um "de" ainda desactualizado (o
+      // pedido "aplica ao vivo", tal como em Movimentos — ver a nota no
+      // topo de SeletorPeriodo.tsx).
+      await waitFor(() => expect(ultimoDe).toBe('2026-08-10'))
+      fireEvent.change(screen.getByLabelText('Até'), { target: { value: '2026-08-20' } })
+
+      // "10 ago – 20 ago 2026" — não é um mês inteiro, por isso o título
+      // usa o formato de intervalo, não um nome de mês.
+      expect(await screen.findByRole('button', { name: '10 ago – 20 ago 2026' })).toBeInTheDocument()
+      expect(ultimoDe).toBe('2026-08-10')
+      expect(ultimoAte).toBe('2026-08-20')
+    })
+
+    it('mudar o mês muda a lista de categorias mostrada', async () => {
+      let ultimoDe: string | null = null
+      servidorMsw.use(
+        http.get('/api/resumo', ({ request }) => {
+          ultimoDe = new URL(request.url).searchParams.get('de')
+          return HttpResponse.json({
+            ...RESUMO,
+            categorias_saidas: ultimoDe
+              ? [grupo({ grupo_id: 's2', nome: 'Transporte', valor: '-80.00', percentagem: 100 })]
+              : [grupo({ grupo_id: 's1', nome: 'Alimentação', valor: '-320.00', percentagem: 100 })],
+          })
         }),
       )
       montar()
       await screen.findByText('Alimentação')
-      const botao = () => screen.getByRole('button', { name: /Alimentação/ })
 
-      await userEvent.click(botao())
-      await screen.findByText('Não foi possível carregar.')
-      await userEvent.click(botao())
-      await userEvent.click(botao())
+      await userEvent.click(screen.getByRole('button', { name: 'Setembro 2026' }))
+      fireEvent.change(await screen.findByLabelText('Mês'), { target: { value: '2026-08' } })
 
-      expect(await screen.findByText('Sem detalhe este mês.')).toBeInTheDocument()
-      expect(tentativas).toBe(2)
+      expect(await screen.findByText('Transporte')).toBeInTheDocument()
+      expect(screen.queryByText('Alimentação')).not.toBeInTheDocument()
     })
   })
 

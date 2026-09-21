@@ -63,15 +63,25 @@ describe('Moldura da aplicação', () => {
     montar('/')
 
     expect(await screen.findByText('Saldo total')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Início' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Movimentos' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Contas' })).toBeInTheDocument()
+    // "complementary" — o role implícito de <aside> (BarraLateral.tsx) —
+    // engloba tanto o <nav> das secções como a zona de perfil, fora dele;
+    // sem esta âmbito, "Categorias" (verificado mais abaixo) apanharia
+    // também o link do CARTÃO de categorias, no conteúdo de Início, que
+    // não é o que este teste verifica.
+    const barraLateral = screen.getByRole('complementary')
+    expect(within(barraLateral).getByRole('link', { name: 'Início' })).toBeInTheDocument()
+    expect(within(barraLateral).getByRole('link', { name: 'Movimentos' })).toBeInTheDocument()
+    expect(within(barraLateral).getByRole('link', { name: 'Contas' })).toBeInTheDocument()
     // Categorias não é uma secção da navegação principal — vive em
-    // /perfil (ver a nota em src/lib/seccoes.ts).
-    expect(screen.queryByRole('link', { name: 'Categorias' })).not.toBeInTheDocument()
+    // /perfil (ver a nota em src/lib/seccoes.ts). Procurado só DENTRO da
+    // barra lateral — o próprio conteúdo de Início tem, à parte, um link
+    // "Categorias" seu (o título do cartão de categorias, para
+    // /resumo/categorias — ver a nota "DÉCIMA TERCEIRA FATIA" em
+    // Inicio.tsx), que não é o que este teste verifica.
+    expect(within(barraLateral).queryByRole('link', { name: 'Categorias' })).not.toBeInTheDocument()
     // A zona de perfil é uma ligação para /perfil, com o nome derivado do
     // email (parte antes do "@") como nome acessível.
-    expect(screen.getByRole('link', { name: 'ana' })).toBeInTheDocument()
+    expect(within(barraLateral).getByRole('link', { name: 'ana' })).toBeInTheDocument()
   })
 
   it('navega para Contas ao clicar no item da barra lateral', async () => {

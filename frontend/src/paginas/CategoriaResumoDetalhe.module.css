@@ -1,0 +1,201 @@
+/*
+ * ESTILOS DE CategoriaResumoDetalhe (/resumo/categorias/:grupoId)
+ * =================================================================
+ *
+ * Um nível abaixo de CategoriasResumo.module.css — a mesma barra
+ * empilhada e a mesma lista, com diferenças: cada segmento/ponto usa a
+ * MESMA cor do grupo-pai (não uma cor própria da subcategoria — ver a
+ * nota "COR DAS SUBCATEGORIAS" em CategoriaResumoDetalhe.tsx), só com um
+ * TOM diferente por posição na lista ("solido"/"fg" da mesma cor, não
+ * duas cores diferentes — chegou a ter um terceiro tom, "bg", revertido
+ * numa revisão de fatia por ficar quase invisível como preenchimento
+ * sólido, ver a nota junto da função `tom` em CategoriaResumoDetalhe.
+ * tsx); o ponto (".ponto") é local a este ficheiro, não o componente
+ * partilhado PontoCategoria (que escolhe a cor, mas não o tom por
+ * posição). As linhas não são links (não há um terceiro nível de
+ * detalhe) — sem seta, sem estados de :hover/:active.
+ */
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+.notaUnica {
+  color: var(--cor-texto-2);
+  font-size: var(--texto-sm);
+  font-style: italic;
+  text-align: center;
+  padding-top: var(--espaco-2);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+.esq {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqBarra {
+  height: 10px;
+  border-radius: 999px;
+  margin-bottom: var(--espaco-4);
+}
+
+.esqLinha {
+  height: 2.75rem;
+  margin-bottom: var(--espaco-3);
+  border-radius: var(--raio-md);
+}
+
+/* --- Barra empilhada --- */
+
+/* O contorno de 1px dá à faixa um limite visível contra o fundo —
+   alguns tons "-solido" (pastel, de propósito) quase se perdiam no
+   branco à volta sem ele (contraste medido abaixo de 2:1, numa revisão
+   de fatia). */
+.barraEmpilhada {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border: 1px solid var(--cor-borda-leve);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: var(--espaco-4);
+}
+
+.segmento {
+  display: block;
+  height: 100%;
+}
+
+/* A MESMA cor em toda a página (a cor do grupo, "data-cor", constante
+   para todas as linhas/segmentos aqui) — só o TOM ("data-tom") muda por
+   posição (ver a função "tom" em CategoriaResumoDetalhe.tsx). "solido" é
+   o mesmo tom já usado na barra de CategoriasResumo.tsx (continuidade
+   com o ecrã anterior); "fg" é o outro tom da MESMA cor — nenhum tom
+   novo, nenhuma cor nova. Só dois tons (não três): "-bg", tentado e
+   revertido, ficava com um contraste medido de ~1.0-1.2:1 usado sozinho
+   como preenchimento sólido — quase invisível (ver a nota junto de
+   "tom", em CategoriaResumoDetalhe.tsx). */
+.segmento[data-cor='0'][data-tom='solido'],
+.ponto[data-cor='0'][data-tom='solido'] {
+  background: var(--avatar-0-solido);
+}
+.segmento[data-cor='0'][data-tom='fg'],
+.ponto[data-cor='0'][data-tom='fg'] {
+  background: var(--avatar-0-fg);
+}
+
+.segmento[data-cor='1'][data-tom='solido'],
+.ponto[data-cor='1'][data-tom='solido'] {
+  background: var(--avatar-1-solido);
+}
+.segmento[data-cor='1'][data-tom='fg'],
+.ponto[data-cor='1'][data-tom='fg'] {
+  background: var(--avatar-1-fg);
+}
+
+.segmento[data-cor='2'][data-tom='solido'],
+.ponto[data-cor='2'][data-tom='solido'] {
+  background: var(--avatar-2-solido);
+}
+.segmento[data-cor='2'][data-tom='fg'],
+.ponto[data-cor='2'][data-tom='fg'] {
+  background: var(--avatar-2-fg);
+}
+
+.segmento[data-cor='3'][data-tom='solido'],
+.ponto[data-cor='3'][data-tom='solido'] {
+  background: var(--avatar-3-solido);
+}
+.segmento[data-cor='3'][data-tom='fg'],
+.ponto[data-cor='3'][data-tom='fg'] {
+  background: var(--avatar-3-fg);
+}
+
+.segmento[data-cor='4'][data-tom='solido'],
+.ponto[data-cor='4'][data-tom='solido'] {
+  background: var(--avatar-4-solido);
+}
+.segmento[data-cor='4'][data-tom='fg'],
+.ponto[data-cor='4'][data-tom='fg'] {
+  background: var(--avatar-4-fg);
+}
+
+.segmento[data-cor='5'][data-tom='solido'],
+.ponto[data-cor='5'][data-tom='solido'] {
+  background: var(--avatar-5-solido);
+}
+.segmento[data-cor='5'][data-tom='fg'],
+.ponto[data-cor='5'][data-tom='fg'] {
+  background: var(--avatar-5-fg);
+}
+
+/* O ponto ao lado do nome — a mesma forma/tamanho do "sm" de
+   PontoCategoria.module.css, mas local: este ficheiro escolhe o TOM por
+   posição, que esse componente partilhado não faz (ver a nota em
+   CategoriaResumoDetalhe.tsx). */
+.ponto {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+/* --- Lista de subcategorias (linhas simples, sem link) --- */
+
+.lista {
+  display: flex;
+  flex-direction: column;
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding-block: var(--espaco-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+.linha:last-child {
+  border-bottom: none;
+}
+
+.nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+.valores {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.valor {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.percentagem {
+  font-size: var(--texto-xs);
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+}

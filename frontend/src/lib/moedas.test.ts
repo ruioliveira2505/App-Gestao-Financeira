@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { formatarDinheiro, OPCOES_MOEDA } from './moedas'
+import { formatarDinheiro, formatarSemSinal, OPCOES_MOEDA } from './moedas'
 
 describe('formatarDinheiro', () => {
   it('formata em euros no formato português (vírgula decimal, símbolo)', () => {
@@ -21,6 +21,18 @@ describe('formatarDinheiro', () => {
   it('cai num formato simples quando o código de moeda é inválido', () => {
     // "X" não tem 3 letras — o Intl.NumberFormat rejeita-o.
     expect(formatarDinheiro('10.00', 'X')).toBe('10.00 X')
+  })
+})
+
+describe('formatarSemSinal', () => {
+  it('remove o sinal negativo', () => {
+    const texto = formatarSemSinal('-50.00', 'EUR')
+    expect(texto).not.toContain('-')
+    expect(texto).toContain('50,00')
+  })
+
+  it('um valor já positivo fica inalterado', () => {
+    expect(formatarSemSinal('50.00', 'EUR')).toBe(formatarDinheiro('50.00', 'EUR'))
   })
 })
 

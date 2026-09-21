@@ -133,19 +133,26 @@ export function intervaloDoMes(mesIso: string): { de: string; ate: string } {
   return { de: iso(de), ate: iso(ate) }
 }
 
-/** Se o intervalo nos filtros é exatamente um mês de calendário (dia 1 →
- *  último dia do mesmo mês), devolve-o como "AAAA-MM"; senão, null. Serve
- *  para reconhecer a escolha "Mês específico" e mostrá-la como "Março
- *  2026". */
-export function mesDeIntervalo(filtros: Filtros): string | null {
-  if (!filtros.de || !filtros.ate) return null
-  const de = new Date(`${filtros.de}T00:00:00`)
-  const ate = new Date(`${filtros.ate}T00:00:00`)
-  if (de.getDate() !== 1) return null
-  if (de.getFullYear() !== ate.getFullYear() || de.getMonth() !== ate.getMonth()) return null
-  const ultimoDia = new Date(de.getFullYear(), de.getMonth() + 1, 0).getDate()
-  if (ate.getDate() !== ultimoDia) return null
-  return `${de.getFullYear()}-${String(de.getMonth() + 1).padStart(2, '0')}`
+/**
+ * Se o intervalo [de, ate] é exatamente um mês de calendário (dia 1 →
+ * último dia do mesmo mês), devolve-o como "AAAA-MM"; senão, null. Serve
+ * para reconhecer a escolha "Mês específico" e mostrá-la como "Março
+ * 2026" — em FiltroMovimentos.tsx (a partir de "filtros.de"/"filtros.
+ * ate") e em SeletorPeriodo.tsx (a partir do período activo do resumo).
+ *
+ * Recebe as duas datas directamente (não um "Filtros" inteiro): só lê
+ * estes dois campos, e assim serve os dois sítios sem nenhum precisar de
+ * montar um objecto "Filtros" só para lhe chamar esta função.
+ */
+export function mesDeIntervalo(de: string | null, ate: string | null): string | null {
+  if (!de || !ate) return null
+  const dDe = new Date(`${de}T00:00:00`)
+  const dAte = new Date(`${ate}T00:00:00`)
+  if (dDe.getDate() !== 1) return null
+  if (dDe.getFullYear() !== dAte.getFullYear() || dDe.getMonth() !== dAte.getMonth()) return null
+  const ultimoDia = new Date(dDe.getFullYear(), dDe.getMonth() + 1, 0).getDate()
+  if (dAte.getDate() !== ultimoDia) return null
+  return `${dDe.getFullYear()}-${String(dDe.getMonth() + 1).padStart(2, '0')}`
 }
 
 /** Qual atalho (se algum) corresponde ao intervalo atualmente nos filtros. */

@@ -52,22 +52,36 @@
   color: var(--cor-texto-3);
 }
 
-/* --- Botão de olho (só disposicao="empilhado" + tipo="password") --- */
+/* Um campo de data/mês, em disposição "linha", não tinha NENHUM aspecto
+   de campo (".linha input", acima, tira-lhe a borda toda) — ficava
+   indistinguível de texto solto até se lhe tocar. Esta linha própria dá-
+   -lhe um traço visível (e, de graça, o "input:focus" global de
+   index.css já o escurece para o acento ao focar — a mesma convenção do
+   resto da app). */
+.linha input[type='date'],
+.linha input[type='month'] {
+  border-bottom: 1px solid var(--cor-borda-leve);
+  padding-bottom: var(--espaco-1);
+}
 
-/* Envolve o <input> e o botão de olho, para o botão poder ser posicionado
-   sobre o lado direito do campo. */
-.comBotao {
+/* --- Ícone dentro do campo (botão de olho da password; ícone de
+   calendário, decorativo, de data/mês) --- */
+
+/* Envolve o <input> e o ícone, para este poder ser posicionado sobre o
+   lado direito do campo. */
+.comIcone {
   position: relative;
   display: flex;
 }
 
 /* Deixa espaço à direita do texto do campo, para não passar por baixo do
-   botão. */
-.comBotao input {
+   ícone. */
+.comIcone input {
   padding-right: calc(var(--espaco-3) + 1.75rem);
 }
 
-.botaoOlho {
+.botaoIcone,
+.iconeDecorativo {
   position: absolute;
   right: var(--espaco-2);
   top: 50%;
@@ -75,13 +89,23 @@
 
   display: flex;
   align-items: center;
+  color: var(--cor-texto-3);
+}
+
+.botaoIcone {
   padding: var(--espaco-2);
   border: none;
   background: none;
-  color: var(--cor-texto-3);
   border-radius: var(--raio-sm);
 }
 
-.botaoOlho:hover {
+.botaoIcone:hover {
   color: var(--cor-texto-2);
+}
+
+/* O ícone de calendário é só um sinal visual — o toque no campo já abre
+   o seletor nativo do browser; "pointer-events: none" garante que o
+   ícone nunca intercepta esse toque, mesmo estando por cima do campo. */
+.iconeDecorativo {
+  pointer-events: none;
 }

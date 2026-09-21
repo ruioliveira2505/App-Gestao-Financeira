@@ -1,0 +1,113 @@
+/*
+ * ESTILOS DO SeletorPeriodo
+ * =========================
+ *
+ * O gatilho reaproveita a tipografia de ".seccaoTitulo" (Inicio.module.css,
+ * entretanto removida de lá) — é o MESMO rótulo de secção, agora tocável.
+ * ".intervalo"/".personalizado" são uma cópia (não uma importação) dos
+ * estilos equivalentes em FiltroMovimentos.module.css — a mesma lógica
+ * visual de ListaDatas, mas um ficheiro à parte (ver a nota no topo de
+ * SeletorPeriodo.tsx). A lista de opções em si usa LinhaOpcaoFiltro
+ * (componentes/LinhaOpcaoFiltro.module.css), por isso não tem ".linha"
+ * próprio aqui.
+ */
+
+/* Padding em todos os lados: alarga a área TOCÁVEL para perto dos
+   ~2.5rem (40px) usados nos outros botões-ícone da app — ver a nota
+   "ALVO DE TOQUE" em SeletorPeriodo.tsx. Sozinho, centrado na sua
+   própria linha (entre o Saldo Total e o resumo Entradas/Saídas/
+   Líquido, em Inicio.tsx), já não precisa da margem negativa que este
+   padding teve quando vivia embutido ao lado de outro texto — sem
+   nenhum vizinho a preservar, o padding pode simplesmente alargar o
+   botão.
+   FUNDO E CONTORNO ("chip"), tentados numa revisão de design/UX e
+   REVERTIDOS logo a seguir, a pedido explícito — voltou a ser só
+   texto, sem fundo nem contorno (ver caderno/decisoes.md). O alvo de
+   toque (o padding, acima) manteve-se; só o aspecto voltou ao que
+   era. */
+.gatilho {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  border: none;
+  background: none;
+  padding: var(--espaco-2) var(--espaco-4);
+  font: inherit;
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cor-texto-3);
+}
+
+.gatilho:active {
+  color: var(--cor-texto-2);
+}
+
+.gatilho > svg {
+  flex-shrink: 0;
+}
+
+/* Um espaço invisível, do MESMO tamanho da seta, antes do texto — sem
+   isto, centrar o BOTÃO (".tituloFluxo" em Inicio.module.css) não
+   centra o TEXTO: a seta a seguir ao rótulo empurra o texto lido para a
+   esquerda do centro verdadeiro (o botão fica centrado, mas o texto lá
+   dentro não, porque só há "peso" visual de um lado). Este espaço
+   equilibra os dois lados, para "Setembro 2026" ficar mesmo por baixo
+   do centro do Saldo Total, acima. */
+.gatilho::before {
+  content: '';
+  width: 14px;
+  flex-shrink: 0;
+}
+
+/* --- Conteúdo da folha --- */
+
+.conteudo {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+}
+
+/* Mostrador do intervalo resolvido, no topo. */
+.intervalo {
+  margin: 0 0 var(--espaco-2);
+  padding-bottom: var(--espaco-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  text-align: center;
+  color: var(--cor-texto-3);
+  font-size: var(--texto-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.lista {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Campos revelados por "Mês específico"/"Data personalizada". Entram com
+   um fade + leve descida (o "prefers-reduced-motion" do index.css
+   encurta a animação para ~0). */
+.personalizado {
+  margin-top: var(--espaco-3);
+  animation: revelar-campos 0.18s ease-out;
+}
+
+@keyframes revelar-campos {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.personalizado > * + * {
+  position: relative;
+}
+
+.personalizado > * + *::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--cor-borda-leve);
+}

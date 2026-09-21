@@ -50,6 +50,8 @@ import { LayoutApp } from './componentes/LayoutApp'
 import { Categorias } from './paginas/Categorias'
 import { CategoriaGrupo } from './paginas/CategoriaGrupo'
 import { CategoriaNova } from './paginas/CategoriaNova'
+import { CategoriaResumoDetalhe } from './paginas/CategoriaResumoDetalhe'
+import { CategoriasResumo } from './paginas/CategoriasResumo'
 import { Contas } from './paginas/Contas'
 import { ContaDetalhe } from './paginas/ContaDetalhe'
 import { ContaEditar } from './paginas/ContaEditar'
@@ -80,6 +82,17 @@ function App() {
         }
       >
         <Route path="/" element={<Inicio />} />
+        {/* Páginas de detalhe da repartição por categoria — alcançadas a
+            partir do título "Categorias" no cartão de Início (ver a nota
+            "DÉCIMA TERCEIRA FATIA" em Inicio.tsx). Nomes distintos de
+            "/categorias" e "/categorias/:grupoId", logo abaixo — essas
+            são a GESTÃO de categorias (criar/editar/eliminar grupos e
+            subcategorias), uma funcionalidade diferente, nada a ver com
+            este resumo por período. Duas páginas de detalhe próprias
+            (como "/contas/:id"), não uma folha sobre a lista anterior —
+            cada uma com o seu próprio <PaginaDeslizante>. */}
+        <Route path="/resumo/categorias" element={<CategoriasResumo />} />
+        <Route path="/resumo/categorias/:grupoId" element={<CategoriaResumoDetalhe />} />
         <Route path="/movimentos" element={<Movimentos />} />
         {/* Tal como "Nova conta": a folha desenha-se SOBRE a lista de
             movimentos, para o que está por trás — ao arrastar para

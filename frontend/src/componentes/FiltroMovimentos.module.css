@@ -129,61 +129,11 @@
   padding-top: 0;
 }
 
-/* Traço fino entre opções, RECUADO das bordas (o mesmo do ListaDeOpcoes, o
-   seletor dos formulários) — ao contrário das linhas-seletor da folha
-   principal, que vão de bordo a bordo. */
-.linha {
-  display: flex;
-  align-items: center;
-  gap: var(--espaco-3);
-  width: 100%;
-  min-height: 2.75rem;
-  padding: var(--espaco-2) 0;
-  border: none;
-  border-bottom: 1px solid var(--cor-borda-leve);
-  background: none;
-  font: inherit;
-  font-size: var(--texto-md);
-  text-align: left;
-  color: var(--cor-texto);
-}
-
-.lista .linha:last-child {
-  border-bottom: none;
-}
-
-.linha:active {
-  background: var(--cor-superficie-2);
-}
-
-/* Monograma (Avatar) da conta, à esquerda da etiqueta — só nas linhas de
-   Contas. */
-.linhaAntes {
-  flex-shrink: 0;
-  display: flex;
-}
-
-/* Escolhida: um pouco mais de peso; o sinal inequívoco é o "✓".
-   "aria-current" nas listas de escolha única (Tipo, Datas), "aria-pressed"
-   na de multi-escolha (Contas). */
-.linha[aria-current='true'],
-.linha[aria-pressed='true'] {
-  font-weight: 500;
-}
-
-/* O "✓": único <svg> filho direto da linha. */
-.linha > svg {
-  margin-left: auto;
-  flex-shrink: 0;
-  color: var(--cor-acento);
-}
-
-.linhaEtiqueta {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* A linha de opção em si (".linha"/".linhaAntes"/".linhaEtiqueta") já não
+   vive aqui — ver componentes/LinhaOpcaoFiltro.tsx/.module.css, extraído
+   numa revisão de design/UX depois de o mesmo CSS ter sido copiado, quase
+   palavra por palavra, para FiltroContas.module.css, SeletorPeriodo.
+   module.css e FiltroCategoriasResumo.module.css (Início). */
 
 /* --- Datas --- */
 

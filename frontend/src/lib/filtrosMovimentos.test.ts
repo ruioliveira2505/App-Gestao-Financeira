@@ -114,16 +114,13 @@ describe('mês específico', () => {
   })
 
   it('mesDeIntervalo reconhece um mês de calendário completo, e só esse', () => {
-    expect(
-      mesDeIntervalo({ ...FILTROS_VAZIOS, de: '2026-03-01', ate: '2026-03-31' }),
-    ).toBe('2026-03')
+    expect(mesDeIntervalo('2026-03-01', '2026-03-31')).toBe('2026-03')
     // Não é o mês completo (falta o último dia).
-    expect(
-      mesDeIntervalo({ ...FILTROS_VAZIOS, de: '2026-03-01', ate: '2026-03-20' }),
-    ).toBeNull()
+    expect(mesDeIntervalo('2026-03-01', '2026-03-20')).toBeNull()
     // Não começa no dia 1.
-    expect(
-      mesDeIntervalo({ ...FILTROS_VAZIOS, de: '2026-03-05', ate: '2026-03-31' }),
-    ).toBeNull()
+    expect(mesDeIntervalo('2026-03-05', '2026-03-31')).toBeNull()
+    // Sem "de" ou sem "ate".
+    expect(mesDeIntervalo(null, '2026-03-31')).toBeNull()
+    expect(mesDeIntervalo('2026-03-01', null)).toBeNull()
   })
 })

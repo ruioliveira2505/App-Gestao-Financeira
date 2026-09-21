@@ -4,30 +4,57 @@
  *
  * Deliberadamente diferente do resto da app (ver a nota "DESENHO
  * DELIBERADAMENTE DIFERENTE" no topo de Inicio.tsx): sem nenhum título de
- * página, por agora; o Saldo Total num cartão com fundo destacado; e a
+ * página, por agora; o Saldo Total como número solto, sem cartão; e a
  * repartição por categoria (Entradas OU Saídas, nunca as duas visíveis ao
- * mesmo tempo — ver a nota "CORREÇÃO DE DESENHO" em Inicio.tsx) atrás de
- * um controlo segmentado, à maneira do iOS. Cor mantida conservadora — só
- * as duas cores semânticas já estabelecidas (positivo/negativo, ver
- * Movimentos.module.css), sem nenhum acento novo.
+ * mesmo tempo — ver a nota "CORREÇÃO DE DESENHO" em Inicio.tsx) dentro de
+ * um cartão com um alternador "+/−" próprio (ver a nota "NONA FATIA" em
+ * Inicio.tsx). Cor mantida conservadora na maior parte da página — só as
+ * duas cores semânticas já estabelecidas (positivo/negativo, ver
+ * Movimentos.module.css). A ÚNICA excepção deliberada é a barra
+ * EMPILHADA no topo do cartão de categorias (".barraEmpilhada", abaixo)
+ * — um segmento por categoria, na MESMA cor determinística do ponto de
+ * PontoCategoria ao lado do seu nome na lista: depois de várias
+ * tentativas de dar essa cor a uma barra POR CATEGORIA, espalhando cor
+ * pela lista inteira (ver caderno/decisoes.md), a versão que ficou
+ * concentra toda a cor num único elemento, ao estilo do Ecrã de
+ * Utilização da Apple — uma barra, uma lista de texto simples por
+ * baixo. Usa um tom próprio, "--avatar-N-solido" (só para
+ * preenchimentos sólidos, definido em src/index.css a par do "-bg"/"-fg"
+ * já usados pelo Avatar e pelo PontoCategoria, sem alterar nenhum dos
+ * dois).
  */
 
 .nota {
   color: var(--cor-texto-2);
 }
 
-/* --- Saldo Total: cartão com fundo destacado --- */
+/* Em desktop (sem barra de topo mobile — ver a nota "QUINTA FATIA" em
+   Inicio.tsx), o botão de Contas mostra-se aqui, alinhado à direita
+   (como ficaria na barra de topo) e com margem própria por baixo — sem
+   isto, ficava encostado ao cartão do Saldo Total, à esquerda. */
+.acaoDesktop {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--espaco-4);
+}
 
+/* --- Saldo Total: número solto, sem cartão --- */
+
+/* Chegou a ter fundo cinzento ("--cor-superficie"), depois um contorno —
+   revertido de novo, numa experiência de design/UX seguinte: nem um
+   fundo sólido nem uma borda "destacam" nada aqui que o próprio tamanho
+   do número (`--texto-3xl`) já não destaque sozinho — um cartão à volta
+   só ia contra o princípio de "cor/relevo só onde há significado" já
+   seguido no resto da app. Sem caixa, o espaçamento vertical
+   (padding/margin) é o que separa esta zona da seguinte, não uma borda. */
 .cartaoSaldo {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: var(--espaco-1);
   text-align: center;
-  padding: var(--espaco-6) var(--espaco-4);
-  margin-bottom: var(--espaco-6);
-  background: var(--cor-superficie);
-  border-radius: var(--raio-lg);
+  padding: var(--espaco-4) var(--espaco-4) var(--espaco-2);
+  margin-bottom: var(--espaco-5);
 }
 
 .rotulo {
@@ -58,75 +85,171 @@
   color: var(--cor-negativo-text);
 }
 
-/* --- Cabeçalho da secção: "Setembro 2026" + "Líquido X" --- */
+/* --- Entradas/Saídas/Líquido: uma linha, duas réguas finas --- */
 
-.cabecalhoFluxo {
+/* SEM contorno completo — só uma borda em cima e outra em baixo (nem
+   lados, nem cantos arredondados). Já experimentámos um cartão com
+   contorno para isto (ver caderno/decisoes.md) e foi revertido por
+   parecer voltar ao "modo caixa" logo a seguir a tirarmos o contorno ao
+   Saldo Total — duas réguas finas dão o mesmo "toque" com menos peso
+   visual (uma borda, não uma caixa). */
+.resumoFluxo {
   display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--espaco-3);
-  margin-bottom: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  margin-bottom: var(--espaco-6);
+}
+
+.resumoColuna {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-1);
+  padding: var(--espaco-4) var(--espaco-2);
+  text-align: center;
+}
+
+.resumoRotulo {
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-2);
+}
+
+/* "--texto-base" (16px) — o MESMO tamanho E peso (600) que
+   ".categoriaValor" (Inicio.module.css) usa no cartão de categorias,
+   logo abaixo: revisão de design/UX — antes, este valor tinha o mesmo
+   tamanho em `rem` (16px, só que via "--texto-md"), mas peso 700 (não
+   600) e um "letter-spacing" negativo, o que o fazia parecer maior e
+   mais "carregado" do que o valor de uma categoria, apesar de a
+   dimensão em si já ser idêntica — o pedido de "no mínimo do tamanho
+   da categoria" só ficou realmente satisfeito ao igualar TAMBÉM o
+   peso e o espaçamento entre letras, não só o número em rem. */
+.resumoValor {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- O período (SeletorPeriodo.tsx), entre o Saldo Total e o resumo --- */
+
+/* Só um <h2> semântico à volta do SeletorPeriodo — o aspecto do botão
+   vem inteiramente dele (".gatilho", em SeletorPeriodo.module.css);
+   aqui só o texto CENTRADO, para alinhar com o Saldo Total (também
+   centrado) e com as colunas do resumo por baixo (idem) — à esquerda,
+   como era quando vivia dentro do "cabecalhoFluxo", destoava entre dois
+   blocos centrados. Margem pequena: o próprio botão já tem padding
+   vertical (ver ".gatilho"), que já dá alguma respiração. */
+.tituloFluxo {
+  margin: 0 0 var(--espaco-2);
+  text-align: center;
 }
 
 .seccao {
   margin-bottom: var(--espaco-6);
 }
 
-.seccaoTitulo {
-  font-size: var(--texto-sm);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--cor-texto-3);
-  margin: 0;
+/* --- Cartão de categorias, com o alternador "+/−" (ver "NONA FATIA" em
+   Inicio.tsx) --- */
+
+/* Contorno completo (não réguas finas, como ".resumoFluxo") — a mesma
+   ideia já usada nos cartões-botão do resto da app: um contorno anuncia
+   "isto é um bloco à parte". O cartão em si ainda NÃO é clicável (só o
+   alternador "+/−" reage ao toque) — o contorno e a seta ao lado do
+   título já preparam o terreno para quando (e se) a página de detalhe
+   for construída. */
+.cartaoCategorias {
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  padding: var(--espaco-4);
+  margin-bottom: var(--espaco-6);
 }
 
-.liquidoInline {
-  flex-shrink: 0;
-  font-size: var(--texto-sm);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-/* --- Controlo segmentado "Entradas" / "Saídas" --- */
-
-.segmentado {
+.cartaoCategoriasCabecalho {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--espaco-4);
+}
+
+.cartaoCategoriasTitulo {
+  margin: 0;
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+/* O título passou a link (para `/resumo/categorias` — ver "DÉCIMA
+   TERCEIRA FATIA" em Inicio.tsx) — sem sublinhado nem cor própria (herda
+   a cor do texto normal, `currentColor`), para continuar a LER-SE como
+   um título de secção, não como uma ligação típica; o contorno do
+   cartão e a seta já bastam para sinalizar "isto leva a mais qualquer
+   coisa". */
+.cartaoCategoriasLink {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  color: inherit;
+  text-decoration: none;
+}
+
+.cartaoCategoriasLink svg {
+  color: var(--cor-texto-3);
+}
+
+/* O alternador "+/−": ÍCONES (IconeMais/IconeMenos, ver Inicio.tsx),
+   não as palavras "Entradas"/"Saídas" — que já aparecem por extenso na
+   linha de resumo, acima (".resumoFluxo") — para não ler como a mesma
+   escolha repetida duas vezes na mesma página. De volta ao fundo
+   cinzento (um contorno foi tentado e revertido — ver
+   caderno/decisoes.md), a mesma receita visual de pílula pequena já
+   usada noutros alternadores de dois estados da app (fundo
+   "--cor-superficie", opção activa em "--cor-fundo" com sombra).
+   TROCADO DE CARACTERES DE TEXTO ("+"/"−") PARA SVG (revisão de
+   design/UX): os dois glifos de texto não ficavam opticamente
+   centrados um em relação ao outro — mais visível ainda depois de o
+   botão activo ganhar um fundo circular próprio, que torna qualquer
+   desvio óbvio. IconeMais/IconeMenos partilham a MESMA posição (y=12,
+   x=5 a x=19) para o traço horizontal — desenhados à mão, ficam
+   geometricamente centrados sempre da mesma forma, ao contrário de um
+   carácter de texto. */
+.miniToggle {
+  display: inline-flex;
   padding: 2px;
   gap: 2px;
   background: var(--cor-superficie);
-  border-radius: var(--raio-md);
-  margin-bottom: var(--espaco-4);
+  border-radius: 999px;
 }
 
-.segmentoBotao {
-  flex: 1;
-  padding: var(--espaco-2) var(--espaco-3);
+/* 2.25rem/2rem (36×32px) — subiu de 1.75rem/1.5rem (28×24px) numa
+   revisão de design/UX: era o único controlo interactivo da página
+   com um alvo de toque claramente abaixo dos ~44px recomendados pela
+   Apple para um dedo. Ainda discreto (cabe no cabeçalho do cartão, ao
+   lado do título), mas confortável ao toque. */
+.miniToggleBotao {
+  width: 2.25rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
   border: none;
-  border-radius: calc(var(--raio-md) - 2px);
+  border-radius: 999px;
   background: none;
-  font: inherit;
-  font-size: var(--texto-sm);
-  font-weight: 500;
-  color: var(--cor-texto-2);
+  color: var(--cor-texto-3);
 }
 
-.segmentoActivo {
+/* "Saídas" (o "−") é a cor por omissão do estado activo; ".miniToggleEntrada"
+   sobrepõe-na para "+" — as MESMAS duas cores semânticas do resto da
+   página (nunca uma terceira), aqui a identificar qual direcção está
+   seleccionada, tal como já identificavam o sinal de um valor. */
+.miniToggleBotao.miniToggleActivo {
   background: var(--cor-fundo);
-  color: var(--cor-texto);
   box-shadow: var(--sombra-flutuante);
+  color: var(--cor-negativo-text);
 }
 
-/* O total da direcção ACTIVA no controlo segmentado — o "herói" desta
-   secção, mais pequeno do que o Saldo Total (que continua a ser o
-   principal da página), mas ainda em destaque. */
-.totalDirecao {
-  display: block;
-  font-size: var(--texto-2xl);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  margin-bottom: var(--espaco-4);
+.miniToggleBotao.miniToggleActivo.miniToggleEntrada {
+  color: var(--cor-positivo-text);
 }
 
 .semCategorias {
@@ -136,41 +259,102 @@
 
 /* --- Repartição por categoria da direcção activa --- */
 
+/* UMA barra empilhada, para o cartão inteiro — não uma barra por
+   categoria (ver caderno/decisoes.md, "barra empilhada"). Cada
+   categoria é um segmento colorido (".categoriaBarraPreenchimento",
+   abaixo, com a cor determinística de "indiceDeCor(grupo.nome)"); um
+   segmento final cinzento (".segmentoOutras") absorve o que não está
+   nas categorias visíveis, sem lhe dar nome nem legenda própria (a
+   mesma regra já usada nos mockups do gráfico circular: mostrar o
+   resto tal como é, nunca inventar uma linha "Outras"). Concentra toda
+   a cor da categoria NUM SÓ elemento — antes, cada categoria tinha a
+   sua própria barra, espalhando cor por toda a lista; a lista, agora,
+   é só texto (ver ".linhaCategoria", abaixo). Um contorno de 1px
+   (".cor-borda-leve", a mesma régua fina já usada no resto da página)
+   dá à faixa um limite visível contra o fundo — sem ele, alguns tons
+   "-solido" (pastel, de propósito) quase se perdiam no branco à volta,
+   apanhado numa revisão de fatia (contraste medido abaixo de 2:1). */
+.barraEmpilhada {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border: 1px solid var(--cor-borda-leve);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: var(--espaco-4);
+}
+
+/* A cor vem de "data-cor" (0 a 5, de "indiceDeCor(grupo.nome)" — ver
+   Inicio.tsx), a MESMA cor determinística do ponto de PontoCategoria ao
+   lado do nome, mais abaixo: depois de várias tentativas (incluindo um
+   regresso temporário a verde/vermelho por direcção — ver
+   caderno/decisoes.md para o histórico completo), a versão que ficou
+   usa "--avatar-N-solido" (src/index.css), um TERCEIRO tom por cor, ao
+   lado do "-bg"/"-fg" já usados no Avatar e no PontoCategoria: mais
+   saturado do que "-bg" (que sozinho, sem texto por cima, quase não se
+   distinguia de um fundo claro) e mais claro do que "-fg" (pensado
+   para texto, escuro a mais para um preenchimento sólido). Só esta
+   barra usa "-solido" — o Avatar e o PontoCategoria continuam
+   exactamente como estavam. */
+.categoriaBarraPreenchimento {
+  display: block;
+  height: 100%;
+}
+
+.categoriaBarraPreenchimento[data-cor='0'] {
+  background: var(--avatar-0-solido);
+}
+
+.categoriaBarraPreenchimento[data-cor='1'] {
+  background: var(--avatar-1-solido);
+}
+
+.categoriaBarraPreenchimento[data-cor='2'] {
+  background: var(--avatar-2-solido);
+}
+
+.categoriaBarraPreenchimento[data-cor='3'] {
+  background: var(--avatar-3-solido);
+}
+
+.categoriaBarraPreenchimento[data-cor='4'] {
+  background: var(--avatar-4-solido);
+}
+
+.categoriaBarraPreenchimento[data-cor='5'] {
+  background: var(--avatar-5-solido);
+}
+
+/* O que sobra além das categorias visíveis (só existe quando há
+   categorias escondidas pelo "LIMITE_CATEGORIAS" — ver Inicio.tsx):
+   cinzento neutro, de propósito — não é uma categoria, não tem cor
+   própria para "roubar". */
+.segmentoOutras {
+  display: block;
+  height: 100%;
+  background: var(--cor-superficie-2);
+}
+
 .listaCategorias {
   display: flex;
   flex-direction: column;
-  gap: var(--espaco-4);
 }
 
-/* O botão inteiro (nome + valor + seta + barra) é clicável — reset dos
-   estilos nativos de <button>, mantendo a mesma disposição em coluna que
-   a barra de categoria já tinha. O invólucro à sua volta, no JSX, não
-   tem "className" nenhum — ver a nota aí. */
-.categoriaBotao {
+/* Uma linha da lista: ponto + nome + (valor/percentagem). Já NÃO tem
+   barra própria (essa mudou-se para ".barraEmpilhada", acima) — fica
+   ao estilo de Contas/Movimentos, separada da seguinte por uma régua
+   fina (a mesma ideia já pedida antes; a última linha não tem régua,
+   nada a separar dela do fim do cartão). */
+.linhaCategoria {
   display: flex;
-  flex-direction: column;
-  gap: var(--espaco-1);
-  width: 100%;
-  border: none;
-  background: none;
-  padding: 0;
-  margin: 0;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-}
-
-/* "gap" (não "justify-content: space-between"): com a seta a acrescentar
-   um TERCEIRO elemento nas linhas de grupo (nome, valor, seta —
-   space-between distribuiria o espaço TAMBÉM entre valor e seta, que
-   devem ficar juntos), ".categoriaNome" cresce para preencher o que
-   sobra ("flex: 1"), empurrando valor (+ seta, quando existe) para o
-   fim, sempre com o mesmo espaçamento pequeno entre si. */
-.categoriaCabecalho {
-  display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--espaco-2);
+  padding-block: var(--espaco-2);
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+.linhaCategoria:last-child {
+  border-bottom: none;
 }
 
 .categoriaNome {
@@ -179,119 +363,41 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--texto-base);
+  font-weight: 600;
 }
 
-/* "--texto-ui" (não "--texto-sm") + peso 600: o mesmo tratamento que o
-   valor de um movimento já tem em Movimentos.module.css (".linhaValor")
-   — desde que a percentagem deixou de acompanhar este valor (ver a nota
-   em Inicio.tsx), ficava pequeno a mais para ser o único número da
-   linha. Cor secundária mantida — o nome da categoria continua a ser a
-   leitura principal da linha. */
-.categoriaValor {
+/* Valor e percentagem, em coluna, alinhados à direita — o MESMO
+   tamanho/peso/cor que ".categoriaNome" para o valor (revisão de
+   design/UX anterior: nome e valor lidos como o mesmo tipo de
+   informação, nunca um "principal" e outro "secundário" — o mesmo
+   padrão que ".cartaoNome"/".cartaoSaldo" já usam em Contas.module.css).
+   A percentagem (".categoriaPercentagem") é nova nesta revisão: tinha
+   saído quando a barra própria de cada linha desapareceu (ficava
+   redundante com a LARGURA da barra) — sem barra nenhuma na lista, a
+   percentagem volta a ser a única forma de ver a proporção AQUI (a
+   barra empilhada, acima, já mostra a proporção visualmente para o
+   cartão todo; isto dá o número exacto por categoria). Fica por baixo
+   do VALOR, não do nome — os dois números da mesma categoria lêem-se
+   em coluna, não o nome a competir com um número ao lado dele. */
+.categoriaValores {
   flex-shrink: 0;
-  font-size: var(--texto-ui);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.categoriaValor {
+  font-size: var(--texto-base);
   font-weight: 600;
-  color: var(--cor-texto-2);
   font-variant-numeric: tabular-nums;
 }
 
-/* A largura de ".categoriaBarraEntrada"/".categoriaBarraSaida" vem de
-   "style" inline (a "percentagem" já calculada pelo backend — ver a nota
-   em Inicio.tsx). */
-.categoriaBarraFundo {
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--cor-superficie-2);
-}
-
-.categoriaBarraEntrada {
-  display: block;
-  height: 100%;
-  background: var(--cor-positivo);
-}
-
-.categoriaBarraSaida {
-  display: block;
-  height: 100%;
-  background: var(--cor-negativo);
-}
-
-/* A seta de abrir/fechar um grupo — aponta para o lado fechada, para
-   baixo aberta (a mesma rotação de 90°, com o mesmo significado, já
-   usada em CampoSelecao.module.css). */
-.categoriaSeta {
-  display: flex;
-  flex-shrink: 0;
-  align-self: center;
-  color: var(--cor-texto-3);
-  transition: transform 0.15s ease;
-}
-
-.categoriaSetaAberta {
-  transform: rotate(90deg);
-}
-
-/* --- Painel de subcategorias de um grupo aberto --- */
-
-.subcategorias {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espaco-3);
-  margin-top: var(--espaco-3);
-  padding: var(--espaco-3) 0 0 var(--espaco-4);
-  border-top: 1px solid var(--cor-borda-leve);
-}
-
-.subcategoria {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espaco-1);
-}
-
-/* Um degrau abaixo da linha de grupo (nome esbatido, valor mais pequeno)
-   — reaproveita as MESMAS classes de ".categoriaCabecalho" (o nome e o
-   valor têm a mesma estrutura), só com este par de excepções, tal como
-   ".cartaoSaldoEsq .esqRotulo" já faz mais abaixo, no esqueleto. */
-.subcategoria .categoriaNome {
-  font-size: var(--texto-sm);
+.categoriaPercentagem {
+  font-size: var(--texto-xs);
   color: var(--cor-texto-2);
-}
-
-.subcategoria .categoriaValor {
-  font-size: var(--texto-sm);
-  font-weight: 500;
-}
-
-.subcategoriaNota {
-  margin: 0;
-  font-size: var(--texto-sm);
-  color: var(--cor-texto-2);
-}
-
-.subcategoriasEsq {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espaco-2);
-}
-
-.esqSubcategoria {
-  width: 100%;
-  height: 1.5rem;
-}
-
-/* "Ver mais"/"Ver menos" — texto simples, sem aspecto de botão principal
-   (é uma acção secundária, discreta). */
-.verMais {
-  display: block;
-  margin-top: var(--espaco-4);
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-size: var(--texto-sm);
-  font-weight: 500;
-  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Esqueleto de carregamento --- */
@@ -309,10 +415,14 @@
   }
 }
 
-/* Dentro do cartão, o esqueleto reaproveita ".cartaoSaldo" (mesmo fundo e
-   forma) só com as barras cinzentas no lugar do texto. */
+/* O esqueleto reaproveita ".cartaoSaldo" (mesma disposição/espaçamento)
+   mas GANHA um fundo e cantos arredondados próprios — o estado carregado
+   já não tem cartão nenhum (ver a nota em ".cartaoSaldo", acima), mas um
+   bloco cinzento a pulsar continua a fazer sentido como placeholder,
+   mesmo sem uma "caixa" final para replicar. */
 .cartaoSaldoEsq {
   background: var(--cor-superficie);
+  border-radius: var(--raio-lg);
 }
 
 .cartaoSaldoEsq .esqRotulo {
@@ -332,7 +442,7 @@
   margin-bottom: var(--espaco-4);
 }
 
-.esqSegmentado {
+.esqCartaoCategorias {
   width: 100%;
   height: 2.25rem;
   border-radius: var(--raio-md);

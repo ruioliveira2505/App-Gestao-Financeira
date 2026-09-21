@@ -1,0 +1,188 @@
+/*
+ * ESTILOS DE CategoriasResumo (/resumo/categorias)
+ * =================================================
+ *
+ * A barra empilhada e a lista de linhas são a MESMA ideia já usada no
+ * cartão de categorias de Inicio.tsx (ver Inicio.module.css) — copiadas
+ * para aqui, não importadas: a app ainda segue "copiar primeiro, extrair
+ * depois" enquanto o desenho se mantém a mudar entre sítios diferentes
+ * (ver a nota sobre LinhaOpcaoFiltro no README do frontend, para o
+ * precedente desta regra). Duas diferenças desta página para o cartão:
+ * SEM segmento "outras" na barra (a lista já mostra todas as categorias,
+ * não só as 4 maiores) e cada linha é um LINK, com uma seta à direita,
+ * para a página de subcategorias.
+ */
+
+.nota {
+  color: var(--cor-texto-2);
+}
+
+/* --- Esqueleto de carregamento --- */
+
+.esq {
+  display: block;
+  background: var(--cor-superficie-2);
+  border-radius: var(--raio-sm);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+@keyframes pulsar {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.esqBarra {
+  height: 10px;
+  border-radius: 999px;
+  margin-bottom: var(--espaco-4);
+}
+
+.esqLinha {
+  height: 2.75rem;
+  margin-bottom: var(--espaco-3);
+  border-radius: var(--raio-md);
+}
+
+/* --- Barra empilhada (ver a nota no topo do ficheiro) --- */
+
+/* O contorno de 1px dá à faixa um limite visível contra o fundo —
+   alguns tons "-solido" (pastel, de propósito) quase se perdiam no
+   branco à volta sem ele (contraste medido abaixo de 2:1, numa revisão
+   de fatia). */
+.barraEmpilhada {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border: 1px solid var(--cor-borda-leve);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: var(--espaco-4);
+}
+
+.segmento {
+  display: block;
+  height: 100%;
+}
+
+.segmento[data-cor='0'] {
+  background: var(--avatar-0-solido);
+}
+
+.segmento[data-cor='1'] {
+  background: var(--avatar-1-solido);
+}
+
+.segmento[data-cor='2'] {
+  background: var(--avatar-2-solido);
+}
+
+.segmento[data-cor='3'] {
+  background: var(--avatar-3-solido);
+}
+
+.segmento[data-cor='4'] {
+  background: var(--avatar-4-solido);
+}
+
+.segmento[data-cor='5'] {
+  background: var(--avatar-5-solido);
+}
+
+/* --- Lista de categorias (cada linha é um link) --- */
+
+.lista {
+  display: flex;
+  flex-direction: column;
+}
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding-block: var(--espaco-3);
+  border-bottom: 1px solid var(--cor-borda-leve);
+  color: inherit;
+  text-decoration: none;
+}
+
+.linha:last-child {
+  border-bottom: none;
+}
+
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .linha:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+.nome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+.valores {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.valor {
+  font-size: var(--texto-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.percentagem {
+  font-size: var(--texto-xs);
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.seta {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--cor-texto-3);
+}
+
+/* --- Alternador "+/−" no cabeçalho (cópia do de Inicio.module.css) --- */
+
+.miniToggle {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--cor-superficie);
+  border-radius: 999px;
+}
+
+.miniToggleBotao {
+  width: 2.25rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--cor-texto-3);
+}
+
+.miniToggleBotao.miniToggleActivo {
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-negativo-text);
+}
+
+.miniToggleBotao.miniToggleActivo.miniToggleEntrada {
+  color: var(--cor-positivo-text);
+}

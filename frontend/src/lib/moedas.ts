@@ -65,3 +65,16 @@ export function formatarDinheiro(valor: string, moeda: string): string {
     return `${numero.toFixed(2)} ${moeda}`
   }
 }
+
+/**
+ * Formata um valor SEM o sinal negativo — usado onde a direcção (entrada
+ * ou saída) já está a ser dita de outra forma (uma aba activa, um
+ * cabeçalho, a cor do texto), e o "-" à frente de cada valor só repetiria
+ * essa informação. Nasceu em src/paginas/Inicio.tsx (as Saídas do cartão
+ * de categorias); promovido para aqui quando passou a ser reaproveitado
+ * também nas páginas de detalhe de categorias
+ * (CategoriasResumo.tsx/CategoriaResumoDetalhe.tsx).
+ */
+export function formatarSemSinal(valor: string, moeda: string): string {
+  return formatarDinheiro(String(Math.abs(Number(valor))), moeda)
+}

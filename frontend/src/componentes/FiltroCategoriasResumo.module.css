@@ -1,0 +1,80 @@
+/*
+ * ESTILOS DO FiltroCategoriasResumo
+ * =================================
+ *
+ * O gatilho é um botão só de ícone — a MESMA receita de botão-ícone
+ * usada no resto da app (Contas ".acaoIcone", ContaDetalhe, Folha na
+ * variante "circulo": círculo 2.5rem, fundo "--cor-fundo",
+ * "box-shadow: var(--sombra-flutuante)", activo em "--cor-superficie").
+ * Este componente está, por agora, DESLIGADO de Inicio.tsx (ver a nota
+ * "SÉTIMA FATIA" nesse ficheiro) — a posição "ao lado de quê" ainda não
+ * está decidida; o cartão de categorias de hoje já não tem um controlo
+ * segmentado, tem um alternador "+/−" próprio.
+ * A lista de opções usa LinhaOpcaoFiltro (componentes/LinhaOpcaoFiltro.
+ * module.css), por isso não tem ".linha" próprio aqui.
+ */
+
+.gatilho {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.gatilho:active {
+  background: var(--cor-superficie);
+}
+
+/* O pontinho de "filtro activo" — cópia de ".ponto" em
+   Movimentos.module.css (o anel acompanha o novo fundo do gatilho,
+   "--cor-fundo", não "--cor-superficie"). */
+.ponto {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  box-shadow: 0 0 0 2px var(--cor-fundo);
+}
+
+/* --- Conteúdo da folha --- */
+
+.lista {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cabecalhoGrupo {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--espaco-6) 0 var(--espaco-1);
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  text-align: left;
+  color: var(--cor-texto-3);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cabecalhoGrupo[aria-pressed='true'] {
+  color: var(--cor-acento);
+}
+
+.lista > .cabecalhoGrupo:first-child {
+  padding-top: 0;
+}

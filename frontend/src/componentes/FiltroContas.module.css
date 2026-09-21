@@ -1,0 +1,58 @@
+/*
+ * ESTILOS DO FiltroContas
+ * =======================
+ *
+ * O gatilho é um botão só de ícone, na barra de topo (ver a nota
+ * "GATILHO NA BARRA DE TOPO" em FiltroContas.tsx) — a MESMA receita de
+ * botão-ícone usada no resto da app (Contas ".acaoIcone", ContaDetalhe,
+ * Folha na variante "circulo", FiltroCategoriasResumo: círculo 2.5rem,
+ * fundo "--cor-fundo", "box-shadow: var(--sombra-flutuante)", activo em
+ * "--cor-superficie"). A lista de opções dentro da folha usa
+ * LinhaOpcaoFiltro (componentes/LinhaOpcaoFiltro.tsx/.module.css),
+ * partilhada com FiltroMovimentos/SeletorPeriodo/FiltroCategoriasResumo,
+ * por isso não tem estilos próprios aqui.
+ */
+
+.gatilho {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+}
+
+.gatilho:active {
+  background: var(--cor-superficie);
+}
+
+/* O pontinho de "filtro activo" — cópia de ".ponto" em
+   FiltroCategoriasResumo.module.css: sem texto no botão para dizer
+   "Todas"/"3 contas", este pontinho é o único sinal visual de que o
+   Saldo Total e o fluxo por baixo não estão a mostrar TODAS as contas
+   (o resumo completo continua acessível via "aria-label" e como título
+   da folha). */
+.ponto {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--cor-acento);
+  box-shadow: 0 0 0 2px var(--cor-fundo);
+}
+
+/* --- Lista de contas, dentro da folha --- */
+
+.lista {
+  max-width: var(--largura-formulario);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}

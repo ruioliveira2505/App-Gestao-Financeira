@@ -163,6 +163,25 @@
   --avatar-5-bg: #e3f1de;
   --avatar-5-fg: #3f7a3a;
 
+  /* Um TERCEIRO tom por cor, ao lado de "-bg"/"-fg" — para quando a cor
+     precisa de ser um PREENCHIMENTO SÓLIDO (ex.: a barra de proporção de
+     uma categoria, em Inicio.tsx), não um fundo ténue por trás de texto
+     nem o próprio texto. O "-bg" é claro de propósito (só precisa de
+     contraste com o "-fg" escuro em cima); usado como preenchimento
+     sozinho, sobre uma superfície clara, perdia-se. O "-fg" já era
+     escuro/saturado a mais para o efeito que se queria (uma versão só
+     "um pouco" mais forte do "-bg", não tão escura como o texto). Este
+     "-solido" é o meio-termo: mais saturado e visível do que "-bg", sem
+     ser tão escuro como "-fg". Não usado no Avatar nem no PontoCategoria
+     — só onde uma cor de perfil precisa de aparecer sozinha, sem nada
+     por baixo a dar-lhe contraste. */
+  --avatar-0-solido: #c3cef4;
+  --avatar-1-solido: #b9e4dc;
+  --avatar-2-solido: #f0dba3;
+  --avatar-3-solido: #f3c3ca;
+  --avatar-4-solido: #ddc4f0;
+  --avatar-5-solido: #c3e4b8;
+
   /* Informa o browser de que a interface suporta os dois temas — faz os
      controlos nativos (barras de deslocamento, cursor de texto)
      adaptarem-se. */
@@ -218,6 +237,26 @@
     --avatar-4-fg: #c39ae0;
     --avatar-5-bg: #1c2d1a;
     --avatar-5-fg: #85c07e;
+
+    /* "-solido" faltava aqui — encontrado numa revisão de fatia: os
+       outros cinco pares desta paleta são sempre redefinidos os dois,
+       claro e escuro, mas "-solido" (acrescentado numa fatia posterior,
+       só para a barra empilhada de categorias) só tinha entrado no
+       ":root" normal. Sem esta redefinição, a barra usava em modo
+       escuro as MESMAS cores pastel pensadas para fundo claro — er­rado
+       nos dois sentidos possíveis: usar aqui os valores do modo claro
+       ficaria demasiado vivo contra um fundo quase preto (contraste
+       ~13-15:1, destoando da paleta "sóbria" do resto do tema escuro);
+       por isso, tal como "-fg", um tom a meio caminho entre "-bg" e
+       "-fg" desta paleta escura — visível contra "--cor-fundo" (preto),
+       sem ser tão claro/saturado como "-fg" (que aqui já é usado como
+       texto). */
+    --avatar-0-solido: #646f9f;
+    --avatar-1-solido: #478178;
+    --avatar-2-solido: #8e7540;
+    --avatar-3-solido: #955862;
+    --avatar-4-solido: #7e6394;
+    --avatar-5-solido: #567e51;
 
     --sombra-menu: 0 4px 16px rgba(0, 0, 0, 0.5);
     --sombra-flutuante: 0 1px 2px rgba(0, 0, 0, 0.5), 0 3px 10px rgba(0, 0, 0, 0.45);

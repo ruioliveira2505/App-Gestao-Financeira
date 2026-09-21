@@ -240,6 +240,21 @@ export function IconeMais(props: PropsIcone) {
   )
 }
 
+// Um sinal "−" — só o traço horizontal de IconeMais, na MESMA posição
+// (y=12, de x=5 a x=19): garante que os dois ícones ficam com o traço
+// horizontal exactamente alinhado quando trocam de lugar no mesmo sítio
+// (ex.: o alternador "+/−" de Inicio.tsx) — ao contrário dos caracteres
+// de texto "+"/"−", cujo centro óptico varia ligeiramente consoante o
+// tipo de letra, um SVG desenhado à mão fica geometricamente centrado
+// sempre da mesma forma.
+export function IconeMenos(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M5 12h14" />
+    </Svg>
+  )
+}
+
 // Olho — "mostrar" (ex.: revelar a password).
 export function IconeOlho(props: PropsIcone) {
   return (
@@ -302,6 +317,20 @@ export function IconeFunil(props: PropsIcone) {
   return (
     <Svg {...props}>
       <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
+    </Svg>
+  )
+}
+
+// Calendário — sinaliza um campo de data/mês como tocável (ver
+// CampoTexto.tsx), já que "border: none" na disposição "linha" deixava
+// esses campos sem nenhum aspecto de campo.
+export function IconeCalendario(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" x2="16" y1="2" y2="6" />
+      <line x1="8" x2="8" y1="2" y2="6" />
+      <line x1="3" x2="21" y1="10" y2="10" />
     </Svg>
   )
 }

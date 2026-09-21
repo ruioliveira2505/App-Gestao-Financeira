@@ -68,7 +68,8 @@ import { Avatar } from './Avatar'
 import { CampoTexto } from './CampoTexto'
 import { ContextoFolha } from './contextoFolha'
 import { Folha } from './Folha'
-import { IconeCheck, IconeChevronDireita, IconeFechar } from './icones'
+import { IconeChevronDireita, IconeFechar } from './icones'
+import { LinhaOpcaoFiltro as LinhaOpcao } from './LinhaOpcaoFiltro'
 import { PontoCategoria } from './PontoCategoria'
 import { direcaoDaCategoria, type GrupoArvore } from '../lib/categorias'
 import type { Conta } from '../lib/contas'
@@ -306,7 +307,7 @@ function resumoCategorias(filtros: Filtros, arvore: GrupoArvore[]): string {
 function resumoDatas(filtros: Filtros): string {
   const preset = presetAtivo(filtros)
   if (preset) return ROTULO_PRESET[preset]
-  const mes = mesDeIntervalo(filtros)
+  const mes = mesDeIntervalo(filtros.de, filtros.ate)
   if (mes) return rotuloMes(mes)
   if (filtros.de && filtros.ate) {
     return `${formatarData(filtros.de)} – ${formatarData(filtros.ate)}`
@@ -321,38 +322,6 @@ function resumoDatas(filtros: Filtros): string {
 type SubProps = {
   filtros: Filtros
   aoMudar: (filtros: Filtros) => void
-}
-
-/** Uma linha de opção: um elemento opcional à esquerda (o avatar de uma
- *  conta), a etiqueta, e um "✓" à direita quando está escolhida. Nas listas
- *  de escolha única (Tipo, Datas) marca-se com "aria-current"; na de
- *  multi-escolha (Contas) com "aria-pressed". */
-function LinhaOpcao({
-  etiqueta,
-  selecionada,
-  aoTocar,
-  antes,
-  multi = false,
-}: {
-  etiqueta: string
-  selecionada: boolean
-  aoTocar: () => void
-  antes?: ReactNode
-  multi?: boolean
-}) {
-  return (
-    <button
-      type="button"
-      className={estilos.linha}
-      aria-current={!multi && selecionada ? 'true' : undefined}
-      aria-pressed={multi ? selecionada : undefined}
-      onClick={aoTocar}
-    >
-      {antes && <span className={estilos.linhaAntes}>{antes}</span>}
-      <span className={estilos.linhaEtiqueta}>{etiqueta}</span>
-      {selecionada && <IconeCheck tamanho={18} />}
-    </button>
-  )
 }
 
 /** CONTAS — multi-escolha, cada linha com o monograma da conta (o mesmo da
@@ -529,7 +498,7 @@ function ListaDatas({ filtros, aoMudar }: SubProps) {
   const [escolha, setEscolha] = useState<EscolhaDatas>(() => {
     const preset = presetAtivo(filtros)
     if (preset) return preset
-    if (mesDeIntervalo(filtros)) return 'mes'
+    if (mesDeIntervalo(filtros.de, filtros.ate)) return 'mes'
     if (filtros.de || filtros.ate) return 'personalizado'
     return 'qualquer'
   })
@@ -583,7 +552,7 @@ function ListaDatas({ filtros, aoMudar }: SubProps) {
             disposicao="linha"
             etiqueta="Mês"
             tipo="month"
-            valor={mesDeIntervalo(filtros) ?? ''}
+            valor={mesDeIntervalo(filtros.de, filtros.ate) ?? ''}
             aoMudar={(valor) => {
               if (!valor) {
                 aoMudar({ ...filtros, de: null, ate: null })

@@ -1,0 +1,62 @@
+/*
+ * ESTILOS DO LinhaOpcaoFiltro
+ * ===========================
+ *
+ * Traço fino entre opções, recuado das bordas (o mesmo do ListaDeOpcoes,
+ * o seletor dos formulários) — usado dentro da lista de qualquer filtro
+ * desta app. ".linha:last-child" (sem exigir um ".lista" ancestor
+ * específico) já basta: em todos os usos, o último filho da lista é
+ * sempre uma linha de opção, nunca outra coisa.
+ */
+
+.linha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--espaco-2) 0;
+  border: none;
+  border-bottom: 1px solid var(--cor-borda-leve);
+  background: none;
+  font: inherit;
+  font-size: var(--texto-md);
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.linha:last-child {
+  border-bottom: none;
+}
+
+.linha:active {
+  background: var(--cor-superficie-2);
+}
+
+/* Escolhida: um pouco mais de peso; o sinal inequívoco é o "✓".
+   "aria-current" nas listas de escolha única, "aria-pressed" nas de
+   multi-escolha (ver a nota "multi" em LinhaOpcaoFiltro.tsx). */
+.linha[aria-current='true'],
+.linha[aria-pressed='true'] {
+  font-weight: 500;
+}
+
+/* O "✓": único <svg> filho direto da linha. */
+.linha > svg {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--cor-acento);
+}
+
+/* Monograma (Avatar) ou ponto de categoria, à esquerda da etiqueta. */
+.linhaAntes {
+  flex-shrink: 0;
+  display: flex;
+}
+
+.linhaEtiqueta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
