@@ -119,6 +119,7 @@ from app.schemas.movimentos import (
 )
 from app.services.categorias import obter_categoria_do_utilizador
 from app.services.contas import obter_conta_do_utilizador
+from app.services.ligacoes_bancarias import conta_esta_ligada
 
 router = APIRouter(prefix="/movimentos", tags=["movimentos"])
 
@@ -210,6 +211,21 @@ def _validar_data(data_movimento: date, conta: Conta) -> None:
         )
 
 
+async def _recusar_se_conta_ligada(db: AsyncSession, conta_id: uuid.UUID, mensagem: str) -> None:
+    """
+    Levanta 400 se "conta_id" pertencer a uma conta ligada ao Open Banking
+    (ver conta_esta_ligada, em app/services/ligacoes_bancarias.py) — usada
+    em criar_movimento, editar_movimento e apagar_movimento, mais abaixo,
+    para aplicar a regra decidida para movimentos de contas ligadas: só a
+    categoria pode ser alterada, nada pode ser criado directamente nem
+    eliminado à mão (a única forma de o fazer é desvincular a conta
+    primeiro — ver app/routers/open_banking.py — ou eliminá-la por
+    inteiro).
+    """
+    if await conta_esta_ligada(db, conta_id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=mensagem)
+
+
 def _validar_direcao(valor: Decimal, categoria: Categoria) -> None:
     """
     A direcao da categoria (ver app/models/categoria.py) tem de
@@ -299,11 +315,18 @@ async def criar_movimento(
     (descrição não vazia, valor diferente de 0). Fica a cargo desta rota
     confirmar que a conta e a categoria são do utilizador (404 caso
     contrário) e as regras de negócio próprias: a data não pode ser
-    anterior à âncora da conta (ver _validar_data), e a direcao da
+    anterior à âncora da conta (ver _validar_data), a direcao da
     categoria tem de ser coerente com o sinal do valor (ver
-    _validar_direcao).
+    _validar_direcao), e a conta não pode estar ligada ao Open Banking
+    (ver _recusar_se_conta_ligada) — um movimento manual novo ali
+    desalinharia o saldo calculado do saldo real do banco, exactamente
+    pela mesma razão que editar o valor de um movimento importado
+    desalinharia.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
+    await _recusar_se_conta_ligada(
+        db, conta.id, "Não é possível criar movimentos manuais numa conta ligada ao Open Banking."
+    )
     _validar_data(dados.data, conta)
     categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
     _validar_direcao(dados.valor, categoria)
@@ -450,9 +473,34 @@ async def editar_movimento(
     conta a que pertence ("mover" o movimento para outra conta) ou a
     categoria (recategorizá-lo). A conta e a categoria de destino têm
     também de pertencer ao utilizador.
+
+    MOVIMENTO DE UMA CONTA LIGADA AO OPEN BANKING (a conta ACTUAL do
+    movimento, ou a conta de DESTINO indicada — ver a nota abaixo): só a
+    categoria pode mudar. Qualquer diferença noutro campo é recusada (400)
+    ANTES de qualquer alteração ser aplicada — nunca uma actualização
+    parcial e silenciosa do que era pedido.
     """
     movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
+
+    # Verifica-se a conta ACTUAL do movimento e a conta de DESTINO (podem
+    # ser diferentes, se o pedido tentar "mover" o movimento) — ligar
+    # qualquer uma delas ao Open Banking bloqueia a alteração: mover um
+    # movimento PARA uma conta ligada desalinhá-la tal como criá-lo lá
+    # directamente (ver _recusar_se_conta_ligada em criar_movimento).
+    if await conta_esta_ligada(db, movimento.conta_id) or await conta_esta_ligada(db, conta.id):
+        mudou_algo_alem_da_categoria = (
+            dados.conta_id != movimento.conta_id
+            or dados.data != movimento.data
+            or dados.descricao != movimento.descricao
+            or dados.valor.quantize(_DUAS_CASAS) != movimento.valor
+        )
+        if mudou_algo_alem_da_categoria:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Um movimento de uma conta ligada ao Open Banking só permite alterar a categoria.",
+            )
+
     _validar_data(dados.data, conta)
     categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
     _validar_direcao(dados.valor, categoria)
@@ -475,8 +523,22 @@ async def apagar_movimento(
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    """Elimina um movimento do utilizador autenticado. Directa, sem confirmação — um único registo."""
+    """
+    Elimina um movimento do utilizador autenticado. Directa, sem
+    confirmação — um único registo.
+
+    Recusado (400) se a conta pertencer ao Open Banking — ver a nota em
+    _recusar_se_conta_ligada: a única forma de remover um movimento
+    importado é desvincular a conta (app/routers/open_banking.py, o que
+    liberta TODOS os seus movimentos para edição/eliminação normal) ou
+    eliminar a conta por inteiro.
+    """
     movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
+    await _recusar_se_conta_ligada(
+        db,
+        movimento.conta_id,
+        "Não é possível eliminar movimentos de uma conta ligada ao Open Banking.",
+    )
     await db.delete(movimento)
     await db.commit()
 
@@ -498,8 +560,19 @@ async def eliminar_movimentos_em_lote(
     Movimento como chave estrangeira —, por isso não há aqui o passo de
     confirmação/migração que app/routers/categorias.py:eliminar_categoria
     exige.
+
+    Recusado (400) se ALGUM dos movimentos pertencer a uma conta ligada ao
+    Open Banking — verificado por inteiro antes de eliminar seja o que
+    for, tal como o resto deste endpoint (ver o docstring do módulo,
+    secção EM LOTE): nunca uma eliminação parcial.
     """
     movimentos = await _obter_movimentos_do_utilizador(db, utilizador, dados.ids)
+    for conta_id in {m.conta_id for m in movimentos}:
+        await _recusar_se_conta_ligada(
+            db,
+            conta_id,
+            "Não é possível eliminar movimentos de uma conta ligada ao Open Banking.",
+        )
     await db.execute(delete(Movimento).where(Movimento.id.in_([m.id for m in movimentos])))
     await db.commit()
 

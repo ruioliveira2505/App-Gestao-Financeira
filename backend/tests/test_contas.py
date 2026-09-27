@@ -7,13 +7,16 @@ sessão, as validações (data futura, moeda inválida), e o âmbito por
 utilizador (um utilizador nunca vê contas de outro).
 """
 
-from datetime import date
+import uuid
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
 from app.models.categoria import Categoria
+from app.models.conta_ligada import ContaLigada
+from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.taxa_cambio import TaxaCambio
 from app.models.user import User
 
@@ -46,6 +49,36 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
         )
     )
     return str(categoria.id)
+
+
+async def _ligar_conta(db_session, conta_id: str) -> None:
+    """
+    Cria uma LigacaoBancaria e uma ContaLigada mínimas, já associadas a
+    "conta_id" — simula uma conta ligada ao Open Banking sem chamar a
+    Enable Banking a sério (essa parte é testada manualmente, contra a
+    API real — ver o caderno). Serve para testar as REGRAS de negócio que
+    dependem de "esta conta está ligada" (conta_esta_ligada, em
+    app/services/ligacoes_bancarias.py), não a integração em si.
+    """
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    ligacao = LigacaoBancaria(
+        user_id=utilizador.id,
+        session_id=str(uuid.uuid4()),
+        aspsp_nome="Banco Teste",
+        aspsp_pais="PT",
+        valido_ate=datetime.now(timezone.utc),
+    )
+    db_session.add(ligacao)
+    await db_session.flush()
+    db_session.add(
+        ContaLigada(
+            ligacao_id=ligacao.id,
+            uid=str(uuid.uuid4()),
+            moeda="EUR",
+            conta_id=uuid.UUID(conta_id),
+        )
+    )
+    await db_session.commit()
 
 
 @pytest.mark.asyncio
@@ -509,3 +542,59 @@ async def test_obter_conta_sem_taxa_de_cambio_disponivel_devolve_saldo_convertid
 
     assert resposta.status_code == 200
     assert resposta.json()["saldo_convertido"] is None
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_ligada_recusa_mudar_banco_ou_moeda(cliente_autenticado, db_session):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Conta à ordem", "banco": "Outro Banco", "tipo": "Conta corrente", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_ligada_recusa_mudar_so_o_banco(cliente_autenticado, db_session):
+    """Isola um dos dois ramos do "OR": só o banco muda, a moeda mantém-se igual."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Conta à ordem", "banco": "Outro Banco", "tipo": "Conta corrente", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_ligada_recusa_mudar_so_a_moeda(cliente_autenticado, db_session):
+    """Isola o outro ramo do "OR": só a moeda muda, o banco mantém-se igual."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Conta à ordem", "banco": "BPI", "tipo": "Conta corrente", "moeda": "USD"},
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_ligada_permite_mudar_nome_e_tipo(cliente_autenticado, db_session):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Novo nome", "banco": "BPI", "tipo": "Poupança", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["nome"] == "Novo nome"
+    assert resposta.json()["tipo"] == "Poupança"

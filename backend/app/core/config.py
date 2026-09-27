@@ -56,6 +56,22 @@ class Settings(BaseSettings):
     # NUNCA usar false em produção.
     cookie_secure: bool = True
 
+    # Identificador da aplicação registada no painel da Enable Banking
+    # (o intermediário regulado usado para a integração de Open Banking —
+    # ver app/services/enable_banking.py). Vai no cabeçalho "kid" de cada
+    # JWT assinado, para a Enable Banking saber qual das chaves públicas
+    # registadas usar para verificar a assinatura. Não é secreto (aparece
+    # inclusive na interface deles), mas obrigatório: sem ele, seria
+    # impossível assinar um pedido válido.
+    enable_banking_application_id: str
+
+    # Caminho para o ficheiro da chave privada RSA (.pem) descarregada no
+    # registo da aplicação na Enable Banking — usada para assinar cada
+    # JWT enviado à API deles. Este ficheiro NUNCA deve ir para o Git
+    # (está listado em .gitignore); cada máquina tem a sua própria cópia.
+    # Caminho relativo à pasta onde o servidor corre (backend/).
+    enable_banking_private_key_path: str
+
     # Indica à biblioteca onde procurar os valores: no ficheiro ".env",
     # localizado na mesma pasta em que a aplicação é executada.
     model_config = SettingsConfigDict(env_file=".env")

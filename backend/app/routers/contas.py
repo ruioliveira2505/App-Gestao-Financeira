@@ -30,6 +30,7 @@ from app.models.user import User
 from app.schemas.contas import ContaCriar, ContaEditar, ContaOut
 from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import obter_conta_do_utilizador, soma_movimentos, somas_de_movimentos
+from app.services.ligacoes_bancarias import conta_esta_ligada
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -187,10 +188,23 @@ async def editar_conta(
     Mudar a moeda é recusado se a conta já tiver movimentos: estes foram
     lançados a pensar na moeda antiga, e mudar a moeda por baixo deles
     mudaria silenciosamente o que os seus valores significam.
+
+    CONTA LIGADA AO OPEN BANKING (ver app/models/conta_ligada.py):
+    "banco" e "moeda" ficam bloqueados por completo, mesmo sem nenhum
+    movimento ainda — vêm sempre da ligação, e uma sincronização
+    continuaria a trazer dados nessa moeda/banco original, desalinhados
+    de qualquer alteração manual. "nome" e "tipo" continuam livremente
+    editáveis, tal como numa conta manual.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
 
-    if dados.moeda != conta.moeda and await _tem_movimentos(db, conta.id):
+    if await conta_esta_ligada(db, conta.id):
+        if dados.banco != conta.banco or dados.moeda != conta.moeda:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Banco e moeda não podem ser alterados numa conta ligada ao Open Banking.",
+            )
+    elif dados.moeda != conta.moeda and await _tem_movimentos(db, conta.id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Não é possível mudar a moeda de uma conta com movimentos.",
@@ -220,6 +234,12 @@ async def apagar_conta(
     própria base de dados apaga-os, num só comando). Sem confirmação nem
     parâmetro "forçar": a interface já pede confirmação antes de chamar
     este endpoint, e já avisa que os movimentos são apagados com a conta.
+
+    Se a conta estiver ligada ao Open Banking, a ContaLigada correspondente
+    é removida da mesma forma (ver ondelete="CASCADE" em
+    app/models/conta_ligada.py) — sem precisar de "desvincular" primeiro;
+    ao contrário de "desvincular" (app/routers/open_banking.py), que
+    mantém a Conta e os Movimento, eliminar apaga tudo, ligação incluída.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
     await db.delete(conta)

@@ -30,10 +30,18 @@ entre contas diferentes do mesmo utilizador — ver a nota SALDO
 REMANESCENTE, no mesmo ficheiro.
 """
 
+import uuid
+from datetime import date, datetime, timezone
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.categoria import Categoria
+from app.models.conta_ligada import ContaLigada
+from app.models.ligacao_bancaria import LigacaoBancaria
+from app.models.movimento import Movimento
 from app.models.user import User
 
 # Corpo mínimo válido para criar uma conta, só para os movimentos terem
@@ -84,6 +92,36 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
         )
     )
     return str(categoria.id)
+
+
+async def _ligar_conta(db_session, conta_id: str) -> None:
+    """
+    Cria uma LigacaoBancaria e uma ContaLigada mínimas, já associadas a
+    "conta_id" — simula uma conta ligada ao Open Banking sem chamar a
+    Enable Banking a sério (essa parte é testada manualmente, contra a
+    API real — ver o caderno). A mesma função de tests/test_contas.py,
+    duplicada aqui de propósito (cada ficheiro de teste é autónomo, tal
+    como o resto do código desta aplicação).
+    """
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    ligacao = LigacaoBancaria(
+        user_id=utilizador.id,
+        session_id=str(uuid.uuid4()),
+        aspsp_nome="Banco Teste",
+        aspsp_pais="PT",
+        valido_ate=datetime.now(timezone.utc),
+    )
+    db_session.add(ligacao)
+    await db_session.flush()
+    db_session.add(
+        ContaLigada(
+            ligacao_id=ligacao.id,
+            uid=str(uuid.uuid4()),
+            moeda="EUR",
+            conta_id=uuid.UUID(conta_id),
+        )
+    )
+    await db_session.commit()
 
 
 def _movimento_valido(conta_id: str, **overrides) -> dict:
@@ -1057,3 +1095,225 @@ async def test_recategorizar_movimentos_em_lote_com_movimento_de_outro_utilizado
     )
 
     assert resposta.status_code == 404
+
+
+# --- Movimentos de uma conta ligada ao Open Banking ---
+#
+# Ver a nota CONTA LIGADA AO OPEN BANKING em editar_movimento, e
+# _recusar_se_conta_ligada, ambos em app/routers/movimentos.py: só a
+# categoria pode ser alterada; nada pode ser criado directamente nem
+# eliminado à mão. Os movimentos usados nestes testes são criados PELA
+# API, normalmente, ANTES de a conta ser ligada (_ligar_conta) — simula o
+# estado real depois de uma importação (o movimento já existe; a conta
+# está ligada), sem precisar de chamar a Enable Banking a sério.
+
+
+@pytest.mark.asyncio
+async def test_criar_movimento_em_conta_ligada_e_recusado(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    await _ligar_conta(db_session, conta_id)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+
+    resposta = await cliente_autenticado.post(
+        "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_movimento_de_conta_ligada_so_permite_mudar_categoria(
+    cliente_autenticado, db_session
+):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+    outra_categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+
+    resposta = await cliente_autenticado.patch(
+        f"/movimentos/{movimento_id}",
+        json=_movimento_valido(conta_id, categoria_id=outra_categoria_id),
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["categoria_id"] == outra_categoria_id
+
+
+@pytest.mark.asyncio
+async def test_editar_movimento_recusa_mover_para_conta_ligada(cliente_autenticado, db_session):
+    """Mover um movimento DE uma conta livre PARA uma ligada desalinharia a ligada."""
+    conta_origem = await _criar_conta(cliente_autenticado, nome="Origem")
+    conta_destino = await _criar_conta(cliente_autenticado, nome="Destino")
+    await _ligar_conta(db_session, conta_destino)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_origem, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+
+    resposta = await cliente_autenticado.patch(
+        f"/movimentos/{movimento_id}",
+        json=_movimento_valido(conta_destino, categoria_id=categoria_id),
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_movimento_recusa_mover_de_conta_ligada(cliente_autenticado, db_session):
+    """Mover um movimento DE uma conta ligada PARA uma livre desalinharia a ligada."""
+    conta_origem = await _criar_conta(cliente_autenticado, nome="Origem")
+    conta_destino = await _criar_conta(cliente_autenticado, nome="Destino")
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_origem, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+    await _ligar_conta(db_session, conta_origem)
+
+    resposta = await cliente_autenticado.patch(
+        f"/movimentos/{movimento_id}",
+        json=_movimento_valido(conta_destino, categoria_id=categoria_id),
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_editar_movimento_de_conta_ligada_recusa_mudar_valor(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.patch(
+        f"/movimentos/{movimento_id}",
+        json=_movimento_valido(conta_id, categoria_id=categoria_id, valor="-99.00"),
+    )
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_apagar_movimento_de_conta_ligada_e_recusado(cliente_autenticado, db_session):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.delete(f"/movimentos/{movimento_id}")
+
+    assert resposta.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_eliminar_em_lote_com_movimento_de_conta_ligada_e_recusado(
+    cliente_autenticado, db_session
+):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+    movimento_id = (
+        await cliente_autenticado.post(
+            "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
+        )
+    ).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.post(
+        "/movimentos/eliminar-em-lote", json={"ids": [movimento_id]}
+    )
+
+    assert resposta.status_code == 400
+
+
+# --- Restrição única (conta_id, id_transacao_externa) ---
+#
+# Ver a nota junto de id_transacao_externa, em app/models/movimento.py:
+# impede duas linhas com o mesmo identificador externo NA MESMA conta —
+# a garantia de que uma sincronização repetida (app/services/
+# importacao_movimentos.py:sincronizar_movimentos) nunca duplica o mesmo
+# movimento importado, mesmo que a verificação em Python falhe por
+# alguma razão. Testado directamente com db_session (cria as tabelas via
+# Base.metadata.create_all — ver conftest.py — por isso é o índice do
+# MODELO que está a ser exercitado aqui, não a migração Alembic em si).
+
+
+@pytest.mark.asyncio
+async def test_id_transacao_externa_repetido_na_mesma_conta_e_recusado(
+    cliente_autenticado, db_session
+):
+    conta_id = await _criar_conta(cliente_autenticado)
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+
+    db_session.add(
+        Movimento(
+            conta_id=uuid.UUID(conta_id),
+            categoria_id=uuid.UUID(categoria_id),
+            data=date(2026, 9, 1),
+            descricao="Primeira",
+            valor=Decimal("-10.00"),
+            id_transacao_externa="1742",
+        )
+    )
+    await db_session.commit()
+
+    db_session.add(
+        Movimento(
+            conta_id=uuid.UUID(conta_id),
+            categoria_id=uuid.UUID(categoria_id),
+            data=date(2026, 9, 2),
+            descricao="Segunda, mesmo id externo",
+            valor=Decimal("-20.00"),
+            id_transacao_externa="1742",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_id_transacao_externa_repetido_em_contas_diferentes_e_aceite(
+    cliente_autenticado, db_session
+):
+    conta_a = await _criar_conta(cliente_autenticado, nome="Conta A")
+    conta_b = await _criar_conta(cliente_autenticado, nome="Conta B")
+    categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
+
+    db_session.add(
+        Movimento(
+            conta_id=uuid.UUID(conta_a),
+            categoria_id=uuid.UUID(categoria_id),
+            data=date(2026, 9, 1),
+            descricao="Conta A",
+            valor=Decimal("-10.00"),
+            id_transacao_externa="1742",
+        )
+    )
+    db_session.add(
+        Movimento(
+            conta_id=uuid.UUID(conta_b),
+            categoria_id=uuid.UUID(categoria_id),
+            data=date(2026, 9, 1),
+            descricao="Conta B, mesmo id externo",
+            valor=Decimal("-5.00"),
+            id_transacao_externa="1742",
+        )
+    )
+    # Não deve levantar nenhuma excepção — contas diferentes, sem conflito.
+    await db_session.commit()

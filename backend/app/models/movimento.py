@@ -77,6 +77,20 @@ class Movimento(Base):
             "created_at",
             "id",
         ),
+        # Impede duas linhas com o mesmo id_transacao_externa NA MESMA
+        # conta (ver a nota nesse campo, abaixo) — é a base de dados,
+        # não o código da importação, a garantir que uma sincronização
+        # repetida nunca duplica o mesmo movimento importado. unique=True
+        # numa coluna nullable não impede vários NULL (movimentos
+        # manuais, sem qualquer origem externa) — o Postgres trata cada
+        # NULL como distinto de qualquer outro, por isso esta restrição
+        # não afecta em nada os movimentos manuais.
+        Index(
+            "ux_movimentos_conta_id_id_transacao_externa",
+            "conta_id",
+            "id_transacao_externa",
+            unique=True,
+        ),
     )
 
     # Chave primária. UUID, pela mesma razão das outras tabelas (users,
@@ -142,6 +156,24 @@ class Movimento(Base):
         nullable=False,
         index=True,
     )
+
+    # Identificador da transacção de origem, quando este movimento foi
+    # criado por importação via Open Banking (ver
+    # app/services/importacao_movimentos.py) — NULL para um movimento
+    # introduzido manualmente. Serve para uma sincronização futura não
+    # duplicar o mesmo movimento: antes de criar um Movimento novo,
+    # verifica-se se já existe algum com este valor, para esta conta.
+    #
+    # Vem de "transaction_id" (o campo que a API da Enable Banking
+    # documenta como identificador único e estável) quando presente; caso
+    # contrário, do "entry_reference" — confirmado, em testes reais desta
+    # integração, que a CGD devolve sempre "transaction_id" a NULL, mas
+    # "entry_reference" preenchido e aparentemente sequencial. A união
+    # única com conta_id, acima, garante que este valor só precisa de ser
+    # distinto DENTRO da mesma conta, não em toda a aplicação — o mesmo
+    # número de referência podia, em teoria, repetir-se noutra conta ou
+    # noutro banco.
+    id_transacao_externa: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(

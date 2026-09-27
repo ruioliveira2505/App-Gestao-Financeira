@@ -4,3 +4,16 @@ __pycache__/
 .env
 .env.test
 .claude
+
+# Chave privada RSA da Enable Banking (ver ENABLE_BANKING_PRIVATE_KEY_PATH,
+# em app/core/config.py) — "*.pem" em vez do nome exacto do ficheiro, para
+# não publicar, mesmo aqui (um ficheiro versionado), qual é o Application
+# ID real da aplicação registada.
+*.pem
+
+# Certificados HTTPS locais gerados pelo mkcert, para o servidor de
+# desenvolvimento conseguir responder em HTTPS (exigido pelo URL de
+# redireccionamento registado na Enable Banking — ver
+# app/routers/open_banking.py). Só válidos nesta máquina; cada
+# programador gera os seus próprios.
+certs/

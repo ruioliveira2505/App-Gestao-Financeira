@@ -13,8 +13,11 @@ todos os modelos existentes fiquem registados de uma vez. É nesta lista
 existir, ao comparar com o que realmente existe na base de dados.
 """
 
+from app.models.autorizacao_pendente import AutorizacaoPendente  # noqa: F401
 from app.models.categoria import Categoria  # noqa: F401
 from app.models.conta import Conta  # noqa: F401
+from app.models.conta_ligada import ContaLigada  # noqa: F401
+from app.models.ligacao_bancaria import LigacaoBancaria  # noqa: F401
 from app.models.movimento import Movimento  # noqa: F401
 from app.models.session import UserSession  # noqa: F401
 from app.models.taxa_cambio import TaxaCambio  # noqa: F401
