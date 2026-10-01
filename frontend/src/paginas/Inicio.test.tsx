@@ -87,6 +87,7 @@ function conta(overrides: Partial<{ id: string; nome: string; banco: string | nu
     saldo_ancora: '0.00',
     saldo: '0.00',
     saldo_convertido: '0.00',
+    ligacao: null,
     created_at: '2020-01-01T00:00:00Z',
     updated_at: '2020-01-01T00:00:00Z',
     ...overrides,

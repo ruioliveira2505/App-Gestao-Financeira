@@ -1,0 +1,48 @@
+/*
+ * ESTILOS DO ContaLigadaFormulario
+ * ================================
+ *
+ * As fichas em si (cartão, linhas, traço recuado, rodapé) vêm de
+ * ContaFormulario.module.css — o mesmo aspecto do formulário manual. Aqui
+ * só o que é novo: a linha bloqueada (CampoFixo) e a legenda por cima da
+ * ficha de cada conta, quando há várias.
+ */
+
+/* A MESMA geometria de uma linha do CampoTexto em disposição "linha"
+   (rótulo ténue em cima, valor por baixo, o mesmo respiro vertical) — só
+   o valor esbatido e o cadeado dizem que não se edita. */
+.fixo {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+  padding: var(--espaco-2) 0;
+}
+
+.fixoEtiqueta {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+.fixoValor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-2);
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.fixoCadeado {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+}
+
+/* "Conta 1 · ••4021 · EUR" — por cima da ficha de cada conta, ao estilo do
+   título de secção das listas agrupadas do iOS. */
+.legendaConta {
+  margin: var(--espaco-2) 0 calc(-1 * var(--espaco-2));
+  padding: 0 var(--espaco-4);
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+}

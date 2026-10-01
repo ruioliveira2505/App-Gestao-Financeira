@@ -8,15 +8,23 @@
  *   - No conteúdo, um bloco de IDENTIDADE centrado: monograma grande e, por
  *     baixo, a legenda "SALDO ATUAL" seguida do saldo (o herói da página).
  *   - "Detalhes": banco, tipo, moeda e o ponto de partida dos movimentos,
- *     numa lista sem cartão. Cada título de secção ("Detalhes",
- *     "Reconciliações") tem um traço fino por baixo (à largura do
- *     conteúdo, para funcionar igual em desktop e mobile).
+ *     numa lista sem cartão. Cada título de secção ("Detalhes", "Open
+ *     Banking", "Reconciliações") tem um traço fino por baixo (à largura
+ *     do conteúdo, para funcionar igual em desktop e mobile).
+ *   - "Open Banking": só aparece quando conta.ligacao existe (ver
+ *     src/lib/contas.ts) — "Sincronizar agora" (importa os movimentos
+ *     NOVOS desde a última vez) e "Desvincular" (pára a ligação, mas
+ *     nunca apaga a conta nem os movimentos já importados — protegido por
+ *     um "action sheet" de confirmação, o componente Confirmacao, tal
+ *     como "Eliminar conta" em ContaEditar.tsx). Uma conta manual, ou já
+ *     desvinculada, não mostra esta secção.
  *   - "Reconciliações": secção que anuncia as reconciliações de saldo
  *     desta conta, que vão viver aqui quando existirem.
  *
  * "Editar" (no cabeçalho) leva ao formulário de edição — e é lá, no fim
  * desse formulário, que fica o "Eliminar conta" (à maneira do ecrã de
- * edição de um contacto no iOS). Aqui não há acção destrutiva.
+ * edição de um contacto no iOS). A única acção destrutiva AQUI, no
+ * detalhe, é "Desvincular" (acima) — e mesmo essa não apaga nada.
  *
  * Enquanto a conta carrega mostra-se um ESQUELETO com a forma da página
  * (barras cinzentas). Se o pedido falhar, uma mensagem e uma saída para a
@@ -32,18 +40,22 @@
 
 import { useEffect, useState } from 'react'
 
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
 import { Avatar } from '../componentes/Avatar'
+import { Botao } from '../componentes/Botao'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
-import { IconeGrafico, IconeLapis } from '../componentes/icones'
+import { CaixaErro } from '../componentes/CaixaErro'
+import { Confirmacao } from '../componentes/Confirmacao'
+import { IconeCheck, IconeGrafico, IconeLapis } from '../componentes/icones'
 import { LinkVoltar } from '../componentes/LinkVoltar'
 import { PaginaDeslizante } from '../componentes/PaginaDeslizante'
 import { obterConta, type Conta } from '../lib/contas'
 import { formatarData } from '../lib/datas'
 import { ErroApi } from '../lib/http'
 import { etiquetaMoeda, formatarDinheiro } from '../lib/moedas'
+import { desvincular, sincronizar } from '../lib/openBanking'
 import estilos from './ContaDetalhe.module.css'
 
 /** Esqueleto mostrado enquanto a conta carrega: barras cinzentas que
@@ -74,9 +86,33 @@ function Esqueleto() {
 export function ContaDetalhe() {
   const { id } = useParams<{ id: string }>()
   const { utilizador } = useAuth()
+  const localizacao = useLocation()
+  const navegar = useNavigate()
 
   const [conta, setConta] = useState<Conta | null>(null)
   const [erro, setErro] = useState<string | null>(null)
+
+  // AVISO DE CHEGADA ("Conta criada", "Conta ligada"): vem no "state" da
+  // navegação quando se chega aqui a partir de /contas/nova (ver
+  // ContaNova.tsx). Lido uma vez, ao montar; a seguir o "state" é limpo
+  // do histórico (navegação "replace" para o mesmo sítio), para o aviso
+  // não voltar a aparecer ao recarregar a página ou ao regressar a ela.
+  // Desaparece sozinho (animação CSS em ContaDetalhe.module.css).
+  const [aviso] = useState<string | null>(
+    () => (localizacao.state as { aviso?: string } | null)?.aviso ?? null,
+  )
+  useEffect(() => {
+    if (aviso) navegar(localizacao.pathname, { replace: true, state: null })
+  }, [aviso, localizacao.pathname, navegar])
+
+  // Estado das acções "Sincronizar agora" e "Desvincular" (ver a secção
+  // "Open Banking", mais abaixo) — só usadas quando conta.ligacao existe.
+  const [aSincronizar, setASincronizar] = useState(false)
+  const [mensagemSincronizar, setMensagemSincronizar] = useState<string | null>(null)
+  const [erroSincronizar, setErroSincronizar] = useState<string | null>(null)
+  const [aConfirmarDesvincular, setAConfirmarDesvincular] = useState(false)
+  const [aDesvincular, setADesvincular] = useState(false)
+  const [erroDesvincular, setErroDesvincular] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) return
@@ -95,6 +131,56 @@ export function ContaDetalhe() {
     }
   }, [id])
 
+  async function aoSincronizar() {
+    if (!conta?.ligacao) return
+    setASincronizar(true)
+    setMensagemSincronizar(null)
+    setErroSincronizar(null)
+    try {
+      const resultado = await sincronizar(conta.ligacao.conta_ligada_id)
+      // O saldo mostrado (conta.saldo/saldo_convertido) fica desactualizado
+      // assim que entram movimentos novos — volta a pedir a conta inteira
+      // em vez de tentar recalcular isto no cliente.
+      const contaActualizada = await obterConta(conta.id)
+      setConta(contaActualizada)
+      setMensagemSincronizar(
+        resultado.movimentos_importados === 0
+          ? 'Sem movimentos novos.'
+          : `${resultado.movimentos_importados} movimento(s) novo(s) importado(s).`,
+      )
+    } catch (erroApanhado) {
+      setErroSincronizar(
+        erroApanhado instanceof ErroApi
+          ? erroApanhado.message
+          : 'Não foi possível sincronizar a conta.',
+      )
+    } finally {
+      setASincronizar(false)
+    }
+  }
+
+  async function aoDesvincular() {
+    if (!conta?.ligacao) return
+    setADesvincular(true)
+    try {
+      await desvincular(conta.ligacao.conta_ligada_id)
+      // Actualiza a conta em memória — deixa de mostrar a secção "Open
+      // Banking" e, do lado do backend, os seus movimentos já voltaram a
+      // ser totalmente editáveis (ver conta_esta_ligada, em
+      // backend/app/services/ligacoes_bancarias.py).
+      setConta({ ...conta, ligacao: null })
+      setAConfirmarDesvincular(false)
+    } catch (erroApanhado) {
+      setErroDesvincular(
+        erroApanhado instanceof ErroApi
+          ? erroApanhado.message
+          : 'Não foi possível desvincular a conta.',
+      )
+    } finally {
+      setADesvincular(false)
+    }
+  }
+
   const negativo = conta ? Number(conta.saldo) < 0 : false
   const rotuloMoeda = conta ? etiquetaMoeda(conta.moeda) : ''
   const moedaPrincipal = utilizador?.moeda_principal ?? 'EUR'
@@ -104,7 +190,8 @@ export function ContaDetalhe() {
     conta !== null && conta.moeda !== moedaPrincipal && conta.saldo_convertido !== null
 
   return (
-    <PaginaDeslizante>
+    <>
+      <PaginaDeslizante>
       {(aoRecuar) => (
         <div>
           <LinkVoltar para="/contas">Contas</LinkVoltar>
@@ -197,6 +284,42 @@ export function ContaDetalhe() {
                 </dl>
               </section>
 
+              {/* Só para uma conta ligada ao Open Banking (ver a nota
+                  CONTA LIGADA em backend/app/models/conta_ligada.py) —
+                  uma conta manual, ou já desvinculada, não mostra esta
+                  secção nenhuma. */}
+              {conta.ligacao && (
+                <section className={estilos.seccao}>
+                  <h2 className={estilos.seccaoTitulo}>Open Banking</h2>
+                  <p className={estilos.nota}>Ligada a {conta.ligacao.aspsp_nome}.</p>
+                  <div className={estilos.acoesLigacao}>
+                    <Botao
+                      variante="secundario"
+                      onClick={aoSincronizar}
+                      disabled={aSincronizar}
+                    >
+                      {aSincronizar ? 'A sincronizar…' : 'Sincronizar agora'}
+                    </Botao>
+                    <Botao
+                      variante="perigo"
+                      onClick={() => {
+                        setErroDesvincular(null)
+                        setAConfirmarDesvincular(true)
+                      }}
+                    >
+                      Desvincular
+                    </Botao>
+                  </div>
+                  {mensagemSincronizar !== null && (
+                    <p role="status" className={estilos.nota}>
+                      {mensagemSincronizar}
+                    </p>
+                  )}
+                  {erroSincronizar !== null && <CaixaErro>{erroSincronizar}</CaixaErro>}
+                  {erroDesvincular !== null && <CaixaErro>{erroDesvincular}</CaixaErro>}
+                </section>
+              )}
+
               <section className={estilos.seccao}>
                 <h2 className={estilos.seccaoTitulo}>Reconciliações</h2>
                 <div className={estilos.emBreve}>
@@ -210,6 +333,29 @@ export function ContaDetalhe() {
           )}
         </div>
       )}
-    </PaginaDeslizante>
+      </PaginaDeslizante>
+
+      {aviso !== null && (
+        <div className={estilos.aviso} role="status">
+          <IconeCheck tamanho={16} />
+          {aviso}
+        </div>
+      )}
+
+      {aConfirmarDesvincular && conta?.ligacao && (
+        <Confirmacao
+          titulo="Desvincular conta"
+          textoConfirmar="Sim, desvincular"
+          aConfirmar={aDesvincular}
+          aoConfirmar={aoDesvincular}
+          aoCancelar={() => setAConfirmarDesvincular(false)}
+        >
+          <p>
+            A conta e os movimentos importados mantêm-se, mas deixa de ser
+            possível sincronizar movimentos novos de {conta.ligacao.aspsp_nome}.
+          </p>
+        </Confirmacao>
+      )}
+    </>
   )
 }

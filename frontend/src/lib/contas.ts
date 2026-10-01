@@ -26,6 +26,10 @@ import { pedido } from './http'
  *     câmbio para converter (o backend nunca falha o pedido inteiro só
  *     por isso). Nunca a moeda da PRÓPRIA CONTA (essa é sempre "moeda",
  *     acima) — é a moeda em que se compara/soma valores ENTRE contas.
+ *   - ligacao é "null" para uma conta manual (ou uma que já foi
+ *     desvinculada — ver src/lib/openBanking.ts); quando presente, dá o
+ *     necessário para "Sincronizar agora"/"Desvincular" no detalhe da
+ *     conta (conta_ligada_id) e o nome do banco a mostrar (aspsp_nome).
  */
 export type Conta = {
   id: string
@@ -37,6 +41,7 @@ export type Conta = {
   saldo_ancora: string
   saldo: string
   saldo_convertido: string | null
+  ligacao: { conta_ligada_id: string; aspsp_nome: string } | null
   created_at: string
   updated_at: string
 }

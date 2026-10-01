@@ -3,7 +3,7 @@
  * =======================================
  */
 
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
@@ -23,6 +23,7 @@ const CONTA = {
   saldo_ancora: '1000.00',
   saldo: '1000.00',
   saldo_convertido: null,
+  ligacao: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -46,6 +47,34 @@ function montar() {
     </AuthProvider>,
   )
 }
+
+describe('Página de detalhe de uma conta — aviso de chegada', () => {
+  it('mostra o aviso vindo do "state" da navegação (ex.: "Conta criada")', async () => {
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA)),
+    )
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={[{ pathname: '/contas/c1', state: { aviso: 'Conta criada' } }]}>
+          <Routes>
+            <Route path="/contas/:id" element={<ContaDetalhe />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    )
+
+    expect(await screen.findByText('Conta criada')).toBeInTheDocument()
+  })
+
+  it('sem aviso no "state", não mostra nenhum', async () => {
+    servidorMsw.use(http.get('/api/contas/c1', () => HttpResponse.json(CONTA)))
+    montar()
+
+    await screen.findByRole('heading', { name: 'Conta à ordem' })
+    expect(screen.queryByText('Conta criada')).not.toBeInTheDocument()
+  })
+})
 
 describe('Página de detalhe de uma conta', () => {
   it('mostra o nome, o saldo e a ficha de detalhes', async () => {
@@ -188,5 +217,74 @@ describe('Página de detalhe de uma conta', () => {
       const perfil = screen.getByText('Saldo atual').closest('div') as HTMLElement
       expect(perfil.textContent?.match(/1.?000,00/g)?.length).toBe(1)
     })
+  })
+})
+
+const CONTA_LIGADA = {
+  ...CONTA,
+  ligacao: { conta_ligada_id: 'cl-1', aspsp_nome: 'Caixa Geral de Depósitos' },
+}
+
+describe('Página de detalhe de uma conta — Open Banking', () => {
+  it('conta manual não mostra a secção Open Banking', async () => {
+    servidorMsw.use(http.get('/api/contas/c1', () => HttpResponse.json(CONTA)))
+    montar()
+
+    await screen.findByRole('heading', { name: 'Conta à ordem' })
+    expect(screen.queryByText('Open Banking')).not.toBeInTheDocument()
+  })
+
+  it('conta ligada mostra o banco e as acções Sincronizar agora e Desvincular', async () => {
+    servidorMsw.use(http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)))
+    montar()
+
+    await screen.findByText('Ligada a Caixa Geral de Depósitos.')
+    expect(screen.getByRole('button', { name: 'Sincronizar agora' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Desvincular' })).toBeInTheDocument()
+  })
+
+  it('"Sincronizar agora" mostra quantos movimentos novos entraram', async () => {
+    servidorMsw.use(
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
+      http.post('/api/open-banking/contas-ligadas/cl-1/sincronizar', () =>
+        HttpResponse.json({ movimentos_importados: 3 }),
+      ),
+    )
+    montar()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sincronizar agora' }))
+
+    expect(await screen.findByText('3 movimento(s) novo(s) importado(s).')).toBeInTheDocument()
+  })
+
+  it('"Sincronizar agora" mostra um erro se o pedido falhar', async () => {
+    servidorMsw.use(
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
+      http.post('/api/open-banking/contas-ligadas/cl-1/sincronizar', () =>
+        HttpResponse.json({ detail: 'Sessão expirada, é preciso religar.' }, { status: 502 }),
+      ),
+    )
+    montar()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Sincronizar agora' }))
+
+    expect(await screen.findByText('Sessão expirada, é preciso religar.')).toBeInTheDocument()
+  })
+
+  it('"Desvincular" pede confirmação e, ao confirmar, remove a secção', async () => {
+    servidorMsw.use(
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
+      http.delete('/api/open-banking/contas-ligadas/cl-1', () => new HttpResponse(null, { status: 204 })),
+    )
+    montar()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Desvincular' }))
+    expect(
+      await screen.findByRole('heading', { name: 'Desvincular conta' }),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Sim, desvincular' }))
+
+    await waitFor(() => expect(screen.queryByText('Open Banking')).not.toBeInTheDocument())
   })
 })

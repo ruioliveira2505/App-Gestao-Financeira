@@ -24,6 +24,7 @@ const CONTA = {
   saldo_ancora: '100.00',
   saldo: '100.00',
   saldo_convertido: null,
+  ligacao: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }

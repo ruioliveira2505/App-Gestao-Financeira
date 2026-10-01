@@ -53,12 +53,13 @@ export default defineConfig({
     //
     // Problema que resolve: a aplicação React é servida pelo Vite em
     // http://localhost:5173, mas a API (FastAPI) corre noutro sítio,
-    // http://127.0.0.1:8000. Um pedido do browser de uma origem para
-    // outra origem diferente é um pedido "cross-origin", sujeito às
-    // restrições de CORS ("Cross-Origin Resource Sharing") impostas pelo
-    // browser — e, além disso, o cookie de sessão da autenticação está
-    // marcado como SameSite=Lax, pelo que o browser evita enviá-lo em
-    // pedidos considerados de outra origem.
+    // https://127.0.0.1:8000 (HTTPS — ver a nota junto de "target", mais
+    // abaixo). Um pedido do browser de uma origem para outra origem
+    // diferente é um pedido "cross-origin", sujeito às restrições de CORS
+    // ("Cross-Origin Resource Sharing") impostas pelo browser — e, além
+    // disso, o cookie de sessão da autenticação está marcado como
+    // SameSite=Lax, pelo que o browser evita enviá-lo em pedidos
+    // considerados de outra origem.
     //
     // Solução: em desenvolvimento, o próprio servidor do Vite recebe os
     // pedidos que começam por "/api" e reencaminha-os, do lado do
@@ -73,8 +74,25 @@ export default defineConfig({
     proxy: {
       '/api': {
         // Destino para onde os pedidos "/api/..." são reencaminhados: o
-        // servidor local do FastAPI.
-        target: 'http://127.0.0.1:8000',
+        // servidor local do FastAPI — HTTPS, não HTTP. Isto passou a ser
+        // necessário com a integração de Open Banking (ver
+        // backend/app/routers/open_banking.py): o callback da Enable
+        // Banking só pode chegar a um URL HTTPS (o único registado no
+        // painel deles, "https://127.0.0.1:8000/open-banking/callback"),
+        // e o backend não consegue falar HTTP e HTTPS ao mesmo tempo no
+        // mesmo processo — por isso passou a correr sempre em HTTPS (ver
+        // "Correr em desenvolvimento", no README do backend), e este
+        // proxy tem de o acompanhar, para o resto da aplicação continuar
+        // a funcionar (login incluído).
+        target: 'https://127.0.0.1:8000',
+
+        // secure: false diz ao Vite para não verificar o certificado do
+        // destino — necessário porque o certificado é gerado localmente
+        // pelo mkcert (ver backend/README.md): o browser confia nele
+        // (mkcert instala a sua autoridade certificadora no sistema),
+        // mas o Node.js (que corre este proxy) tem a sua própria lista
+        // de confiança, separada da do sistema, e não o reconhece.
+        secure: false,
 
         // changeOrigin altera o cabeçalho "Host" do pedido reencaminhado
         // para corresponder ao "target". Sem isto, o FastAPI receberia

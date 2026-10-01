@@ -2,21 +2,373 @@
  * ESTILOS DA ROTA "NOVA CONTA"
  * ===========================
  *
- * A concha do modal (fundo, painel, cabeçalho, animações, arrasto) vive no
- * Folha.module.css. Aqui ficam só as duas coisas próprias desta rota: a
- * largura do formulário no corpo e o botão "✓" do cabeçalho.
+ * A concha das folhas (fundo, painel, cabeçalho, animações, arrasto) vive
+ * em Folha.module.css; as fichas dos formulários, em
+ * ContaFormulario.module.css. Aqui ficam as peças próprias deste fluxo:
+ * os cartões de escolha, as listas (bancos, contas descobertas,
+ * permissões, progresso), os ecrãs centrados (a abrir o banco, concluído,
+ * erro) e o "✓" do cabeçalho.
+ *
+ * As listas usam a MESMA linguagem das fichas dos formulários — cartão
+ * branco com contorno (sem sombra), traço fino recuado entre linhas —
+ * para o fluxo inteiro parecer uma coisa só.
  */
 
-/* Constrange o formulário à largura habitual dos formulários da app e
-   centra-o no corpo da folha. */
+/* Largura habitual dos formulários da app, centrada no corpo da folha. */
 .formulario {
   max-width: var(--largura-formulario);
   margin: 0 auto;
 }
 
-/* "✓" — a acção principal, no canto superior direito do cabeçalho: círculo
-   preenchido com a cor de acento, do tamanho dos botões da barra de topo
-   (40px). */
+.nota {
+  color: var(--cor-texto-2);
+}
+
+/* --- Passo "escolha" --- */
+
+.escolha {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-3);
+  max-width: var(--largura-formulario);
+  margin: var(--espaco-6) auto 0;
+}
+
+.cartaoEscolha {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 4.5rem;
+  padding: var(--espaco-4);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  background: var(--cor-fundo);
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.cartaoEscolha:active {
+  background: var(--cor-superficie);
+}
+
+.cartaoEscolhaIcone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  flex-shrink: 0;
+}
+
+.cartaoEscolhaTitulo {
+  font-size: var(--texto-base);
+  font-weight: 600;
+}
+
+/* "Recomendado" — no mesmo acento monocromático das acções principais;
+   encostado à direita do cartão. */
+.selo {
+  margin-left: auto;
+  padding: 2px var(--espaco-2);
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+/* --- Passo "banco" --- */
+
+/* Separa o campo "País" (um filtro) da lista de bancos com um traço. */
+.campoPais {
+  padding-bottom: var(--espaco-4);
+  margin-bottom: var(--espaco-2);
+  border-bottom: 1px solid var(--cor-borda-leve);
+}
+
+/* --- Cartão de lista (contas descobertas, permissões, progresso) --- */
+
+.cartaoLista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+/* Traço recuado entre linhas — o mesmo das fichas. */
+.cartaoLista > li + li {
+  position: relative;
+}
+
+.cartaoLista > li + li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--espaco-4);
+  right: var(--espaco-4);
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* Pequeno círculo de estado: ✓ (positivo), ✕ ou ! (negativo). */
+.estado {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+  font-size: var(--texto-xs);
+  font-weight: 700;
+}
+
+.estadoOk {
+  background: var(--cor-positivo-bg);
+  color: var(--cor-positivo);
+}
+
+.estadoErro {
+  background: var(--cor-negativo-bg);
+  color: var(--cor-negativo);
+}
+
+/* --- Permissões --- */
+
+.consentimento {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-5);
+  padding-top: var(--espaco-2);
+}
+
+.seccao {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+}
+
+/* Título de secção ao estilo das listas agrupadas do iOS: pequeno, por
+   cima do cartão, alinhado com o texto das linhas. */
+.seccaoTitulo {
+  margin: 0;
+  padding: 0 var(--espaco-4);
+  font-size: var(--texto-sm);
+  font-weight: 500;
+  color: var(--cor-texto-2);
+}
+
+.linhaPermissao {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  min-height: 2.875rem;
+  padding: var(--espaco-2) var(--espaco-4);
+}
+
+.rodape {
+  margin: 0;
+  padding: 0 var(--espaco-4);
+  font-size: var(--texto-sm);
+  line-height: 1.4;
+  color: var(--cor-texto-3);
+}
+
+.rodapeCentrado {
+  margin: 0;
+  text-align: center;
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+/* --- Escolher contas (quando o banco devolve várias) --- */
+
+.introducao {
+  margin: var(--espaco-2) 0 var(--espaco-4);
+  color: var(--cor-texto-2);
+  line-height: 1.45;
+}
+
+.linhaConta {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  min-height: 3.75rem;
+  padding: var(--espaco-2) var(--espaco-4);
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+}
+
+.linhaConta:active {
+  background: var(--cor-superficie);
+}
+
+/* A marca de seleção: círculo vazio → círculo cheio com ✓. */
+.marca {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--cor-borda);
+  color: transparent;
+  flex-shrink: 0;
+}
+
+.marcaOn {
+  background: var(--cor-acento);
+  border-color: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.linhaContaTexto {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.linhaContaDetalhe {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Progresso da importação --- */
+
+.linhaResultado {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  min-height: 3rem;
+  padding: var(--espaco-2) var(--espaco-4);
+}
+
+.linhaResultadoNome {
+  flex-grow: 1;
+}
+
+.linhaResultadoDetalhe {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Indicador de actividade: um anel com um segmento a rodar. */
+.roda {
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 999px;
+  border: 2.5px solid var(--cor-superficie-2);
+  border-top-color: var(--cor-acento);
+  flex-shrink: 0;
+  animation: rodar 0.9s linear infinite;
+}
+
+@keyframes rodar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roda {
+    animation: none;
+  }
+}
+
+/* --- Ecrãs centrados (a abrir o banco, a importar, concluído, erro) --- */
+
+.ecraCentral {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-5);
+  padding-top: var(--espaco-6);
+}
+
+.heroi {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-3);
+  text-align: center;
+}
+
+.heroiIcone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4rem;
+  height: 4rem;
+  border-radius: 999px;
+  background: var(--cor-superficie);
+  color: var(--cor-texto);
+  font-size: var(--texto-2xl);
+  font-weight: 700;
+}
+
+.heroiIconeOk {
+  background: var(--cor-positivo);
+  color: #ffffff;
+}
+
+.heroiIconeErro {
+  background: var(--cor-negativo-bg);
+  color: var(--cor-negativo);
+}
+
+.heroiTitulo {
+  margin: 0;
+  font-size: var(--texto-xl);
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.heroiTexto {
+  margin: 0;
+  max-width: 20rem;
+  color: var(--cor-texto-2);
+  line-height: 1.45;
+}
+
+/* A mensagem técnica do backend (útil para diagnosticar, enquanto a
+   integração está em testes) — pequena, abaixo da explicação humana. */
+.detalheErro {
+  margin: 0;
+  max-width: 20rem;
+  font-size: var(--texto-xs);
+  color: var(--cor-texto-3);
+  overflow-wrap: anywhere;
+}
+
+/* Botões de fundo de ecrã: a toda a largura, empilhados. */
+.accoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-2);
+}
+
+.accoes > button {
+  width: 100%;
+  min-height: 3rem;
+}
+
+/* --- "✓" do cabeçalho --- */
+
 .botaoConfirmar {
   display: flex;
   align-items: center;
@@ -34,8 +386,7 @@
   background: var(--cor-acento-hover);
 }
 
-/* Enquanto faltam campos obrigatórios: círculo cinzento, não clicável.
-   Fica com a cor de acento assim que dá para guardar. */
+/* Enquanto faltam campos obrigatórios: círculo cinzento, não clicável. */
 .botaoConfirmar:disabled {
   background: var(--cor-superficie-2);
   color: var(--cor-texto-3);

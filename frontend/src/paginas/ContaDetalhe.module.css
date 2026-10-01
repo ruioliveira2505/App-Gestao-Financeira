@@ -156,6 +156,18 @@
   white-space: nowrap;
 }
 
+/* --- "Open Banking": indicador de ligação + acções --- */
+
+.acoesLigacao {
+  display: flex;
+  gap: var(--espaco-3);
+  margin-top: var(--espaco-3);
+}
+
+.acoesLigacao > * {
+  flex: 1;
+}
+
 /* --- "Reconciliações": estado "em breve", discreto, sem ficha --- */
 
 .emBreve {
@@ -257,4 +269,46 @@
 .esqValor {
   width: 22%;
   height: 0.9rem;
+}
+
+/* Aviso de chegada ("Conta criada", "Conta ligada") — uma pílula escura a
+   flutuar no topo, ao centro (flutua a sério: é o único sítio da página
+   com sombra, como tudo o que flutua nesta app). Entra, fica uns segundos
+   e sai sozinha — só com CSS, sem temporizador em JavaScript; no fim fica
+   invisível e deixa de captar toques. */
+.aviso {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: var(--espaco-2) var(--espaco-4);
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--sombra-menu);
+  pointer-events: none;
+  animation: aviso-mostrar 2.8s ease forwards;
+}
+
+@keyframes aviso-mostrar {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aviso {
+    animation: aviso-mostrar-sem-movimento 2.8s ease forwards;
+  }
+  @keyframes aviso-mostrar-sem-movimento {
+    0%, 80% { opacity: 1; transform: translateX(-50%); }
+    100% { opacity: 0; transform: translateX(-50%); }
+  }
 }

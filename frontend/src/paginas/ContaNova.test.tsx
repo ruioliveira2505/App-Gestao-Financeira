@@ -40,6 +40,7 @@ describe('Página Nova conta', () => {
     )
 
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     await userEvent.type(screen.getByLabelText('Nome'), 'Revolut')
     await userEvent.type(screen.getByLabelText('Saldo início'), '250,50')
@@ -59,6 +60,7 @@ describe('Página Nova conta', () => {
     )
 
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
     await userEvent.type(screen.getByLabelText('Nome'), 'Revolut')
     await userEvent.type(screen.getByLabelText('Saldo início'), '100')
     await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }))
@@ -68,9 +70,24 @@ describe('Página Nova conta', () => {
     expect(screen.queryByText('lista de contas')).not.toBeInTheDocument()
   })
 
+  it('"‹" no passo "manual" volta à escolha', async () => {
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    await waitFor(() => expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ligar um banco/ })).toBeInTheDocument()
+  })
+
   it('o "✓" só fica ativo com os campos obrigatórios preenchidos', async () => {
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     // Sem nome nem saldo, o "✓" está desativado.
     const confirmar = screen.getByRole('button', { name: 'Criar conta' })
@@ -88,6 +105,7 @@ describe('Página Nova conta', () => {
   it('o campo de saldo não deixa escrever letras', async () => {
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     const saldo = screen.getByLabelText('Saldo início')
     await userEvent.type(saldo, '12a3b,4c5')
@@ -99,6 +117,7 @@ describe('Página Nova conta', () => {
     definirEcraMobile(true)
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     // O campo "Moeda" é um botão (mostra o valor atual, "Euro") que abre
     // o painel.
@@ -126,6 +145,7 @@ describe('Página Nova conta', () => {
       }),
     )
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     // O campo "Banco" mostra "Sem banco" por omissão; abre o seletor.
     await userEvent.click(screen.getByText('Sem banco'))
@@ -158,6 +178,7 @@ describe('Página Nova conta', () => {
     definirEcraMobile(true)
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     await userEvent.click(screen.getByText(/Euro/))
     const painel = await screen.findByRole('dialog', { name: 'Moeda' })
@@ -183,6 +204,7 @@ describe('Página Nova conta', () => {
     definirEcraMobile(true)
     servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
     montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
 
     await userEvent.click(screen.getByText(/Euro/))
     const painel = await screen.findByRole('dialog', { name: 'Moeda' })
@@ -246,5 +268,297 @@ describe('Página Nova conta', () => {
     // Arrasto curto: não descarta — o modal continua lá.
     expect(screen.getByRole('dialog', { name: 'Nova conta' })).toBeInTheDocument()
     expect(screen.queryByText('lista de contas')).not.toBeInTheDocument()
+  })
+})
+
+describe('Página Nova conta — Open Banking', () => {
+  it('o primeiro ecrã pergunta manual ou banco, sem mostrar já o formulário', () => {
+    montar()
+
+    expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Ligar um banco/ })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument()
+  })
+
+  it('"Ligar um banco" lista os bancos por ordem alfabética', async () => {
+    servidorMsw.use(
+      http.get('/api/open-banking/bancos', () =>
+        HttpResponse.json([
+          { name: 'Revolut', country: 'PT' },
+          { name: 'Caixa Geral de Depósitos', country: 'PT' },
+        ]),
+      ),
+    )
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: /Ligar um banco/ }))
+
+    const linhas = await screen.findAllByRole('button', { name: /Caixa|Revolut/ })
+    expect(linhas.map((linha) => linha.textContent)).toEqual([
+      'Caixa Geral de Depósitos',
+      'Revolut',
+    ])
+  })
+
+  it('tocar num banco mostra as permissões (numa folha própria), e "Voltar à lista" só fecha essa folha', async () => {
+    servidorMsw.use(
+      http.get('/api/open-banking/bancos', () =>
+        HttpResponse.json([{ name: 'Revolut', country: 'PT' }]),
+      ),
+    )
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: /Ligar um banco/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /Revolut/ }))
+
+    // Ecrã de permissões: identifica o banco, o que lê, o que não
+    // consegue, e um botão que diz para onde se vai — não há "Continuar"
+    // nenhum antes de escolher um banco.
+    const permissoes = screen.getByRole('dialog', { name: 'Permissões' })
+    expect(within(permissoes).getByRole('heading', { name: 'Revolut' })).toBeInTheDocument()
+    expect(within(permissoes).getByText('Permite')).toBeInTheDocument()
+    expect(within(permissoes).getByText('Não permite')).toBeInTheDocument()
+    expect(
+      within(permissoes).getByRole('button', { name: 'Continuar para Revolut' }),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar à lista' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Permissões' })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: /Revolut/ })).toBeInTheDocument()
+  })
+
+  it('a lista de bancos tem uma secção por letra', async () => {
+    servidorMsw.use(
+      http.get('/api/open-banking/bancos', () =>
+        HttpResponse.json([
+          { name: 'Revolut', country: 'PT' },
+          { name: 'Caixa Geral de Depósitos', country: 'PT' },
+          { name: 'Crédito Agrícola', country: 'PT' },
+        ]),
+      ),
+    )
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: /Ligar um banco/ }))
+    await screen.findByRole('button', { name: /Revolut/ })
+
+    // "C" aparece uma vez só, para as duas; "R" para a Revolut.
+    expect(screen.getAllByText('C')).toHaveLength(1)
+    expect(screen.getAllByText('R')).toHaveLength(1)
+  })
+
+  it('trocar de país refaz o pedido de bancos', async () => {
+    servidorMsw.use(
+      http.get('/api/open-banking/bancos', ({ request }) => {
+        const pais = new URL(request.url).searchParams.get('pais')
+        return HttpResponse.json(
+          pais === 'ES'
+            ? [{ name: 'BBVA', country: 'ES' }]
+            : [{ name: 'Caixa Geral de Depósitos', country: 'PT' }],
+        )
+      }),
+    )
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: /Ligar um banco/ }))
+    expect(
+      await screen.findByRole('button', { name: /Caixa Geral de Depósitos/ }),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Portugal'))
+    await userEvent.click(screen.getByText('Espanha'))
+
+    expect(await screen.findByRole('button', { name: /BBVA/ })).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /Caixa Geral de Depósitos/ }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('"‹" no passo "banco" volta à escolha', async () => {
+    servidorMsw.use(http.get('/api/open-banking/bancos', () => HttpResponse.json([])))
+    montar()
+
+    await userEvent.click(screen.getByRole('button', { name: /Ligar um banco/ }))
+    expect(screen.getByLabelText('País')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    await waitFor(() => expect(screen.queryByLabelText('País')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
+  })
+
+  describe('ao voltar do banco (?ligacao=)', () => {
+    const CGD = {
+      id: 'cl-1',
+      banco: 'Caixa Geral de Depósitos',
+      iban: 'PT50001800031497057802084',
+      moeda: 'EUR',
+      nome_titular: 'Rui',
+      conta_id: null,
+    }
+
+    function respostaCriada(contaId: string, movimentos: number) {
+      return HttpResponse.json({
+        conta_id: contaId,
+        nome: 'CGD',
+        banco: 'Caixa Geral de Depósitos',
+        moeda: 'EUR',
+        data_ancora: '2026-01-01',
+        saldo_ancora: '0.00',
+        movimentos_importados: movimentos,
+      })
+    }
+
+    it('com uma conta só: não pergunta quais, configura-se como no manual, e termina no detalhe', async () => {
+      let nomeRecebido: string | null = null
+      // Valor-sentinela: distingue "pedido não feito" de "feito sem data_de".
+      let dataDeRecebida: string | null = 'pedido-por-fazer'
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([])),
+        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', ({ request }) => {
+          const parametros = new URL(request.url).searchParams
+          nomeRecebido = parametros.get('nome')
+          dataDeRecebida = parametros.get('data_de')
+          return respostaCriada('nova-3', 5)
+        }),
+      )
+      montar('/contas/nova?ligacao=lig-1')
+
+      // O nome vem sugerido (o banco) e o que vem do banco está à vista,
+      // bloqueado — sem nenhum ecrã de "escolhe as contas" pelo meio.
+      expect(await screen.findByLabelText('Nome')).toHaveValue('Caixa Geral de Depósitos')
+      expect(screen.getByText('PT50 0018 0003 1497 0578 0208 4')).toBeInTheDocument()
+      expect(screen.queryByText(/Escolhe as que queres/)).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar conta' }))
+
+      expect(await screen.findByText('Conta adicionada')).toBeInTheDocument()
+      // Quantos movimentos vieram e desde quando — a data mais antiga que o
+      // banco disponibilizou (a data_ancora devolvida pelo backend).
+      expect(screen.getByText('5 movimentos desde 01/01/2026')).toBeInTheDocument()
+      expect(nomeRecebido).toBe('Caixa Geral de Depósitos')
+      expect(dataDeRecebida).toBeNull()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Ver conta' }))
+      expect(await screen.findByText('detalhe da conta')).toBeInTheDocument()
+    })
+
+    it('sem movimentos importados, não mostra nenhum "desde"', async () => {
+      // Sem movimentos, a data devolvida seria só a de hoje — mostrá-la
+      // como "desde" sugeriria um histórico que não existe.
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([])),
+        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', () =>
+          respostaCriada('nova-4', 0),
+        ),
+      )
+      montar('/contas/nova?ligacao=lig-1')
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Adicionar conta' }))
+
+      expect(await screen.findByText('Conta adicionada')).toBeInTheDocument()
+      expect(screen.getByText('0 movimentos')).toBeInTheDocument()
+      expect(screen.queryByText(/desde/)).not.toBeInTheDocument()
+    })
+
+    it('"A partir de uma data" exige a data e envia-a ao backend', async () => {
+      let dataDeRecebida: string | null = null
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([])),
+        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', ({ request }) => {
+          dataDeRecebida = new URL(request.url).searchParams.get('data_de')
+          return respostaCriada('nova-3', 2)
+        }),
+      )
+      montar('/contas/nova?ligacao=lig-1')
+      await screen.findByLabelText('Nome')
+
+      await userEvent.click(screen.getByText('Todo o histórico'))
+      await userEvent.click(screen.getByText('A partir de uma data'))
+
+      const adicionar = screen.getByRole('button', { name: 'Adicionar conta' })
+      const desde = screen.getByLabelText('Desde')
+      await userEvent.clear(desde)
+      expect(adicionar).toBeDisabled()
+
+      await userEvent.type(desde, '2026-06-01')
+      expect(adicionar).toBeEnabled()
+      await userEvent.click(adicionar)
+
+      await screen.findByText('Conta adicionada')
+      expect(dataDeRecebida).toBe('2026-06-01')
+    })
+
+    it('com várias contas: escolhe-se quais, e só essas são criadas', async () => {
+      const criadas: string[] = []
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([])),
+        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () =>
+          HttpResponse.json([
+            { ...CGD, id: 'cl-1', iban: 'PT50000000000000000004021', moeda: 'EUR' },
+            { ...CGD, id: 'cl-2', iban: 'PT50000000000000000007780', moeda: 'USD' },
+            // Já associada numa visita anterior — nem aparece na escolha.
+            { ...CGD, id: 'cl-3', conta_id: 'antiga' },
+          ]),
+        ),
+        http.post('/api/open-banking/contas-ligadas/:id/associar-nova-conta', ({ params }) => {
+          criadas.push(String(params.id))
+          return respostaCriada(`nova-${params.id}`, 7)
+        }),
+      )
+      montar('/contas/nova?ligacao=lig-1')
+
+      expect(await screen.findByText(/Encontrámos 2 contas/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Continuar com 2 contas' })).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: /Conta USD/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Continuar com 1 conta' }))
+
+      const configurar = await screen.findByRole('dialog', { name: 'Configurar contas' })
+      expect(within(configurar).getByLabelText('Nome')).toHaveValue('Caixa Geral de Depósitos')
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar contas' }))
+
+      expect(await screen.findByText('Conta adicionada')).toBeInTheDocument()
+      expect(criadas).toEqual(['cl-1'])
+    })
+
+    it('se a criação falhar, diz o que falhou e deixa tentar outra vez', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([])),
+        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', () =>
+          HttpResponse.json({ detail: 'Sessão expirada.' }, { status: 502 }),
+        ),
+      )
+      montar('/contas/nova?ligacao=lig-1')
+      await screen.findByLabelText('Nome')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Adicionar conta' }))
+
+      expect(await screen.findByText('Não foi possível adicionar')).toBeInTheDocument()
+      expect(screen.getByText('Sessão expirada.')).toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Tentar outra vez' }))
+      expect(await screen.findByLabelText('Nome')).toBeInTheDocument()
+    })
+  })
+
+  it('chegando com "?erro=" explica, e deixa tentar outra vez ou fazer à mão', async () => {
+    servidorMsw.use(http.get('/api/open-banking/bancos', () => HttpResponse.json([])))
+    montar('/contas/nova?erro=Autoriza%C3%A7%C3%A3o%20recusada.')
+
+    expect(await screen.findByText('Não foi possível ligar ao banco')).toBeInTheDocument()
+    expect(screen.getByText('Autorização recusada.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar outra vez' }))
+
+    expect(await screen.findByLabelText('País')).toBeInTheDocument()
   })
 })
