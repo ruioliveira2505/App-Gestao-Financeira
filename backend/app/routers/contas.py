@@ -27,10 +27,11 @@ from app.db.session import get_db
 from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
-from app.schemas.contas import ContaCriar, ContaEditar, ContaOut
+from app.models.ligacao_bancaria import LigacaoBancaria
+from app.schemas.contas import ContaCriar, ContaEditar, ContaOut, LigacaoOpenBankingOut
 from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import obter_conta_do_utilizador, soma_movimentos, somas_de_movimentos
-from app.services.ligacoes_bancarias import conta_esta_ligada
+from app.services.ligacoes_bancarias import conta_esta_ligada, obter_ligacao_de_conta
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -90,6 +91,18 @@ async def _para_saida(
     except SemTaxaCambio:
         saldo_convertido_texto = None
 
+    # Se esta conta estiver ligada ao Open Banking (ver a nota CONTA
+    # LIGADA em app/models/conta_ligada.py), o frontend precisa do id da
+    # ContaLigada (para "Sincronizar agora"/"Desvincular" —
+    # app/routers/open_banking.py) e do nome do banco (para o mostrar).
+    ligacao_out = None
+    conta_ligada = await obter_ligacao_de_conta(db, conta.id)
+    if conta_ligada is not None:
+        ligacao_bancaria = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
+        ligacao_out = LigacaoOpenBankingOut(
+            conta_ligada_id=conta_ligada.id, aspsp_nome=ligacao_bancaria.aspsp_nome
+        )
+
     return ContaOut(
         id=conta.id,
         nome=conta.nome,
@@ -100,6 +113,7 @@ async def _para_saida(
         saldo_ancora=saldo_ancora_texto,
         saldo=saldo_texto,
         saldo_convertido=saldo_convertido_texto,
+        ligacao=ligacao_out,
         created_at=conta.created_at,
         updated_at=conta.updated_at,
     )

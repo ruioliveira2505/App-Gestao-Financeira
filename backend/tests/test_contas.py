@@ -598,3 +598,27 @@ async def test_editar_conta_ligada_permite_mudar_nome_e_tipo(cliente_autenticado
     assert resposta.status_code == 200
     assert resposta.json()["nome"] == "Novo nome"
     assert resposta.json()["tipo"] == "Poupança"
+
+
+@pytest.mark.asyncio
+async def test_obter_conta_ligada_devolve_a_ligacao(cliente_autenticado, db_session):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _ligar_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
+
+    assert resposta.status_code == 200
+    ligacao = resposta.json()["ligacao"]
+    assert ligacao is not None
+    assert ligacao["aspsp_nome"] == "Banco Teste"
+    assert uuid.UUID(ligacao["conta_ligada_id"])
+
+
+@pytest.mark.asyncio
+async def test_obter_conta_manual_tem_ligacao_none(cliente_autenticado):
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+
+    resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["ligacao"] is None

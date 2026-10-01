@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     # Caminho relativo à pasta onde o servidor corre (backend/).
     enable_banking_private_key_path: str
 
+    # O endereço onde o FRONTEND (a aplicação React, servida pelo Vite em
+    # desenvolvimento) corre — usado só para uma coisa: para onde o
+    # endpoint "/open-banking/callback" (app/routers/open_banking.py)
+    # reencaminha o browser depois de processar o retorno da Enable
+    # Banking, já de volta à interface (nunca para mostrar dados brutos).
+    # Não confundir com o "redirect_url" enviado à PRÓPRIA Enable Banking
+    # (esse continua a ser um URL desta API, nunca do frontend — é o
+    # painel deles que precisa de o conhecer antecipadamente).
+    frontend_url: str = "http://localhost:5173"
+
     # Indica à biblioteca onde procurar os valores: no ficheiro ".env",
     # localizado na mesma pasta em que a aplicação é executada.
     model_config = SettingsConfigDict(env_file=".env")

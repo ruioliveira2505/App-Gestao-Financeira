@@ -91,6 +91,18 @@ class ContaEditar(_CamposDescritivos):
     """
 
 
+class LigacaoOpenBankingOut(BaseModel):
+    """
+    A ligação ao Open Banking de uma Conta, quando existe — ver
+    ContaOut.ligacao, abaixo. "conta_ligada_id" é o que o frontend precisa
+    para "Desvincular" (DELETE /open-banking/contas-ligadas/{id}) — ver
+    app/routers/open_banking.py.
+    """
+
+    conta_ligada_id: uuid.UUID
+    aspsp_nome: str
+
+
 class ContaOut(BaseModel):
     """Dados de uma conta devolvidos pela API."""
 
@@ -118,6 +130,14 @@ class ContaOut(BaseModel):
     # — nunca por a moeda da conta já ser a principal, caso em que
     # converter() devolve o mesmo valor sem precisar de taxa nenhuma.
     saldo_convertido: str | None
+
+    # "None" para uma conta manual, ou uma conta ligada que foi
+    # desvinculada (ver desvincular_conta, em app/services/
+    # ligacoes_bancarias.py) — nesses casos, esta conta comporta-se em
+    # tudo como uma conta manual normal (ver a nota CONTA LIGADA em
+    # app/models/conta_ligada.py e as regras em editar_conta/
+    # app/routers/movimentos.py, mais abaixo).
+    ligacao: LigacaoOpenBankingOut | None = None
 
     created_at: datetime
     updated_at: datetime

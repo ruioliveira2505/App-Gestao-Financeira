@@ -1245,10 +1245,10 @@ async def test_eliminar_em_lote_com_movimento_de_conta_ligada_e_recusado(
 #
 # Ver a nota junto de id_transacao_externa, em app/models/movimento.py:
 # impede duas linhas com o mesmo identificador externo NA MESMA conta —
-# a garantia de que uma sincronização repetida (app/services/
-# importacao_movimentos.py:sincronizar_movimentos) nunca duplica o mesmo
-# movimento importado, mesmo que a verificação em Python falhe por
-# alguma razão. Testado directamente com db_session (cria as tabelas via
+# a garantia de que uma futura sincronização repetida (fatia ainda por
+# construir, ver caderno/decisoes.md) nunca duplicará o mesmo movimento
+# importado, mesmo que a verificação em Python falhe por alguma razão.
+# Testado directamente com db_session (cria as tabelas via
 # Base.metadata.create_all — ver conftest.py — por isso é o índice do
 # MODELO que está a ser exercitado aqui, não a migração Alembic em si).
 

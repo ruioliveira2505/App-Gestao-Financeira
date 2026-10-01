@@ -7,16 +7,21 @@ _id_externo, _esta_confirmada) — sem base de dados, sem rede: recebem um
 dicionário Python (a forma de uma transacção devolvida pela Enable
 Banking, já confirmada em testes reais com a CGD) e devolvem um valor.
 
-As funções que fazem chamadas de rede reais (criar_conta_a_partir_de_
-ligacao, sincronizar_movimentos) NÃO são testadas aqui — precisariam de
-substituir obter_saldos/obter_movimentos por versões falsas, um esforço
-maior deixado para uma iteração futura (ver caderno/decisoes.md). Estes
-testes cobrem, ainda assim, o essencial: as regras de mapeamento e
-filtragem que decidem o que entra ou não numa Conta/Movimento real.
+A função que faz chamadas de rede reais (criar_conta_a_partir_de_ligacao)
+NÃO é testada aqui — precisaria de substituir obter_saldos/obter_movimentos
+e a base de dados em conjunto, um esforço maior deixado para uma iteração
+futura (ver caderno/decisoes.md). Estes testes cobrem, ainda assim, o
+essencial: as regras de mapeamento e filtragem que decidem o que entra ou
+não numa Conta/Movimento real, e — no fim do ficheiro — a paginação de
+_obter_todas_transacoes, com só obter_movimentos substituída por uma versão
+falsa.
 """
 
 from decimal import Decimal
 
+import pytest
+
+from app.services import importacao_movimentos
 from app.services.importacao_movimentos import (
     _descricao,
     _esta_confirmada,
@@ -121,3 +126,51 @@ def test_esta_confirmada_false_quando_status_ausente():
     transacao = _transacao()
     del transacao["status"]
     assert _esta_confirmada(transacao) is False
+
+
+# --- _obter_todas_transacoes (com a chamada à Enable Banking substituída) ---
+#
+# Um dos poucos testes deste ficheiro que precisa de substituir uma função
+# de rede: "monkeypatch" (do pytest) troca, só durante o teste,
+# obter_movimentos por uma versão falsa que devolve páginas preparadas à
+# mão e regista os pedidos que recebeu — sem nenhuma chamada real.
+
+@pytest.mark.asyncio
+async def test_obter_todas_transacoes_segue_as_paginas_e_repete_a_estrategia(monkeypatch):
+    paginas = {
+        None: {"transactions": [_transacao(entry_reference="1")], "continuation_key": "p2"},
+        "p2": {"transactions": [_transacao(entry_reference="2")], "continuation_key": "p3"},
+        "p3": {"transactions": [_transacao(entry_reference="3")]},
+    }
+    pedidos = []
+
+    async def obter_movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        pedidos.append((continuation_key, estrategia))
+        return paginas[continuation_key]
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", obter_movimentos_falso)
+
+    transacoes = await importacao_movimentos._obter_todas_transacoes(
+        "uid-1", estrategia="longest"
+    )
+
+    # As três páginas, pela ordem, juntas numa só lista...
+    assert [t["entry_reference"] for t in transacoes] == ["1", "2", "3"]
+    # ...e a estratégia pedida em TODAS as páginas, não só na primeira.
+    assert pedidos == [(None, "longest"), ("p2", "longest"), ("p3", "longest")]
+
+
+@pytest.mark.asyncio
+async def test_obter_todas_transacoes_sem_estrategia_nao_a_envia(monkeypatch):
+    estrategias = []
+
+    async def obter_movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        estrategias.append(estrategia)
+        return {"transactions": []}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", obter_movimentos_falso)
+
+    await importacao_movimentos._obter_todas_transacoes("uid-1")
+
+    # A sincronização usa a estratégia por omissão — nenhum "strategy".
+    assert estrategias == [None]

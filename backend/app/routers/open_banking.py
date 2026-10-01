@@ -17,15 +17,24 @@ O FLUXO COMPLETO, pela ordem em que acontece:
 2. "/callback" — para onde a Enable Banking reencaminha o browser depois
    de o utilizador autenticar (login e confirmação fortes, SCA —
    "Strong Customer Authentication") e dar consentimento. Troca o "code"
-   recebido por uma sessão (POST /sessions) e grava-a (LigacaoBancaria e
-   uma ContaLigada por cada conta trazida).
+   recebido por uma sessão (POST /sessions), grava-a (LigacaoBancaria e
+   uma ContaLigada por cada conta trazida), e reencaminha de volta para o
+   frontend (nunca devolve dados brutos ao browser).
 3. "/contas-ligadas/{id}/associar-nova-conta" — cria uma Conta desta
-   aplicação a partir de uma ContaLigada ainda por associar, e importa a
-   primeira leva de movimentos.
-4. "/contas-ligadas/{id}/sincronizar" — para uma ContaLigada JÁ associada,
-   importa só os movimentos novos desde a sincronização anterior.
-5. "/contas-ligadas/{id}" (DELETE) — "desvincula": pára a sincronização,
+   aplicação a partir de uma ContaLigada ainda por associar, e importa os
+   movimentos disponíveis (todo o histórico, ou só desde uma data — ver o
+   parâmetro "data_de", abaixo).
+4. "/contas-ligadas/{id}/sincronizar" — importa os movimentos NOVOS de
+   uma conta JÁ ligada e já associada, desde a última sincronização.
+5. "/contas-ligadas/{id}" (DELETE) — "desvincula": remove só a ligação,
    sem apagar nada da Conta nem dos Movimento já importados.
+
+DELIBERADAMENTE FORA DESTA FATIA (ver o caderno): associar uma
+ContaLigada a uma Conta MANUAL já existente ("Cenário 1", precisa de um
+passo de reconciliação de saldo próprio), e reconhecer automaticamente a
+mesma conta real numa religação futura (via identification_hash — só
+relevante quando o consentimento de 90 dias expirar, um problema
+diferente de sincronizar uma ligação ainda válida).
 
 IDENTIFICAÇÃO DO UTILIZADOR NO CALLBACK — O PROBLEMA E A SOLUÇÃO: o
 "/callback" chega SEM o cookie de sessão desta aplicação (mesmo com
@@ -48,25 +57,25 @@ o faz. Confirmado pela documentação oficial: aquele botão é uma acção do
 próprio painel deles, não corresponde ao fluxo real de autorização.
 """
 
-import html
 import uuid
 from datetime import date
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# HTMLResponse permite devolver HTML directamente (em vez do JSON que o
-# resto da API devolve) — só para o endpoint de callback ser confortável
-# de ler a olho nu, já que é precisamente no browser, depois de um
-# reencaminhamento, que esse pedido chega. RedirectResponse é o que faz o
-# browser saltar de imediato para outro URL (usado em "/ligar", para
-# enviar o utilizador directamente para o ecrã de login do banco).
-from fastapi.responses import HTMLResponse, RedirectResponse
+# RedirectResponse é o que faz o browser saltar de imediato para outro
+# URL — usado em "/ligar" (para enviar o utilizador para o ecrã de login
+# do banco) e em "/callback" (para o trazer de volta à interface, já
+# dentro da aplicação React, nunca mostrando dados brutos).
+from fastapi.responses import RedirectResponse
 
+from app.core.config import settings
 from app.core.deps import obter_utilizador_atual
 from app.db.session import get_db
 from app.models.autorizacao_pendente import AutorizacaoPendente
+from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.movimento import Movimento
 from app.models.user import User
 from app.services.enable_banking import (
@@ -76,10 +85,12 @@ from app.services.enable_banking import (
     obter_saldos,
     trocar_codigo_por_sessao,
 )
+from app.services.contas import obter_conta_do_utilizador
 from app.services.importacao_movimentos import criar_conta_a_partir_de_ligacao, sincronizar_movimentos
 from app.services.ligacoes_bancarias import (
     desvincular_conta,
     gravar_ligacao,
+    listar_contas_ligadas,
     obter_conta_ligada_do_utilizador,
     obter_conta_ligada_por_uid_do_utilizador,
 )
@@ -103,7 +114,7 @@ async def bancos(
     return await listar_bancos(pais)
 
 
-@router.get("/ligar")
+@router.post("/ligar")
 async def ligar(
     request: Request,
     banco: str,
@@ -119,6 +130,21 @@ async def ligar(
 
     "banco" tem de corresponder exactamente ao campo "name" devolvido por
     "/bancos" (ex.: "BPI", "Millennium BCP", "Caixa Geral de Depósitos").
+
+    POST, NÃO GET, apesar de não ler nenhum corpo (banco/pais continuam
+    parâmetros de query) — um GET com este efeito lateral (grava uma
+    AutorizacaoPendente e desencadeia um pedido real à Enable Banking)
+    seria vulnerável a CSRF por navegação de topo: o cookie de sessão
+    desta aplicação usa "SameSite=Lax" (app/routers/auth.py), que PROTEGE
+    contra POST vindo de outro site, mas deixa passar um GET vindo de um
+    simples link ou "window.location" nesse site — um atacante conseguiria
+    assim forçar uma vítima autenticada a iniciar uma autorização bancária
+    escolhida por ele. Não daria acesso à conta de outro utilizador (o
+    "state" continua ligado ao utilizador certo), mas é evitável.
+    frontend/src/lib/openBanking.ts:iniciarLigacao já chama isto com um
+    formulário submetido por JavaScript (method="POST"), não com
+    "window.location.href" — a única forma de continuar a SAIR da SPA de
+    propósito (ver a nota nessa função) sem voltar a ser um GET.
 
     Antes de reencaminhar, grava uma AutorizacaoPendente (state → o
     utilizador autenticado agora, ver a nota IDENTIFICAÇÃO DO UTILIZADOR
@@ -137,11 +163,25 @@ async def ligar(
 
     redirect_url = str(request.url_for("callback"))
     url = await iniciar_autorizacao(banco, pais, redirect_url, state)
-    return RedirectResponse(url)
+    # 303 (See Other), não a omissão (307): um 307 diz ao browser para
+    # REPETIR o mesmo método (POST) no novo URL — aqui teria de ser SEMPRE
+    # um GET, é um ecrã de login a sério, não um endpoint desta API.
+    return RedirectResponse(url, status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.get("/callback", response_class=HTMLResponse)
-async def callback(request: Request, db: AsyncSession = Depends(get_db)) -> str:
+def _erro_para_frontend(mensagem: str) -> RedirectResponse:
+    """
+    Reencaminha para o mesmo passo do frontend onde este fluxo começou
+    (o formulário "Nova conta", opção "Através do teu banco" — ver
+    frontend/src/paginas/ContaNova.tsx), com a mensagem de erro na query
+    string. Usada em todos os pontos de falha de "callback", abaixo, para
+    o utilizador NUNCA ficar preso numa página fora da aplicação.
+    """
+    return RedirectResponse(f"{settings.frontend_url}/contas/nova?erro={quote(mensagem)}")
+
+
+@router.get("/callback")
+async def callback(request: Request, db: AsyncSession = Depends(get_db)) -> RedirectResponse:
     """
     Recebe o reencaminhamento do browser feito pela Enable Banking, depois
     de o utilizador autenticar junto do seu banco (ou recusar/cancelar o
@@ -149,78 +189,67 @@ async def callback(request: Request, db: AsyncSession = Depends(get_db)) -> str:
     IDENTIFICAÇÃO DO UTILIZADOR NO CALLBACK, no topo do ficheiro): o
     utilizador é recuperado a partir do "state", não de um cookie.
 
-    Não presume nomes de parâmetros concretos (como "code" ou "error") —
-    lê e mostra TODOS os parâmetros da query string tal como chegam.
+    Devolve sempre um REENCAMINHAMENTO de volta para o frontend (nunca
+    dados brutos) — em caso de sucesso, para "/contas/nova?ligacao=<id>",
+    onde o frontend continua o fluxo (lista as contas descobertas, pede um
+    nome, cria a Conta); em caso de erro, para "/contas/nova?erro=<
+    mensagem>" (ver _erro_para_frontend, acima).
 
-    Quando um "code" está presente, troca-o de imediato por uma sessão
-    (POST /sessions — ver trocar_codigo_por_sessao, em
-    app/services/enable_banking.py), recupera o utilizador pelo "state"
-    (apagando a AutorizacaoPendente correspondente — já serviu o
-    propósito), e grava a ligação (LigacaoBancaria e uma ContaLigada por
-    cada conta — ver gravar_ligacao, em
-    app/services/ligacoes_bancarias.py).
+    Troca o "code" recebido por uma sessão (POST /sessions — ver
+    trocar_codigo_por_sessao, em app/services/enable_banking.py), recupera
+    o utilizador pelo "state" (apagando a AutorizacaoPendente
+    correspondente — já serviu o propósito), e grava a ligação
+    (LigacaoBancaria e uma ContaLigada por cada conta — ver
+    gravar_ligacao, em app/services/ligacoes_bancarias.py).
     """
     parametros = dict(request.query_params)
 
     # Também fica registado na consola onde o uvicorn está a correr — para
-    # o caso de o utilizador fechar a aba do browser antes de copiar o que
-    # viu no ecrã.
+    # o caso de o utilizador fechar a aba do browser antes de a
+    # reencaminhamento para o frontend completar.
     print(f"[open-banking/callback] parâmetros recebidos: {parametros}")
 
-    linhas = "".join(
-        f"<li><strong>{html.escape(chave)}</strong>: {html.escape(valor)}</li>"
-        for chave, valor in parametros.items()
+    code = parametros.get("code")
+    if code is None:
+        return _erro_para_frontend(parametros.get("error", "Autorização não concluída."))
+
+    # O "state" é validado ANTES de gastar o "code" (que só pode ser
+    # trocado por sessão UMA VEZ — ver trocar_codigo_por_sessao, em
+    # app/services/enable_banking.py). Fazer ao contrário desperdiçaria um
+    # consentimento bancário REAL sempre que este pedido falhasse por um
+    # "state" desconhecido (ex.: um recarregar da página, ou um banco que
+    # não devolva o "state" tal como foi enviado) — o utilizador teria de
+    # repetir toda a autenticação no banco outra vez, sem sequer saber que
+    # o motivo foi um "state" inválido, e não algo na troca do "code" em
+    # si.
+    estado = parametros.get("state")
+    pendente = await db.get(AutorizacaoPendente, estado) if estado else None
+    if pendente is None:
+        return _erro_para_frontend("Pedido de autorização desconhecido ou já usado.")
+    user_id = pendente.user_id
+    await db.delete(pendente)
+
+    try:
+        sessao = await trocar_codigo_por_sessao(code)
+    except HTTPException as excepcao:
+        # A AutorizacaoPendente já apagada, acima, ainda não foi
+        # confirmada (nenhum commit até aqui) — persiste-se na mesma: se a
+        # troca por sessão falhou, este "state" já não serve para mais
+        # nada, e uma nova tentativa desde "/ligar" gera um "state" novo.
+        # Reencaminha para o frontend com o motivo (nunca deixa o
+        # utilizador preso numa resposta JSON crua, fora da aplicação).
+        await db.commit()
+        return _erro_para_frontend(str(excepcao.detail))
+
+    print(f"[open-banking/callback] sessão obtida: {sessao}")
+
+    ligacao = await gravar_ligacao(db, user_id, sessao)
+    print(
+        f"[open-banking/callback] ligação {ligacao.id} gravada, "
+        f"{len(sessao['accounts'])} conta(s)"
     )
 
-    sessao_html = ""
-    code = parametros.get("code")
-    if code is not None:
-        # O "state" é validado ANTES de gastar o "code" (que só pode ser
-        # trocado por sessão UMA VEZ — ver trocar_codigo_por_sessao, em
-        # app/services/enable_banking.py). Fazer ao contrário desperdiçaria
-        # um consentimento bancário REAL sempre que este pedido falhasse
-        # por um "state" desconhecido (ex.: um recarregar da página, ou um
-        # banco que não devolva o "state" tal como foi enviado) — o
-        # utilizador teria de repetir toda a autenticação no banco outra
-        # vez, sem sequer saber que o motivo foi um "state" inválido, e
-        # não algo na troca do "code" em si.
-        estado = parametros.get("state")
-        pendente = await db.get(AutorizacaoPendente, estado) if estado else None
-        if pendente is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Pedido de autorização desconhecido ou já usado.",
-            )
-        user_id = pendente.user_id
-        await db.delete(pendente)
-
-        sessao = await trocar_codigo_por_sessao(code)
-        print(f"[open-banking/callback] sessão obtida: {sessao}")
-
-        ligacao = await gravar_ligacao(db, user_id, sessao)
-        print(
-            f"[open-banking/callback] ligação {ligacao.id} gravada, "
-            f"{len(sessao['accounts'])} conta(s)"
-        )
-
-        sessao_html = (
-            f"<h2>Ligação gravada</h2>"
-            f"<p>LigacaoBancaria {html.escape(str(ligacao.id))}, "
-            f"{len(sessao['accounts'])} conta(s) ligada(s), por associar a uma Conta.</p>"
-            f"<h2>Sessão devolvida pela Enable Banking</h2>"
-            f"<pre>{html.escape(str(sessao))}</pre>"
-        )
-
-    return f"""
-    <html>
-      <body style="font-family: sans-serif; padding: 2rem;">
-        <h1>Callback da Enable Banking recebido</h1>
-        <p>Parâmetros da query string:</p>
-        <ul>{linhas or "<li>(nenhum)</li>"}</ul>
-        {sessao_html}
-      </body>
-    </html>
-    """
+    return RedirectResponse(f"{settings.frontend_url}/contas/nova?ligacao={ligacao.id}")
 
 
 @router.get("/contas/{uid}/saldos")
@@ -262,18 +291,68 @@ async def movimentos(
     return await obter_movimentos(uid, data_de)
 
 
+@router.get("/ligacoes/{ligacao_id}/contas-ligadas")
+async def contas_ligadas(
+    ligacao_id: uuid.UUID,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """
+    Lista as contas trazidas por uma ligação (ver listar_contas_ligadas,
+    em app/services/ligacoes_bancarias.py) — usada pelo frontend logo
+    depois de voltar do "/callback" (que reencaminha para
+    "/contas/nova?ligacao=<id>"), para mostrar a(s) conta(s) descobertas
+    e deixar escolher um nome antes de as associar
+    (POST .../associar-nova-conta, abaixo).
+    """
+    contas = await listar_contas_ligadas(db, utilizador.id, ligacao_id)
+    # O nome do banco vem da LigacaoBancaria (todas as contas de uma
+    # ligação são do mesmo banco) — o frontend mostra-o no formulário de
+    # configurar cada conta (campo "Banco", bloqueado) e usa-o como nome
+    # sugerido, tal como o formulário manual mostra o banco escolhido.
+    # listar_contas_ligadas já confirmou que a ligação existe e é deste
+    # utilizador (404 caso contrário), por isso aqui nunca vem None.
+    ligacao = await db.get(LigacaoBancaria, ligacao_id)
+    return [
+        {
+            "id": str(conta.id),
+            "banco": ligacao.aspsp_nome,
+            "iban": conta.iban,
+            "moeda": conta.moeda,
+            "nome_titular": conta.nome_titular,
+            "conta_id": str(conta.conta_id) if conta.conta_id else None,
+        }
+        for conta in contas
+    ]
+
+
 @router.post("/contas-ligadas/{conta_ligada_id}/associar-nova-conta")
 async def associar_nova_conta(
     conta_ligada_id: uuid.UUID,
     nome: str,
+    data_de: date | None = None,
+    # O mesmo limite da coluna Conta.tipo (String(40), app/models/conta.py)
+    # — validado aqui (422 por omissão do FastAPI) em vez de deixar a base
+    # de dados recusar um texto demasiado longo com um erro genérico.
+    tipo: str | None = Query(default=None, max_length=40),
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     Cria uma Conta nova a partir de uma ContaLigada ainda por associar, e
-    importa de imediato a primeira leva de movimentos disponível (ver
+    importa de imediato os movimentos disponíveis (ver
     criar_conta_a_partir_de_ligacao, em
     app/services/importacao_movimentos.py).
+
+    "data_de", quando indicada, limita a importação a partir dessa data —
+    a escolha ("todo o histórico" vs. "desde uma data") é feita no
+    frontend (ContaNova.tsx, passo "confirmar"), por cada conta
+    descoberta.
+
+    "tipo" (ex.: "Conta corrente", "Poupança") é o mesmo campo livre que o
+    formulário manual já pede — a Enable Banking não diz, de forma que esta
+    app use, que tipo de conta é, por isso é sempre o utilizador a dizê-lo.
+    Antes desta mudança, uma conta ligada ficava SEMPRE sem tipo.
 
     Cobre só o cenário de uma conta SEM histórico manual anterior —
     associar a uma Conta JÁ EXISTENTE, com movimentos manuais, fica para
@@ -286,7 +365,9 @@ async def associar_nova_conta(
             status_code=status.HTTP_409_CONFLICT, detail="Esta conta já está associada."
         )
 
-    conta = await criar_conta_a_partir_de_ligacao(db, utilizador.id, conta_ligada, nome)
+    conta = await criar_conta_a_partir_de_ligacao(
+        db, utilizador.id, conta_ligada, nome, data_de, tipo
+    )
 
     resultado = await db.execute(select(Movimento).where(Movimento.conta_id == conta.id))
     total_importado = len(resultado.scalars().all())
@@ -309,20 +390,24 @@ async def sincronizar(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    Importa os movimentos NOVOS de uma ContaLigada JÁ associada a uma
-    Conta (ver sincronizar_movimentos, em
-    app/services/importacao_movimentos.py) — disparado manualmente por
-    agora; uma sincronização periódica automática fica para mais tarde.
+    Importa os movimentos NOVOS de uma conta JÁ ligada e já associada
+    (ver sincronizar_movimentos, em app/services/importacao_movimentos.py)
+    — o botão "Sincronizar agora" em frontend/src/paginas/ContaDetalhe.tsx.
+
+    409 se a ContaLigada ainda não estiver associada a nenhuma Conta desta
+    aplicação — não há para onde sincronizar (esse passo é
+    "associar-nova-conta", acima, feito uma única vez).
     """
     conta_ligada = await obter_conta_ligada_do_utilizador(db, utilizador.id, conta_ligada_id)
     if conta_ligada.conta_id is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Esta conta ainda não está associada a nenhuma Conta.",
+            detail="Esta conta ainda não está associada a nenhuma conta da aplicação.",
         )
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_ligada.conta_id)
 
-    total_novos = await sincronizar_movimentos(db, conta_ligada)
-    return {"movimentos_novos": total_novos}
+    total_novos = await sincronizar_movimentos(db, conta, conta_ligada)
+    return {"movimentos_importados": total_novos}
 
 
 @router.delete("/contas-ligadas/{conta_ligada_id}", status_code=status.HTTP_204_NO_CONTENT)

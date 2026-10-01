@@ -100,6 +100,45 @@ async def conta_esta_ligada(db: AsyncSession, conta_id: uuid.UUID) -> bool:
     return resultado.first() is not None
 
 
+async def listar_contas_ligadas(
+    db: AsyncSession, user_id: uuid.UUID, ligacao_id: uuid.UUID
+) -> list[ContaLigada]:
+    """
+    Lista as ContaLigada trazidas por uma LigacaoBancaria concreta, se
+    esta pertencer a "user_id" (404 caso contrário — mesma razão de
+    obter_conta_ligada_do_utilizador, abaixo). Usada pelo frontend
+    (frontend/src/paginas/ContaNova.tsx) mesmo depois de voltar do
+    "/callback": uma única ligação pode ter trazido mais do que uma conta
+    de uma vez (ver a nota em app/models/ligacao_bancaria.py), por isso a
+    interface precisa de as listar todas, não só assumir uma.
+    """
+    ligacao = await db.get(LigacaoBancaria, ligacao_id)
+    if ligacao is None or ligacao.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ligação não encontrada.")
+
+    resultado = await db.execute(
+        select(ContaLigada).where(ContaLigada.ligacao_id == ligacao_id)
+    )
+    return list(resultado.scalars().all())
+
+
+async def obter_ligacao_de_conta(db: AsyncSession, conta_id: uuid.UUID) -> ContaLigada | None:
+    """
+    A ContaLigada ACTIVA desta Conta, se existir — a mesma pergunta de
+    conta_esta_ligada (acima), mas devolvendo a linha inteira, não só um
+    booleano. Usada por app/routers/contas.py para mostrar, no detalhe de
+    uma conta, a que banco está ligada (para o botão "Sincronizar agora"/
+    "Desvincular" — ver frontend/src/paginas/ContaDetalhe.tsx). Devolve só
+    a ContaLigada, não a LigacaoBancaria (ex.: para o "aspsp_nome") — quem
+    chamar e precisar disso vai buscá-la à parte por "ligacao_id", tal
+    como já se faz em app/services/importacao_movimentos.py.
+    """
+    resultado = await db.execute(
+        select(ContaLigada).where(ContaLigada.conta_id == conta_id)
+    )
+    return resultado.scalar_one_or_none()
+
+
 async def obter_conta_ligada_do_utilizador(
     db: AsyncSession, user_id: uuid.UUID, conta_ligada_id: uuid.UUID
 ) -> ContaLigada:

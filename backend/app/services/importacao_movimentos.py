@@ -9,38 +9,49 @@ transacções — ver app/services/enable_banking.py) em `Conta` e
 app/models/movimento.py), sem alterar esses dois modelos além do campo
 `id_transacao_externa` já acrescentado a Movimento.
 
-DUAS FUNÇÕES, DOIS MOMENTOS: criar_conta_a_partir_de_ligacao trata da
-PRIMEIRA importação, quando uma conta NASCE já ligada ao Open Banking, sem
-histórico manual anterior — calcula a âncora a partir do saldo actual e
-das transacções trazidas nessa primeira vez. sincronizar_movimentos trata
-de QUALQUER importação seguinte, para uma conta já associada — nunca mexe
-na âncora, só acrescenta movimentos novos a partir de uma data de corte
-com margem de segurança (ver a constante _MARGEM_SEGURANCA_DIAS, e a nota
-sobre booking_date vs. value_date no caderno).
+DUAS FUNÇÕES PRINCIPAIS:
+- criar_conta_a_partir_de_ligacao: a PRIMEIRA importação, quando uma
+  conta NASCE já ligada ao Open Banking, sem histórico manual anterior —
+  calcula a âncora a partir do saldo actual e das transacções trazidas
+  nesse momento.
+- sincronizar_movimentos: importa os movimentos NOVOS de uma conta JÁ
+  ligada e já associada — chamada manualmente (botão "Sincronizar
+  agora", app/routers/open_banking.py) ou, se activada em Perfil,
+  periodicamente.
 
-POR AGORA NÃO IMPLEMENTADO: o cenário de associar uma `ContaLigada` a uma
-`Conta` já existente, com movimentos MANUAIS anteriores (ao contrário de
-já ter sido alimentada por uma importação anterior) — precisa de um passo
-de reconciliação de saldo próprio (ver o caderno), discutido mas ainda
-por desenhar tecnicamente.
+POR AGORA DELIBERADAMENTE NÃO IMPLEMENTADO (adiado para uma fatia
+própria — ver o caderno): associar uma `ContaLigada` a uma `Conta` já
+existente com movimentos MANUAIS anteriores (precisa de um passo de
+reconciliação de saldo próprio, o "Cenário 1"), e reconhecer
+automaticamente a MESMA conta real numa religação futura (via
+identification_hash, já guardado em ContaLigada, mas ainda não usado
+para nada) — isto é um problema DIFERENTE de sincronizar: só entra em
+jogo quando o consentimento de 90 dias expira e é preciso autenticar de
+novo junto do banco, criando uma ContaLigada nova, com um "uid" novo,
+para a mesma conta real.
 
-SALDO-ÂNCORA CALCULADO PARA BATER CERTO, NÃO ADIVINHADO: em vez de tentar
-obter o saldo exacto num dia qualquer do passado (que a Enable Banking não
-oferece directamente), parte-se do saldo ACTUAL confirmado (tipo "CLBD",
-"Accounting balance" — ver a nota sobre tipos de saldo no caderno) e
-subtrai-se a soma de todas as transacções trazidas nesta primeira
-importação. O resultado é a âncora na data da transacção mais antiga
-trazida — por construção, saldo_ancora + soma dos movimentos importados
-é sempre EXACTAMENTE igual ao saldo actual confirmado pelo banco, sem
-margem para erro de arredondamento ou suposição.
+SALDO-ÂNCORA CALCULADO PARA BATER CERTO, NÃO ADIVINHADO (só na primeira
+importação): em vez de tentar obter o saldo exacto num dia qualquer do
+passado (que a Enable Banking não oferece directamente), parte-se do
+saldo ACTUAL confirmado (tipo "CLBD", "Accounting balance" — ver a nota
+sobre tipos de saldo no caderno) e subtrai-se a soma de todas as
+transacções trazidas nesta primeira importação. O resultado é a âncora
+na data da transacção mais antiga trazida — por construção, saldo_ancora
++ soma dos movimentos importados é sempre EXACTAMENTE igual ao saldo
+actual confirmado pelo banco, sem margem para erro de arredondamento ou
+suposição. Uma sincronização (movimentos NOVOS, sobre uma âncora já
+fixada) nunca mexe em saldo_ancora — só acrescenta Movimento.
 
-LIMITAÇÃO CONHECIDA E DELIBERADA: só se lê a PRIMEIRA página de
-transacções que a Enable Banking devolver (sem seguir um eventual
-"continuation_key" para páginas seguintes) — evita, nesta primeira
-versão, lidar com paginação, à custa de poder não trazer TODO o histórico
-disponível se a conta tiver muitas transacções. O saldo continua exacto
-na mesma (a fórmula acima usa sempre as transacções realmente trazidas,
-nunca assume "trouxemos tudo").
+PAGINAÇÃO COMPLETA: a Enable Banking pode dividir a resposta de
+/transactions por várias páginas, através de um "continuation_key" — a
+primeira versão desta integração só lia a primeira página; agora,
+_obter_todas_transacoes segue esse "continuation_key" até a Enable
+Banking deixar de o devolver, juntando as páginas todas antes de
+qualquer filtro ou soma. Um limite de segurança (_LIMITE_PAGINAS) evita
+um ciclo sem fim se a API alguma vez devolver um "continuation_key" que
+nunca se esgota — situação nunca observada, mas esta integração já
+surpreendeu vezes suficientes (ver o caderno) para não confiar cegamente
+nisso.
 """
 
 import uuid
@@ -48,7 +59,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.categoria import Categoria
@@ -58,15 +69,54 @@ from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.movimento import Movimento
 from app.services.enable_banking import obter_movimentos, obter_saldos
 
-# Quantos dias para trás, além do último movimento já importado, uma
-# sincronização volta a pedir — ver a nota sobre booking_date vs.
-# value_date no caderno: uma transacção pode demorar alguns dias a
-# aparecer na lista do banco, com uma data anterior à de hoje. Sem esta
-# margem, uma sincronização que só pedisse "desde o dia seguinte ao
-# último movimento" arriscava nunca voltar a ver essa transacção. Repetir
-# um intervalo já sincronizado não duplica nada — a deduplicação por
-# id_transacao_externa, mais abaixo, garante isso.
+# Número máximo de páginas seguidas antes de desistir com um erro claro
+# (ver a nota PAGINAÇÃO COMPLETA, no topo do ficheiro) — generoso para
+# qualquer conta pessoal real (cada página traz normalmente dezenas a
+# centenas de transacções), mas finito, para nunca ficar preso num ciclo
+# sem fim por causa de um "continuation_key" que a Enable Banking
+# devolvesse sempre igual.
+_LIMITE_PAGINAS = 50
+
+# Margem de segurança, em dias, para trás da última data já importada,
+# ao sincronizar uma conta já ligada (ver sincronizar_movimentos, abaixo)
+# — booking_date pode aparecer alguns dias depois de a transacção ter
+# realmente acontecido (confirmado em testes reais, ver o caderno), por
+# isso cortar exactamente "no dia seguinte ao último movimento" arriscava
+# nunca voltar a ver uma transacção atrasada. A deduplicação por
+# id_transacao_externa garante que reimportar estes últimos dias nunca
+# duplica o que já lá estava.
 _MARGEM_SEGURANCA_DIAS = 5
+
+
+async def _obter_todas_transacoes(
+    uid: str, data_de: date | None = None, estrategia: str | None = None
+) -> list[dict]:
+    """
+    Junta TODAS as páginas de transacções que a Enable Banking devolver
+    para esta conta (ver a nota PAGINAÇÃO COMPLETA, no topo do ficheiro),
+    seguindo "continuation_key" enquanto a resposta o continuar a trazer.
+
+    "data_de" e "estrategia" (ver obter_movimentos, em
+    app/services/enable_banking.py) vão em TODOS os pedidos, com o
+    "continuation_key" nos seguintes — o mesmo pedido, página a página.
+    """
+    transacoes: list[dict] = []
+    continuation_key: str | None = None
+
+    for _ in range(_LIMITE_PAGINAS):
+        resposta = await obter_movimentos(uid, data_de, continuation_key, estrategia)
+        transacoes.extend(resposta["transactions"])
+        continuation_key = resposta.get("continuation_key")
+        if not continuation_key:
+            return transacoes
+
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail=(
+            f"O banco continua a devolver mais páginas de movimentos para lá de "
+            f"{_LIMITE_PAGINAS} pedidos seguidos — a importar foi interrompida por segurança."
+        ),
+    )
 
 
 def _valor_com_sinal(transacao: dict) -> Decimal:
@@ -147,20 +197,37 @@ async def _categoria_refugio(db: AsyncSession, user_id: uuid.UUID, direcao: str)
 
 
 async def criar_conta_a_partir_de_ligacao(
-    db: AsyncSession, user_id: uuid.UUID, conta_ligada: ContaLigada, nome: str
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    conta_ligada: ContaLigada,
+    nome: str,
+    data_de: date | None = None,
+    tipo: str | None = None,
 ) -> Conta:
     """
-    Cria uma Conta nova a partir de uma ContaLigada ainda por associar
-    (ver a nota CENÁRIO MAIS SIMPLES no topo do ficheiro), associa-a
-    (conta_ligada.conta_id), e importa de imediato a primeira página de
-    transacções disponível como Movimento — ver as notas SALDO-ÂNCORA e
-    LIMITAÇÃO CONHECIDA, no topo do ficheiro, para o desenho exacto desse
+    Cria uma Conta nova a partir de uma ContaLigada ainda por associar,
+    associa-a (conta_ligada.conta_id), e importa de imediato as
+    transacções disponíveis como Movimento — ver as notas SALDO-ÂNCORA e
+    PAGINAÇÃO COMPLETA, no topo do ficheiro, para o desenho exacto desse
     cálculo.
 
     "nome" é escolhido por quem chama esta função (o utilizador, através
     do endpoint em app/routers/open_banking.py) — banco e moeda vêm
     automaticamente da ligação e da conta externa, mas o nome da Conta é
     sempre uma escolha do utilizador, tal como ao criar uma conta manual.
+
+    "data_de", quando indicada, limita a importação a partir dessa data —
+    a escolha ("todo o histórico" vs. "desde uma data") é feita pelo
+    utilizador no passo "confirmar" de ContaNova.tsx, precisamente porque
+    trazer TODO o histórico disponível de uma vez significa também trazer
+    um backlog grande de movimentos por categorizar à mão (esta aplicação
+    ainda não tem categorização automática por modelo de linguagem) — não
+    é uma escolha só técnica, tem um custo real para quem a usa.
+
+    "tipo" (ex.: "Conta corrente") é escolhido pelo utilizador, tal como
+    no formulário manual — a Enable Banking não o dá de forma utilizável.
+    Um texto vazio ou só com espaços fica como "sem tipo" (None), a mesma
+    regra do formulário manual.
     """
     ligacao = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
 
@@ -179,10 +246,17 @@ async def criar_conta_a_partir_de_ligacao(
             detail="O banco não devolveu um saldo contabilístico (CLBD) para esta conta.",
         )
 
-    resposta = await obter_movimentos(conta_ligada.uid)
+    # "longest": a primeira importação acontece logo a seguir à autenticação
+    # no banco — o único período (cerca de uma hora, pelo PSD2) em que o
+    # histórico com mais de ~90 dias está disponível. Sem esta estratégia, a
+    # Enable Banking devolvia só o intervalo por omissão do banco, e "Todo o
+    # histórico" trazia na prática só os últimos meses (confirmado ao vivo).
+    # Ver a nota em obter_movimentos, em app/services/enable_banking.py.
+    #
     # Só transacções já confirmadas ("BOOK") entram no cálculo do saldo e
     # são gravadas — ver a nota em _esta_confirmada, acima.
-    transacoes = [t for t in resposta["transactions"] if _esta_confirmada(t)]
+    todas = await _obter_todas_transacoes(conta_ligada.uid, data_de, estrategia="longest")
+    transacoes = [t for t in todas if _esta_confirmada(t)]
 
     if transacoes:
         data_ancora = min(date.fromisoformat(t["booking_date"]) for t in transacoes)
@@ -198,6 +272,7 @@ async def criar_conta_a_partir_de_ligacao(
         user_id=user_id,
         nome=nome,
         banco=ligacao.aspsp_nome,
+        tipo=(tipo or "").strip() or None,
         moeda=conta_ligada.moeda,
         data_ancora=data_ancora,
         saldo_ancora=saldo_ancora,
@@ -232,95 +307,93 @@ async def criar_conta_a_partir_de_ligacao(
     return conta
 
 
-async def sincronizar_movimentos(db: AsyncSession, conta_ligada: ContaLigada) -> int:
+async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: ContaLigada) -> int:
     """
-    Importa as transacções NOVAS de uma ContaLigada JÁ associada a uma
-    Conta (ao contrário de criar_conta_a_partir_de_ligacao, que faz a
-    associação inicial) — o mecanismo para uma sincronização repetida,
-    manual ou futuramente periódica. Devolve quantos movimentos novos
-    foram criados.
+    Importa os movimentos NOVOS de uma conta JÁ ligada e já associada
+    (ao contrário de criar_conta_a_partir_de_ligacao, que trata da
+    PRIMEIRA importação) — chamada pelo botão "Sincronizar agora"
+    (POST /open-banking/contas-ligadas/{id}/sincronizar,
+    app/routers/open_banking.py) ou, quando activada em Perfil,
+    periodicamente. Devolve quantos movimentos novos foram gravados.
 
-    A PARTIR DE QUANDO PEDIR a Enable Banking: da data do último
-    movimento já existente nesta conta, menos _MARGEM_SEGURANCA_DIAS (ver
-    a constante, acima). Sem nenhum movimento ainda (não deveria
-    acontecer para uma conta associada por criar_conta_a_partir_de_ligacao,
-    mas pode acontecer no cenário — ainda por construir — de associar a
-    uma conta já existente sem histórico nenhum importado ainda), pede-se
-    tudo o que a Enable Banking disponibilizar, sem filtro de data.
+    NUNCA MEXE EM saldo_ancora: a âncora já foi fixada na primeira
+    importação (ver a nota SALDO-ÂNCORA, no topo do ficheiro) — uma
+    sincronização só acrescenta Movimento por cima dela; o "saldo actual"
+    de uma conta é sempre calculado dinamicamente (saldo_ancora + soma dos
+    movimentos, ver app/routers/contas.py:_para_saida), por isso não há
+    nada a recalcular aqui.
 
-    DEDUPLICAÇÃO: antes de gravar, lê-se o conjunto de
-    id_transacao_externa já presentes nesta conta, e ignora-se qualquer
-    transacção cujo identificador (ver _id_externo) já lá esteja — sem
-    isto, pedir com uma margem de segurança para trás (acima)
-    reintroduziria sempre as mesmas transacções da vez anterior.
+    DESDE QUANDO IMPORTAR (nunca uma escolha do utilizador, ao contrário
+    da primeira importação — ver a nota em criar_conta_a_partir_de_ligacao):
+    a data do movimento mais recente já gravado para esta conta, recuada
+    _MARGEM_SEGURANCA_DIAS dias (ver a nota no topo do ficheiro) — ou
+    conta.data_ancora, se a conta ainda não tiver nenhum movimento (nunca
+    deveria acontecer na prática, uma conta nascida por Open Banking já
+    traz sempre a sua importação inicial, mas serve de rede de segurança).
 
-    NUNCA ANTES DA ÂNCORA: mesmo sem nenhum movimento existente ainda (o
-    caso "pede-se tudo", acima), qualquer transacção com data anterior à
-    data_ancora da conta é ignorada. Cenário que isto evita: uma conta
-    criada sem nenhuma transacção disponível na primeira importação (ver
-    criar_conta_a_partir_de_ligacao) fica com data_ancora=hoje e
-    saldo_ancora=saldo actual — esse saldo JÁ CONTA tudo o que aconteceu
-    até então. Se uma transacção antiga aparecesse tarde no extracto do
-    banco (booking_date atrasado, ver a nota da constante acima) e fosse
-    gravada aqui, estaria a ser somada uma SEGUNDA vez por cima de um
-    saldo que já a incluía implicitamente.
+    DEDUPLICAÇÃO: antes de gravar, consulta-se os id_transacao_externa já
+    existentes NESTA conta, e ignora-se qualquer transacção trazida cujo
+    identificador já lá esteja — mais simples e mais barato (uma única
+    consulta) do que confiar só na restrição UNIQUE da base de dados
+    (ux_movimentos_conta_id_id_transacao_externa, em app/models/
+    movimento.py) e apanhar o erro de integridade depois, transacção a
+    transacção.
+
+    VALIDAÇÃO DA DATA-ÂNCORA (achado de uma revisão anterior desta fatia,
+    ver o caderno): qualquer transacção com booking_date anterior a
+    conta.data_ancora é ignorada — mesmo com a margem de segurança acima,
+    uma transacção assim tão antiga já devia estar reflectida no
+    saldo_ancora calculado na importação inicial; gravá-la agora somaria
+    o mesmo valor uma segunda vez, por cima de um saldo que já a contava
+    implicitamente.
     """
-    conta = await db.get(Conta, conta_ligada.conta_id)
-
     resultado = await db.execute(
-        select(func.max(Movimento.data)).where(Movimento.conta_id == conta_ligada.conta_id)
+        select(Movimento.data).where(Movimento.conta_id == conta.id).order_by(Movimento.data.desc()).limit(1)
     )
     ultima_data = resultado.scalar_one_or_none()
-    data_de = (ultima_data - timedelta(days=_MARGEM_SEGURANCA_DIAS)) if ultima_data else None
+    data_de = (ultima_data or conta.data_ancora) - timedelta(days=_MARGEM_SEGURANCA_DIAS)
 
-    resposta = await obter_movimentos(conta_ligada.uid, data_de)
-    # Só transacções confirmadas (ver _esta_confirmada) e não anteriores à
-    # âncora da conta (ver a nota NUNCA ANTES DA ÂNCORA, acima).
     transacoes = [
-        t
-        for t in resposta["transactions"]
-        if _esta_confirmada(t) and date.fromisoformat(t["booking_date"]) >= conta.data_ancora
+        # Estratégia por omissão, de propósito (não "longest"): aqui só
+        # interessam os dias mais recentes, desde a última importação — e
+        # fora da hora a seguir à autenticação, o banco nem teria histórico
+        # antigo para dar.
+        t for t in await _obter_todas_transacoes(conta_ligada.uid, data_de) if _esta_confirmada(t)
     ]
-    if not transacoes:
+    transacoes = [t for t in transacoes if date.fromisoformat(t["booking_date"]) >= conta.data_ancora]
+
+    ids_existentes = set(
+        (
+            await db.execute(
+                select(Movimento.id_transacao_externa).where(
+                    Movimento.conta_id == conta.id,
+                    Movimento.id_transacao_externa.is_not(None),
+                )
+            )
+        ).scalars()
+    )
+    transacoes_novas = [t for t in transacoes if _id_externo(t) not in ids_existentes]
+
+    if not transacoes_novas:
         return 0
 
-    resultado = await db.execute(
-        select(Movimento.id_transacao_externa).where(
-            Movimento.conta_id == conta_ligada.conta_id,
-            Movimento.id_transacao_externa.is_not(None),
-        )
-    )
-    ids_existentes = {linha[0] for linha in resultado.all()}
+    categoria_entrada = await _categoria_refugio(db, conta.user_id, "entrada")
+    categoria_saida = await _categoria_refugio(db, conta.user_id, "saida")
 
-    ligacao = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
-    categoria_entrada = await _categoria_refugio(db, ligacao.user_id, "entrada")
-    categoria_saida = await _categoria_refugio(db, ligacao.user_id, "saida")
-
-    novos = 0
-    for transacao in transacoes:
-        id_externo = _id_externo(transacao)
-        # Transacções sem NENHUM identificador (nem transaction_id, nem
-        # entry_reference) não podem ser reconhecidas como já importadas
-        # — ficam de fora deste "if" e são sempre gravadas de novo. Não
-        # observado em nenhum teste real até agora, mas seria a única
-        # forma de uma transacção acabar duplicada por esta função.
-        if id_externo is not None and id_externo in ids_existentes:
-            continue
-
+    for transacao in transacoes_novas:
         categoria = (
             categoria_entrada if transacao["credit_debit_indicator"] == "CRDT" else categoria_saida
         )
         db.add(
             Movimento(
-                conta_id=conta_ligada.conta_id,
+                conta_id=conta.id,
                 data=date.fromisoformat(transacao["booking_date"]),
                 descricao=_descricao(transacao),
                 valor=_valor_com_sinal(transacao),
                 categoria_id=categoria.id,
-                id_transacao_externa=id_externo,
+                id_transacao_externa=_id_externo(transacao),
             )
         )
-        novos += 1
 
     await db.commit()
-    return novos
+    return len(transacoes_novas)

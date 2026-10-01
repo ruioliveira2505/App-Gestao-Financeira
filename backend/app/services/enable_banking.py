@@ -55,6 +55,81 @@ from app.core.config import settings
 # deles — usa-se sempre este).
 _URL_BASE = "https://api.enablebanking.com"
 
+# Quanto tempo esperar por cada pedido à Enable Banking. Sem isto, o httpx
+# usa 5 segundos por omissão — e um banco real pode demorar mais do que
+# isso (confirmado ao vivo com o Santander Totta: o pedido de saldos
+# excedeu os 5 segundos na primeira tentativa e respondeu a tempo na
+# segunda). "connect" é o limite só para ESTABELECER a ligação (se nem
+# isso acontece em 10 segundos, o serviço está provavelmente em baixo);
+# o primeiro valor, 30 segundos, aplica-se a cada uma das restantes fases
+# — sobretudo esperar pela resposta, que é o que um banco lento atrasa,
+# e que pode ser maior ao pedir histórico longo (estratégia "longest",
+# ver obter_movimentos, abaixo).
+_TEMPO_LIMITE = httpx.Timeout(30.0, connect=10.0)
+
+
+async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
+    """
+    Faz UM pedido à API da Enable Banking — o único sítio deste ficheiro
+    que fala com a rede. Todas as funções públicas abaixo passam por aqui,
+    o que garante que todas têm o mesmo tempo limite, a mesma autenticação
+    e o mesmo tratamento de erros.
+
+    Assina um JWT novo (ver _gerar_jwt, acima) e envia-o no cabeçalho
+    "Authorization". "opcoes" são passadas tal e qual ao httpx (ex.:
+    "params" para a query string, "json" para o corpo do pedido).
+
+    TRATAMENTO DE ERROS — três casos, todos convertidos numa HTTPException
+    (a excepção do FastAPI que se transforma directamente numa resposta
+    HTTP com esse código e mensagem), para que quem usa a aplicação veja
+    sempre uma razão concreta, nunca um "500 Internal Server Error"
+    genérico:
+    - O banco demora demasiado (httpx.TimeoutException) → 504 "Gateway
+      Timeout", o código HTTP próprio para "um serviço de que dependo não
+      respondeu a tempo".
+    - Outra falha de rede (httpx.HTTPError — ligação recusada, DNS, etc.)
+      → 502 "Bad Gateway", o código para "um serviço de que dependo
+      falhou".
+    - A Enable Banking responde, mas com um erro (código >= 400) →
+      devolve-se esse mesmo código, com o corpo da resposta tal como veio
+      — é normalmente uma mensagem específica (ex.: "assinatura inválida",
+      "sessão expirada"), muito mais útil para diagnosticar do que uma
+      excepção genérica.
+
+    Repetir o pedido automaticamente, em caso de falha, foi deliberadamente
+    evitado: o PSD2 limita o número de acessos que uma aplicação faz a uma
+    conta sem o utilizador presente (4 por dia, no caso da CGD), e
+    repetições silenciosas gastariam essa quota. Quem decide repetir é o
+    utilizador, a partir do ecrã de erro.
+    """
+    token = _gerar_jwt()
+
+    try:
+        async with httpx.AsyncClient(timeout=_TEMPO_LIMITE) as cliente:
+            resposta = await cliente.request(
+                metodo,
+                f"{_URL_BASE}{caminho}",
+                headers={"Authorization": f"Bearer {token}"},
+                **opcoes,
+            )
+    # A ordem importa: TimeoutException é um caso particular de HTTPError,
+    # por isso tem de ser apanhada primeiro — senão nunca chegava aqui.
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="O banco demorou demasiado a responder. Tente outra vez.",
+        )
+    except httpx.HTTPError:
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível contactar o serviço de Open Banking. Tente outra vez.",
+        )
+
+    if resposta.status_code >= 400:
+        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+
+    return resposta
+
 
 def _gerar_jwt() -> str:
     """
@@ -105,23 +180,8 @@ async def listar_bancos(pais: str) -> list[dict]:
     depuração "/open-banking/bancos" (app/routers/open_banking.py) como,
     no futuro, por um selector de bancos no frontend.
     """
-    token = _gerar_jwt()
-
-    async with httpx.AsyncClient() as cliente:
-        resposta = await cliente.get(
-            f"{_URL_BASE}/aspsps",
-            params={"country": pais},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    # Em vez de deixar o httpx levantar uma excepção genérica num erro,
-    # devolve-se o corpo da resposta da Enable Banking tal como veio — é
-    # normalmente uma mensagem de erro específica (ex.: "assinatura
-    # inválida", "aplicação inactiva"), muito mais útil para diagnosticar
-    # um problema nesta fase de testes do que uma excepção genérica sem
-    # esse detalhe.
-    if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+    # Autenticação, tempo limite e erros são tratados em _pedido (acima).
+    resposta = await _pedido("GET", "/aspsps", params={"country": pais})
 
     # A resposta da Enable Banking vem embrulhada num objecto com uma
     # única chave, "aspsps" — não é a lista directamente. Desembrulha-se
@@ -152,8 +212,6 @@ async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: st
     literalmente pelo nome, que a Enable Banking identifica o banco
     aqui, sem um código à parte.
     """
-    token = _gerar_jwt()
-
     # "access.valid_until" é a data até quando o CONSENTIMENTO do
     # utilizador (não o JWT — coisas diferentes) fica válido. 90 dias é o
     # período habitualmente associado ao PSD2 para este tipo de
@@ -170,15 +228,8 @@ async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: st
         "psu_type": "personal",
     }
 
-    async with httpx.AsyncClient() as cliente:
-        resposta = await cliente.post(
-            f"{_URL_BASE}/auth",
-            json=corpo,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+    # Autenticação, tempo limite e erros são tratados em _pedido (acima).
+    resposta = await _pedido("POST", "/auth", json=corpo)
 
     return resposta.json()["url"]
 
@@ -198,17 +249,8 @@ async def trocar_codigo_por_sessao(code: str) -> dict:
     expirado, a única forma de continuar é repetir o fluxo desde
     "/ligar" (em app/routers/open_banking.py), para obter um "code" novo.
     """
-    token = _gerar_jwt()
-
-    async with httpx.AsyncClient() as cliente:
-        resposta = await cliente.post(
-            f"{_URL_BASE}/sessions",
-            json={"code": code},
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+    # Autenticação, tempo limite e erros são tratados em _pedido (acima).
+    resposta = await _pedido("POST", "/sessions", json={"code": code})
 
     return resposta.json()
 
@@ -227,31 +269,46 @@ async def obter_saldos(uid: str) -> dict:
     decisão (usar sempre "CLBD", ver a nota SALDO-ÂNCORA em
     app/services/importacao_movimentos.py) é feita por quem chama.
     """
-    token = _gerar_jwt()
-
-    async with httpx.AsyncClient() as cliente:
-        resposta = await cliente.get(
-            f"{_URL_BASE}/accounts/{uid}/balances",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+    # Autenticação, tempo limite e erros são tratados em _pedido (acima).
+    resposta = await _pedido("GET", f"/accounts/{uid}/balances")
 
     return resposta.json()
 
 
-async def obter_movimentos(uid: str, data_de: date | None = None) -> dict:
+async def obter_movimentos(
+    uid: str,
+    data_de: date | None = None,
+    continuation_key: str | None = None,
+    estrategia: str | None = None,
+) -> dict:
     """
-    Consulta as transacções de uma conta já ligada — GET
-    /accounts/{uid}/transactions.
+    Consulta UMA PÁGINA das transacções de uma conta já ligada — GET
+    /accounts/{uid}/transactions. Devolve sempre a resposta tal como a
+    Enable Banking a der: {"transactions": [...], "continuation_key":
+    <opcional>}. Esta função nunca segue esse "continuation_key" sozinha —
+    é uma chamada, uma página; quem quiser TODO o histórico pede-o
+    explicitamente, uma página de cada vez (ver _obter_todas_transacoes,
+    em app/services/importacao_movimentos.py, que é quem faz esse ciclo).
 
     "data_de", quando indicada, filtra transacções a partir dessa data
     (inclusive) — corresponde ao parâmetro "date_from" da Enable Banking.
-    Esta chamada ainda não pagina (a resposta pode incluir um
-    "continuation_key" para pedir a página seguinte) — uma limitação
-    conhecida e deliberada, documentada em app/services/
-    importacao_movimentos.py (nota LIMITAÇÃO CONHECIDA).
+
+    "continuation_key", quando indicada, pede a página SEGUINTE a uma
+    resposta anterior que tenha devolvido esse valor — corresponde ao
+    parâmetro do mesmo nome da Enable Banking.
+
+    "estrategia" corresponde ao parâmetro "strategy" da Enable Banking.
+    Sem ele (a estratégia por omissão), o banco devolve só o intervalo
+    pedido — ou, sem "date_from", o seu intervalo por omissão, normalmente
+    os últimos ~90 dias. Com "longest", a API procura a transacção mais
+    antiga disponível e traz tudo daí em diante ("date_from" passa a ser só
+    o limite inferior sugerido), e nunca devolve o erro
+    WRONG_TRANSACTIONS_PERIOD. PORQUÊ ISTO IMPORTA: pelo PSD2, o histórico
+    com mais de ~90 dias só está disponível durante um curto período depois
+    de o utilizador se autenticar no banco — "cerca de uma hora", segundo a
+    FAQ da Enable Banking (enablebanking.com/docs/faq) — e "longest" é a
+    estratégia que a própria Enable Banking recomenda para a PRIMEIRA
+    importação, feita dentro desse período.
 
     Devolve as transacções tal como a Enable Banking as der, sem
     filtrar nem decidir nada — quem chama é que decide o que fazer com
@@ -261,20 +318,15 @@ async def obter_movimentos(uid: str, data_de: date | None = None) -> dict:
     ("status": "BOOK") vivem em app/services/importacao_movimentos.py,
     não aqui.
     """
-    token = _gerar_jwt()
-
     parametros: dict[str, str] = {}
     if data_de is not None:
         parametros["date_from"] = data_de.isoformat()
+    if continuation_key is not None:
+        parametros["continuation_key"] = continuation_key
+    if estrategia is not None:
+        parametros["strategy"] = estrategia
 
-    async with httpx.AsyncClient() as cliente:
-        resposta = await cliente.get(
-            f"{_URL_BASE}/accounts/{uid}/transactions",
-            params=parametros,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-    if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+    # Autenticação, tempo limite e erros são tratados em _pedido (acima).
+    resposta = await _pedido("GET", f"/accounts/{uid}/transactions", params=parametros)
 
     return resposta.json()

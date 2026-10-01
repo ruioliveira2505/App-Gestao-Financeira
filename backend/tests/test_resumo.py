@@ -263,21 +263,29 @@ async def test_movimento_fora_do_mes_actual_nao_conta_para_entradas_saidas(
 async def test_entradas_converte_cada_movimento_a_taxa_do_seu_proprio_dia(
     cliente_autenticado, db_session
 ):
-    # Duas taxas diferentes dentro do próprio período: a de "_INICIO_MES"
+    # Duas taxas diferentes dentro do próprio período: a de "_MES_ANTERIOR"
     # (quando o movimento acontece) e a de "_HOJE" (que não deve ser
     # usada) — confirma que a conversão usa a taxa DO DIA DO MOVIMENTO,
     # nunca a mais recente, mesmo quando ambas estão dentro do intervalo
     # pedido a obter_taxas_do_periodo.
-    db_session.add(TaxaCambio(data=_INICIO_MES, moeda="USD", por_1_eur=Decimal("1.00")))
+    #
+    # PERÍODO EXPLÍCITO (de/ate), do último dia do mês anterior até hoje —
+    # nunca o mês actual por omissão: no dia 1 de cada mês, "_INICIO_MES"
+    # e "_HOJE" são o MESMO dia, e duas taxas USD no mesmo dia violam a
+    # restrição única da tabela (foi assim que este teste falhou, num dia
+    # 1). "_MES_ANTERIOR" e "_HOJE" são sempre dias diferentes.
+    db_session.add(TaxaCambio(data=_MES_ANTERIOR, moeda="USD", por_1_eur=Decimal("1.00")))
     db_session.add(TaxaCambio(data=_HOJE, moeda="USD", por_1_eur=Decimal("2.00")))
     await db_session.commit()
 
     conta_id = await _criar_conta(cliente_autenticado, moeda="USD")
-    await _criar_movimento(cliente_autenticado, db_session, conta_id, "110.00", _INICIO_MES)
+    await _criar_movimento(cliente_autenticado, db_session, conta_id, "110.00", _MES_ANTERIOR)
 
-    resposta = await cliente_autenticado.get("/resumo")
+    resposta = await cliente_autenticado.get(
+        "/resumo", params={"de": _MES_ANTERIOR.isoformat(), "ate": _HOJE.isoformat()}
+    )
 
-    # Com a taxa de _INICIO_MES (1 EUR = 1.00 USD): 110 USD -> 110 EUR.
+    # Com a taxa de _MES_ANTERIOR (1 EUR = 1.00 USD): 110 USD -> 110 EUR.
     # Se tivesse usado a taxa de hoje (1 EUR = 2.00 USD), daria 55.00.
     assert resposta.json()["entradas"] == "110.00"
 
@@ -942,7 +950,12 @@ async def test_obter_detalhe_grupo_movimento_directo_no_grupo_aparece_como_linha
 async def test_obter_detalhe_grupo_converte_a_taxa_do_dia_do_movimento(
     cliente_autenticado, db_session
 ):
-    db_session.add(TaxaCambio(data=_INICIO_MES, moeda="USD", por_1_eur=Decimal("1.00")))
+    # Período explícito, do último dia do mês anterior até hoje — ver a
+    # nota PERÍODO EXPLÍCITO em
+    # test_entradas_converte_cada_movimento_a_taxa_do_seu_proprio_dia (no
+    # dia 1 de cada mês, "_INICIO_MES" e "_HOJE" coincidiam, e as duas
+    # taxas USD violavam a restrição única da tabela).
+    db_session.add(TaxaCambio(data=_MES_ANTERIOR, moeda="USD", por_1_eur=Decimal("1.00")))
     db_session.add(TaxaCambio(data=_HOJE, moeda="USD", por_1_eur=Decimal("2.00")))
     await db_session.commit()
 
@@ -953,13 +966,16 @@ async def test_obter_detalhe_grupo_converte_a_taxa_do_dia_do_movimento(
         db_session,
         conta_id,
         "110.00",
-        _INICIO_MES,
+        _MES_ANTERIOR,
         categoria_id=subcategoria_id,
     )
 
-    resposta = await cliente_autenticado.get(f"/resumo/categorias/{grupo_id}")
+    resposta = await cliente_autenticado.get(
+        f"/resumo/categorias/{grupo_id}",
+        params={"de": _MES_ANTERIOR.isoformat(), "ate": _HOJE.isoformat()},
+    )
 
-    # Com a taxa de _INICIO_MES (1 EUR = 1.00 USD): 110 USD -> 110 EUR.
+    # Com a taxa de _MES_ANTERIOR (1 EUR = 1.00 USD): 110 USD -> 110 EUR.
     # Se tivesse usado a taxa de hoje (1 EUR = 2.00 USD), daria 55.00.
     assert resposta.json()["valor"] == "110.00"
 
