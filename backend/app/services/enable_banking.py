@@ -172,6 +172,60 @@ def _gerar_jwt() -> str:
     return jwt.encode(payload, chave_privada, algorithm="RS256", headers=cabecalho)
 
 
+# O prazo máximo de um consentimento de acesso a informação de contas:
+# 180 dias, pela regra europeia em vigor desde 25 de julho de 2023
+# (Regulamento Delegado (UE) 2022/2360, que alargou os 90 dias iniciais).
+_VALIDADE_MAXIMA = timedelta(days=180)
+
+# Quando o banco não diz o seu máximo: 90 dias, o prazo que todos aceitam.
+_VALIDADE_SEGURA = timedelta(days=90)
+
+# Folga tirada ao máximo do banco: a Enable Banking recusa um prazo que
+# passe "agora + máximo" — e o "agora" deles é uns instantes depois do
+# nosso, quando o pedido lá chega.
+_FOLGA = timedelta(minutes=5)
+
+
+def validade_do_consentimento(banco: dict) -> timedelta:
+    """
+    O prazo a pedir para o consentimento junto de um banco: o máximo que
+    ESSE banco aceita ("maximum_consent_validity", em segundos, na lista
+    de bancos da Enable Banking — varia: alguns aceitam 180 dias, outros
+    só 90), nunca acima dos 180 dias da regra europeia. Sem essa
+    informação, 90 dias (aceite por todos).
+
+    Pedir o máximo poupa ao utilizador metade das renovações (voltar ao
+    site do banco para autorizar outra vez), dentro do que a lei permite.
+    """
+    segundos = banco.get("maximum_consent_validity")
+    # Só se aceita um número (inteiro ou decimal, ex.: 15552000.0). Em
+    # Python, True e False também contam como inteiros (bool é um tipo
+    # derivado de int), por isso são excluídos à parte: um "true" vindo do
+    # banco não é um prazo.
+    if isinstance(segundos, bool) or not isinstance(segundos, (int, float)):
+        return _VALIDADE_SEGURA
+    validade = timedelta(seconds=segundos) - _FOLGA
+    # Um valor zero, negativo, ou mais curto do que a folga daria um prazo
+    # nulo ou já no passado: nesses casos, usa-se o prazo seguro.
+    if validade <= timedelta(0):
+        return _VALIDADE_SEGURA
+    return min(validade, _VALIDADE_MAXIMA)
+
+
+def dias_de_validade(banco: dict) -> int:
+    """
+    O mesmo prazo de validade_do_consentimento, em dias inteiros, para
+    mostrar ao utilizador (o ecrã de permissões, no frontend: "Duração:
+    180 dias"). Arredonda para cima: a folga de minutos não deve fazer
+    "180 dias" aparecer como "179".
+    """
+    validade = validade_do_consentimento(banco)
+    # Divisão inteira arredondada para CIMA. O operador "//" arredonda para
+    # BAIXO; negando o dividendo, dividindo e negando o resultado obtém-se o
+    # arredondamento para cima: -(-x // y) é o menor inteiro >= x / y.
+    return -(-validade // timedelta(days=1))
+
+
 async def listar_bancos(pais: str) -> list[dict]:
     """
     Devolve a lista de bancos (ASPSPs) suportados pela Enable Banking num
@@ -213,12 +267,13 @@ async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: st
     aqui, sem um código à parte.
     """
     # "access.valid_until" é a data até quando o CONSENTIMENTO do
-    # utilizador (não o JWT — coisas diferentes) fica válido. 90 dias é o
-    # período habitualmente associado ao PSD2 para este tipo de
-    # consentimento; alguns bancos permitem mais (ver
-    # "maximum_consent_validity" na resposta de listar_bancos, em
-    # segundos), mas 90 dias é um valor seguro, aceite por todos.
-    valido_ate = datetime.now(timezone.utc) + timedelta(days=90)
+    # utilizador (não o JWT — coisas diferentes) fica válido: o máximo que
+    # este banco aceita, até 180 dias (ver validade_do_consentimento,
+    # acima). O máximo de cada banco vem na lista de bancos — pede-se aqui
+    # outra vez, em vez de confiar num valor enviado pelo browser.
+    bancos = await listar_bancos(aspsp_pais)
+    banco = next((b for b in bancos if b.get("name") == aspsp_nome), {})
+    valido_ate = datetime.now(timezone.utc) + validade_do_consentimento(banco)
 
     corpo = {
         "access": {"valid_until": valido_ate.isoformat()},

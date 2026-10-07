@@ -27,8 +27,8 @@ CONVERSÃO ENTRE MOEDAS: ao contrário do saldo actual de uma única conta
 (uma conversão, à taxa de hoje), entradas/saídas (e a sua repartição por
 categoria) somam vários MOVIMENTOS ao longo do período, cada um
 convertido à taxa em vigor NO SEU PRÓPRIO DIA (a mesma regra de "taxa
-histórica" já decidida para a conversão de moeda em geral — ver o
-caderno). Trazem-se todas as taxas necessárias de uma só vez
+histórica" já decidida para a conversão de moeda em geral: um valor
+antigo converte-se com a taxa desse dia, não com a de hoje). Trazem-se todas as taxas necessárias de uma só vez
 (obter_taxas_do_periodo, em app/services/cambio.py) em vez de uma
 consulta por movimento, para não repetir, à escala do número de
 movimentos, o mesmo problema N+1 já corrigido antes nesta aplicação.

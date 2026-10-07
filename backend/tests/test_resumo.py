@@ -43,6 +43,7 @@ período + categoria) — os testes acima exercitam cada filtro isolado;
 confirma que continuam todos a agir em conjunto, não só um de cada vez.
 """
 
+import uuid
 from datetime import date
 from decimal import Decimal
 
@@ -121,10 +122,14 @@ async def _subcategoria_de(db_session, grupo_id: str, indice: int) -> tuple[str,
 
 
 async def _criar_conta(cliente, moeda: str = "EUR", **overrides) -> str:
+    # Nome único por omissão: os nomes de conta não se podem repetir no
+    # mesmo utilizador (ver garantir_nome_livre, em app/services/contas.py),
+    # e vários testes criam mais do que uma conta sem se interessarem pelo
+    # nome.
     resposta = await cliente.post(
         "/contas",
         json={
-            "nome": "Conta",
+            "nome": f"Conta {uuid.uuid4().hex[:6]}",
             "moeda": moeda,
             "data_ancora": "2020-01-01",
             "saldo_ancora": "0.00",

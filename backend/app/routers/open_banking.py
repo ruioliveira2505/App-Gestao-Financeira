@@ -29,12 +29,17 @@ O FLUXO COMPLETO, pela ordem em que acontece:
 5. "/contas-ligadas/{id}" (DELETE) — "desvincula": remove só a ligação,
    sem apagar nada da Conta nem dos Movimento já importados.
 
-DELIBERADAMENTE FORA DESTA FATIA (ver o caderno): associar uma
-ContaLigada a uma Conta MANUAL já existente ("Cenário 1", precisa de um
-passo de reconciliação de saldo próprio), e reconhecer automaticamente a
-mesma conta real numa religação futura (via identification_hash — só
-relevante quando o consentimento de 90 dias expirar, um problema
-diferente de sincronizar uma ligação ainda válida).
+CONTAS JÁ CONHECIDAS: ao gravar uma ligação ("/callback"), cada conta
+bancária é reconhecida pela sua identificação estável — se já alimenta
+uma Conta ligada, a ligação renova-se sozinha; se alimentou uma Conta
+entretanto desvinculada, aparece como nova, com a indicação «Já foi a
+«X»» (ver RECONHECER CONTAS JÁ CONHECIDAS, em
+app/services/ligacoes_bancarias.py).
+
+AINDA NÃO IMPLEMENTADO: religar uma conta bancária a uma Conta existente
+(desvinculada, ou manual). Precisa de uma reconciliação de saldo para o
+período sem movimentos (o saldo calculado pela aplicação e o do banco
+podem não bater certo), que ainda não existe na aplicação.
 
 IDENTIFICAÇÃO DO UTILIZADOR NO CALLBACK — O PROBLEMA E A SOLUÇÃO: o
 "/callback" chega SEM o cookie de sessão desta aplicação (mesmo com
@@ -79,6 +84,7 @@ from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.movimento import Movimento
 from app.models.user import User
 from app.services.enable_banking import (
+    dias_de_validade,
     iniciar_autorizacao,
     listar_bancos,
     obter_movimentos,
@@ -87,12 +93,16 @@ from app.services.enable_banking import (
 )
 from app.services.contas import obter_conta_do_utilizador
 from app.services.importacao_movimentos import criar_conta_a_partir_de_ligacao, sincronizar_movimentos
+from app.models.conta import Conta
 from app.services.ligacoes_bancarias import (
+    conta_antiga_de,
     desvincular_conta,
     gravar_ligacao,
     listar_contas_ligadas,
     obter_conta_ligada_do_utilizador,
     obter_conta_ligada_por_uid_do_utilizador,
+    nome_sugerido,
+    tipo_sugerido,
 )
 
 router = APIRouter(prefix="/open-banking", tags=["open-banking"])
@@ -110,8 +120,15 @@ async def bancos(
     autenticação, tal como todas as rotas deste ficheiro, apenas por
     coerência com o resto da aplicação (nenhuma rota devia ficar acessível
     sem sessão iniciada), não porque haja aqui dados sensíveis de alguém.
+
+    A cada banco junta-se "validade_dias": quanto tempo vai durar o
+    consentimento pedido a esse banco (o máximo que ele aceita, até 180
+    dias — ver dias_de_validade, em app/services/enable_banking.py). O
+    frontend mostra-o no ecrã de permissões, antes de o utilizador sair
+    para o banco.
     """
-    return await listar_bancos(pais)
+    bancos = await listar_bancos(pais)
+    return [{**banco, "validade_dias": dias_de_validade(banco)} for banco in bancos]
 
 
 @router.post("/ligar")
@@ -308,28 +325,58 @@ async def contas_ligadas(
     contas = await listar_contas_ligadas(db, utilizador.id, ligacao_id)
     # O nome do banco vem da LigacaoBancaria (todas as contas de uma
     # ligação são do mesmo banco) — o frontend mostra-o no formulário de
-    # configurar cada conta (campo "Banco", bloqueado) e usa-o como nome
-    # sugerido, tal como o formulário manual mostra o banco escolhido.
-    # listar_contas_ligadas já confirmou que a ligação existe e é deste
-    # utilizador (404 caso contrário), por isso aqui nunca vem None.
+    # configurar cada conta (campo "Banco", bloqueado), tal como o
+    # formulário manual mostra o banco escolhido. listar_contas_ligadas já
+    # confirmou que a ligação existe e é deste utilizador (404 caso
+    # contrário), por isso aqui nunca vem None.
     ligacao = await db.get(LigacaoBancaria, ligacao_id)
-    return [
-        {
-            "id": str(conta.id),
-            "banco": ligacao.aspsp_nome,
-            "iban": conta.iban,
-            "moeda": conta.moeda,
-            "nome_titular": conta.nome_titular,
-            "conta_id": str(conta.conta_id) if conta.conta_id else None,
-        }
-        for conta in contas
-    ]
+
+    # As contas do utilizador: os nomes (para a sugestão nunca repetir um
+    # — ver nome_sugerido) e, pelo id, o nome de uma conta já associada.
+    resultado = await db.execute(select(Conta).where(Conta.user_id == utilizador.id))
+    contas_utilizador = list(resultado.scalars().all())
+    nomes = [c.nome for c in contas_utilizador]
+    nome_por_id = {c.id: c.nome for c in contas_utilizador}
+
+    saida = []
+    for conta in contas:
+        antiga = await conta_antiga_de(db, utilizador.id, conta)
+        saida.append(
+            {
+                "id": str(conta.id),
+                "banco": ligacao.aspsp_nome,
+                "iban": conta.iban,
+                "moeda": conta.moeda,
+                "nome_titular": conta.nome_titular,
+                # Já associada: ou foi associada antes, ou a ligação
+                # renovou-se sozinha (ver RECONHECER CONTAS JÁ CONHECIDAS,
+                # em app/services/ligacoes_bancarias.py). "conta_nome" é o
+                # nome dessa Conta, para o frontend a mostrar («Ordenado»).
+                "conta_id": str(conta.conta_id) if conta.conta_id else None,
+                "conta_nome": nome_por_id.get(conta.conta_id) if conta.conta_id else None,
+                # Até quando vale esta ligação — «Ligação renovada até…».
+                "valido_ate": ligacao.valido_ate.isoformat(),
+                # Sugestões para uma conta nova (ver nome_sugerido e
+                # tipo_sugerido, em app/services/ligacoes_bancarias.py).
+                "tipo_sugerido": tipo_sugerido(conta.tipo_conta_banco),
+                "nome_sugerido": nome_sugerido(conta, ligacao.aspsp_nome, nomes),
+                # A Conta desvinculada que esta conta bancária já alimentou
+                # («Já foi a «X»»), ou None.
+                "conta_antiga": {"id": str(antiga.id), "nome": antiga.nome} if antiga else None,
+            }
+        )
+    return saida
 
 
 @router.post("/contas-ligadas/{conta_ligada_id}/associar-nova-conta")
 async def associar_nova_conta(
     conta_ligada_id: uuid.UUID,
-    nome: str,
+    # O mesmo limite da coluna Conta.nome (String(120), app/models/conta.py)
+    # e do formulário manual (ContaCriar, app/schemas/contas.py). Validar
+    # aqui, à entrada, é importante: sem isto, um nome demasiado longo só
+    # falhava ao gravar, DEPOIS de já se terem feito os pedidos ao banco
+    # (saldos e movimentos), que o PSD2 limita a poucos por dia.
+    nome: str = Query(min_length=1, max_length=120),
     data_de: date | None = None,
     # O mesmo limite da coluna Conta.tipo (String(40), app/models/conta.py)
     # — validado aqui (422 por omissão do FastAPI) em vez de deixar a base
@@ -349,16 +396,29 @@ async def associar_nova_conta(
     frontend (ContaNova.tsx, passo "confirmar"), por cada conta
     descoberta.
 
-    "tipo" (ex.: "Conta corrente", "Poupança") é o mesmo campo livre que o
-    formulário manual já pede — a Enable Banking não diz, de forma que esta
-    app use, que tipo de conta é, por isso é sempre o utilizador a dizê-lo.
-    Antes desta mudança, uma conta ligada ficava SEMPRE sem tipo.
+    "tipo" (ex.: "Conta à ordem", "Poupança") é o mesmo campo livre do
+    formulário manual. O frontend já o propõe a partir do código que o
+    banco envia (o tipo de conta na norma ISO 20022, a norma internacional
+    das mensagens bancárias: CACC, SVGS, CARD, LOAN), mas a escolha final
+    é do utilizador.
 
-    Cobre só o cenário de uma conta SEM histórico manual anterior —
-    associar a uma Conta JÁ EXISTENTE, com movimentos manuais, fica para
-    uma iteração futura (ver a nota no topo de
-    app/services/importacao_movimentos.py).
+    "nome" chega sem espaços nas pontas e não pode ficar vazio (422), nem
+    repetir o de outra conta do utilizador (409, comparado sem acentos nem
+    maiúsculas).
+
+    Cobre só o cenário de uma conta NOVA na aplicação. Associar uma conta
+    bancária a uma Conta que JÁ EXISTE (com movimentos manuais) precisa
+    de uma reconciliação de saldo para o período sem movimentos, que a
+    aplicação ainda não tem.
     """
+    # Os espaços nas pontas não contam (como no formulário manual): um nome
+    # só com espaços é um nome vazio.
+    nome = nome.strip()
+    if not nome:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="O nome não pode ser vazio.",
+        )
     conta_ligada = await obter_conta_ligada_do_utilizador(db, utilizador.id, conta_ligada_id)
     if conta_ligada.conta_id is not None:
         raise HTTPException(
@@ -392,7 +452,9 @@ async def sincronizar(
     """
     Importa os movimentos NOVOS de uma conta JÁ ligada e já associada
     (ver sincronizar_movimentos, em app/services/importacao_movimentos.py)
-    — o botão "Sincronizar agora" em frontend/src/paginas/ContaDetalhe.tsx.
+    — o botão "Sincronizar agora" em frontend/src/paginas/ContaDetalhe.tsx
+    (uma conta), e no menu de frontend/src/paginas/Contas.tsx (todas as
+    contas com a ligação válida, uma a uma).
 
     409 se a ContaLigada ainda não estiver associada a nenhuma Conta desta
     aplicação — não há para onde sincronizar (esse passo é

@@ -15,26 +15,30 @@ DUAS FUNÇÕES PRINCIPAIS:
   calcula a âncora a partir do saldo actual e das transacções trazidas
   nesse momento.
 - sincronizar_movimentos: importa os movimentos NOVOS de uma conta JÁ
-  ligada e já associada — chamada manualmente (botão "Sincronizar
-  agora", app/routers/open_banking.py) ou, se activada em Perfil,
-  periodicamente.
+  ligada e já associada — chamada manualmente, pelo botão "Sincronizar
+  agora" (na página de uma conta, ou no menu da lista de contas, para
+  todas de uma vez). Não há sincronização periódica automática.
 
-POR AGORA DELIBERADAMENTE NÃO IMPLEMENTADO (adiado para uma fatia
-própria — ver o caderno): associar uma `ContaLigada` a uma `Conta` já
-existente com movimentos MANUAIS anteriores (precisa de um passo de
-reconciliação de saldo próprio, o "Cenário 1"), e reconhecer
-automaticamente a MESMA conta real numa religação futura (via
-identification_hash, já guardado em ContaLigada, mas ainda não usado
-para nada) — isto é um problema DIFERENTE de sincronizar: só entra em
-jogo quando o consentimento de 90 dias expira e é preciso autenticar de
-novo junto do banco, criando uma ContaLigada nova, com um "uid" novo,
-para a mesma conta real.
+AINDA NÃO IMPLEMENTADO: religar uma conta bancária a uma Conta que já
+existe, seja desvinculada ou manual (com movimentos registados à mão).
+Precisa de uma reconciliação de saldo para o período sem movimentos (o
+saldo calculado pela aplicação e o do banco podem não bater certo), que
+a aplicação ainda não tem.
+
+O reconhecimento da mesma conta real numa ligação nova já existe: a
+identificação estável da conta bancária fica guardada na própria Conta
+(Conta.identificacao_bancaria). Uma Conta ainda ligada renova-se
+sozinha; uma desvinculada é só indicada ao utilizador («Já foi a «X»»).
+Ao criar uma Conta nova a partir de uma conta bancária, recusa-se (409)
+se essa conta bancária ainda alimenta outra Conta, e a identificação
+passa para a nova se a anterior estava desvinculada.
 
 SALDO-ÂNCORA CALCULADO PARA BATER CERTO, NÃO ADIVINHADO (só na primeira
 importação): em vez de tentar obter o saldo exacto num dia qualquer do
 passado (que a Enable Banking não oferece directamente), parte-se do
-saldo ACTUAL confirmado (tipo "CLBD", "Accounting balance" — ver a nota
-sobre tipos de saldo no caderno) e subtrai-se a soma de todas as
+saldo ACTUAL confirmado (tipo "CLBD", "Accounting balance": o saldo
+contabilístico, só com movimentos já lançados, sem os pendentes) e
+subtrai-se a soma de todas as
 transacções trazidas nesta primeira importação. O resultado é a âncora
 na data da transacção mais antiga trazida — por construção, saldo_ancora
 + soma dos movimentos importados é sempre EXACTAMENTE igual ao saldo
@@ -50,8 +54,7 @@ Banking deixar de o devolver, juntando as páginas todas antes de
 qualquer filtro ou soma. Um limite de segurança (_LIMITE_PAGINAS) evita
 um ciclo sem fim se a API alguma vez devolver um "continuation_key" que
 nunca se esgota — situação nunca observada, mas esta integração já
-surpreendeu vezes suficientes (ver o caderno) para não confiar cegamente
-nisso.
+surpreendeu vezes suficientes para não confiar cegamente nisso.
 """
 
 import uuid
@@ -59,7 +62,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.categoria import Categoria
@@ -67,7 +70,13 @@ from app.models.conta import Conta
 from app.models.conta_ligada import ContaLigada
 from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.movimento import Movimento
+from app.services.contas import garantir_nome_livre
 from app.services.enable_banking import obter_movimentos, obter_saldos
+from app.services.ligacoes_bancarias import (
+    conta_com_identificacao,
+    identificacao_bancaria,
+    obter_ligacao_de_conta,
+)
 
 # Número máximo de páginas seguidas antes de desistir com um erro claro
 # (ver a nota PAGINAÇÃO COMPLETA, no topo do ficheiro) — generoso para
@@ -80,7 +89,7 @@ _LIMITE_PAGINAS = 50
 # Margem de segurança, em dias, para trás da última data já importada,
 # ao sincronizar uma conta já ligada (ver sincronizar_movimentos, abaixo)
 # — booking_date pode aparecer alguns dias depois de a transacção ter
-# realmente acontecido (confirmado em testes reais, ver o caderno), por
+# realmente acontecido (confirmado em testes reais com um banco), por
 # isso cortar exactamente "no dia seguinte ao último movimento" arriscava
 # nunca voltar a ver uma transacção atrasada. A deduplicação por
 # id_transacao_externa garante que reimportar estes últimos dias nunca
@@ -224,11 +233,42 @@ async def criar_conta_a_partir_de_ligacao(
     ainda não tem categorização automática por modelo de linguagem) — não
     é uma escolha só técnica, tem um custo real para quem a usa.
 
-    "tipo" (ex.: "Conta corrente") é escolhido pelo utilizador, tal como
-    no formulário manual — a Enable Banking não o dá de forma utilizável.
-    Um texto vazio ou só com espaços fica como "sem tipo" (None), a mesma
+    "tipo" (ex.: "Conta à ordem") é escolhido pelo utilizador, tal como
+    no formulário manual — o frontend já o propõe a partir do código de
+    tipo de conta que o banco envia (ver tipo_sugerido, em
+    app/services/ligacoes_bancarias.py), mas a escolha final é dele. Um
+    texto vazio ou só com espaços fica como "sem tipo" (None), a mesma
     regra do formulário manual.
+
+    O nome não pode repetir o de outra conta do utilizador (409 — ver
+    garantir_nome_livre, em app/services/contas.py). Verifica-se ANTES de
+    qualquer pedido ao banco: um nome repetido não deve gastar acessos à
+    conta (o PSD2 limita-os) nem esperar pela importação para falhar.
     """
+    await garantir_nome_livre(db, user_id, nome)
+
+    # A identificação estável da conta bancária (ver identificacao_bancaria,
+    # em app/services/ligacoes_bancarias.py) fica guardada na Conta nova: é
+    # por ela que a próxima ligação ao mesmo banco reconhece esta conta
+    # (renova a ligação, ou diz «Já foi a «X»»).
+    identificacao = identificacao_bancaria(
+        conta_ligada.identification_hash, conta_ligada.iban, conta_ligada.moeda
+    )
+
+    # Uma conta bancária alimenta no máximo UMA Conta. Se a identificação
+    # pertence a uma Conta ainda LIGADA (por outra ligação), criar uma
+    # Conta nova a partir desta poria a mesma conta bancária a alimentar
+    # duas Contas, com os movimentos duplicados. Acontece, por exemplo, ao
+    # voltar (pelo histórico do browser) a uma ligação antiga, abandonada
+    # antes de a mesma conta ter sido associada noutra ligação. Recusa-se
+    # ANTES de qualquer pedido ao banco, que o PSD2 limita.
+    dona = await conta_com_identificacao(db, user_id, identificacao)
+    if dona is not None and await obter_ligacao_de_conta(db, dona.id) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Esta conta bancária já está vinculada à conta «{dona.nome}».",
+        )
+
     ligacao = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
 
     saldos = await obter_saldos(conta_ligada.uid)
@@ -268,6 +308,19 @@ async def criar_conta_a_partir_de_ligacao(
         data_ancora = date.today()
         saldo_ancora = saldo_actual
 
+    # Se esta conta bancária já alimentou uma Conta antiga, entretanto
+    # desvinculada, e o utilizador escolheu criar uma conta nova em vez de
+    # religar (religar ainda não existe — precisa de reconciliações), a
+    # identificação passa para a conta nova: duas Conta com a mesma
+    # identificação tornariam o reconhecimento ambíguo. A conta antiga
+    # fica como conta manual, com todo o seu histórico.
+    if identificacao is not None:
+        await db.execute(
+            update(Conta)
+            .where(Conta.user_id == user_id, Conta.identificacao_bancaria == identificacao)
+            .values(identificacao_bancaria=None)
+        )
+
     conta = Conta(
         user_id=user_id,
         nome=nome,
@@ -276,6 +329,7 @@ async def criar_conta_a_partir_de_ligacao(
         moeda=conta_ligada.moeda,
         data_ancora=data_ancora,
         saldo_ancora=saldo_ancora,
+        identificacao_bancaria=identificacao,
     )
     db.add(conta)
     await db.flush()
@@ -339,8 +393,8 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: C
     movimento.py) e apanhar o erro de integridade depois, transacção a
     transacção.
 
-    VALIDAÇÃO DA DATA-ÂNCORA (achado de uma revisão anterior desta fatia,
-    ver o caderno): qualquer transacção com booking_date anterior a
+    VALIDAÇÃO DA DATA-ÂNCORA (achado de uma revisão anterior a este
+    código): qualquer transacção com booking_date anterior a
     conta.data_ancora é ignorada — mesmo com a margem de segurança acima,
     uma transacção assim tão antiga já devia estar reflectida no
     saldo_ancora calculado na importação inicial; gravá-la agora somaria

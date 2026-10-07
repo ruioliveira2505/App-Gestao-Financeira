@@ -51,7 +51,7 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
     return str(categoria.id)
 
 
-async def _ligar_conta(db_session, conta_id: str) -> None:
+async def _ligar_conta(db_session, conta_id: str, valido_ate: datetime | None = None) -> None:
     """
     Cria uma LigacaoBancaria e uma ContaLigada mínimas, já associadas a
     "conta_id" — simula uma conta ligada ao Open Banking sem chamar a
@@ -59,6 +59,9 @@ async def _ligar_conta(db_session, conta_id: str) -> None:
     API real — ver o caderno). Serve para testar as REGRAS de negócio que
     dependem de "esta conta está ligada" (conta_esta_ligada, em
     app/services/ligacoes_bancarias.py), não a integração em si.
+
+    "valido_ate" é a validade do consentimento; sem ela, usa-se o momento
+    actual (o valor exacto não importa aos testes que não a verificam).
     """
     utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
     ligacao = LigacaoBancaria(
@@ -66,7 +69,7 @@ async def _ligar_conta(db_session, conta_id: str) -> None:
         session_id=str(uuid.uuid4()),
         aspsp_nome="Banco Teste",
         aspsp_pais="PT",
-        valido_ate=datetime.now(timezone.utc),
+        valido_ate=valido_ate or datetime.now(timezone.utc),
     )
     db_session.add(ligacao)
     await db_session.flush()
@@ -248,6 +251,69 @@ async def test_obter_conta_de_outro_utilizador_devolve_404(client):
 
 
 # ─── PATCH /contas/{id} ──────────────────────────────────────────────────
+
+
+# --- Nome único por utilizador (ver garantir_nome_livre, em app/services/contas.py) ---
+
+
+@pytest.mark.asyncio
+async def test_criar_conta_com_nome_repetido_devolve_409(cliente_autenticado):
+    await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Carteira"})
+
+    resposta = await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Carteira"})
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "Já tens uma conta chamada «Carteira»."
+
+
+@pytest.mark.asyncio
+async def test_nome_repetido_ignora_maiusculas_acentos_e_espacos(cliente_autenticado):
+    await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Poupança"})
+
+    for variante in ["poupanca", "POUPANÇA", "  Poupança  "]:
+        resposta = await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": variante})
+        assert resposta.status_code == 409, variante
+
+
+@pytest.mark.asyncio
+async def test_outro_utilizador_pode_usar_o_mesmo_nome(client):
+    for email in ["a@example.com", "b@example.com"]:
+        credenciais = {"email": email, "password": "palavrapasse123"}
+        await client.post("/auth/registo", json=credenciais)
+        await client.post("/auth/login", json=credenciais)
+        resposta = await client.post("/contas", json={**CONTA_VALIDA, "nome": "Carteira"})
+        assert resposta.status_code == 201
+        await client.post("/auth/logout")
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_para_o_nome_de_outra_devolve_409(cliente_autenticado):
+    await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Carteira"})
+    outra_id = (
+        await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Poupança"})
+    ).json()["id"]
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{outra_id}",
+        json={"nome": "carteira", "banco": "BPI", "tipo": "Conta corrente", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_editar_conta_mantendo_o_proprio_nome_e_aceite(cliente_autenticado):
+    conta_id = (
+        await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Carteira"})
+    ).json()["id"]
+
+    resposta = await cliente_autenticado.patch(
+        f"/contas/{conta_id}",
+        json={"nome": "Carteira", "banco": "BPI", "tipo": "Poupança", "moeda": "EUR"},
+    )
+
+    assert resposta.status_code == 200
+    assert resposta.json()["tipo"] == "Poupança"
 
 
 @pytest.mark.asyncio
@@ -603,7 +669,8 @@ async def test_editar_conta_ligada_permite_mudar_nome_e_tipo(cliente_autenticado
 @pytest.mark.asyncio
 async def test_obter_conta_ligada_devolve_a_ligacao(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    validade = datetime(2026, 12, 30, 10, 0, tzinfo=timezone.utc)
+    await _ligar_conta(db_session, conta_id, valido_ate=validade)
 
     resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
 
@@ -612,6 +679,9 @@ async def test_obter_conta_ligada_devolve_a_ligacao(cliente_autenticado, db_sess
     assert ligacao is not None
     assert ligacao["aspsp_nome"] == "Banco Teste"
     assert uuid.UUID(ligacao["conta_ligada_id"])
+    # A validade do consentimento segue tal e qual — é dela que o frontend
+    # tira o estado da ligação (ativa, a expirar, expirada).
+    assert datetime.fromisoformat(ligacao["valido_ate"]) == validade
 
 
 @pytest.mark.asyncio

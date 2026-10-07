@@ -101,6 +101,14 @@ class LigacaoOpenBankingOut(BaseModel):
 
     conta_ligada_id: uuid.UUID
     aspsp_nome: str
+    # Até quando vale o consentimento dado pelo utilizador ao banco
+    # (LigacaoBancaria.valido_ate — ver app/models/ligacao_bancaria.py):
+    # o máximo que o banco aceita, até 180 dias depois da autenticação pela
+    # regra europeia (90 se o banco não o indicar). Passada esta data, o
+    # banco deixa de responder e a conta deixa de receber movimentos novos
+    # até o utilizador voltar a autorizar o banco. O frontend usa-a para mostrar, na lista de contas,
+    # se a ligação está ativa, prestes a expirar ou já expirada.
+    valido_ate: datetime
 
 
 class ContaOut(BaseModel):

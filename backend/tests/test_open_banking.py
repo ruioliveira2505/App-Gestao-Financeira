@@ -8,6 +8,11 @@ real da Enable Banking — sem mocks, não dá para testar automaticamente
 sem um esforço à parte (ver caderno/decisoes.md), por isso continuam só
 testados manualmente, ao vivo.
 
+Também cobre, sem rede, o RECONHECIMENTO de contas já conhecidas ao
+gravar uma ligação (gravar_ligacao recebe a sessão já pronta, por isso
+os testes passam-lhe uma sessão fictícia), as sugestões de nome e tipo
+de uma conta nova, e o prazo do consentimento pedido a cada banco.
+
 Este ficheiro cobre: DELETE /open-banking/contas-ligadas/{id}
 ("desvincular" — ver desvincular_conta, em app/services/
 ligacoes_bancarias.py), GET /open-banking/ligacoes/{id}/contas-ligadas
@@ -21,14 +26,26 @@ de fora, tal como o resto.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
+from app.models.conta import Conta
 from app.models.conta_ligada import ContaLigada
 from app.models.ligacao_bancaria import LigacaoBancaria
 from app.models.user import User
+from app.services import importacao_movimentos
+from app.services.enable_banking import dias_de_validade, validade_do_consentimento
+from app.services.ligacoes_bancarias import (
+    abreviar_banco,
+    conta_antiga_de,
+    gravar_ligacao,
+    identificacao_bancaria,
+    nome_sugerido,
+    tipo_sugerido,
+)
 
 CONTA_VALIDA = {
     "nome": "Conta à ordem",
@@ -209,6 +226,29 @@ async def test_associar_nova_conta_com_tipo_demasiado_longo_devolve_422(
 
 
 @pytest.mark.asyncio
+async def test_associar_nova_conta_com_nome_repetido_devolve_409(cliente_autenticado, db_session):
+    """
+    O nome não pode repetir o de outra conta do utilizador (ver
+    garantir_nome_livre, em app/services/contas.py). A verificação é feita
+    ANTES de qualquer pedido ao banco — por isso este teste não precisa de
+    mocks da Enable Banking: se a chamasse, falharia por falta de chave.
+    """
+    await cliente_autenticado.post(
+        "/contas",
+        json={"nome": "Revolut", "moeda": "EUR", "data_ancora": "2026-01-01", "saldo_ancora": "0"},
+    )
+    conta_ligada_id = await _criar_conta_ligada(db_session, "teste@example.com", conta_id=None)
+
+    resposta = await cliente_autenticado.post(
+        f"/open-banking/contas-ligadas/{conta_ligada_id}/associar-nova-conta",
+        params={"nome": "revolut"},
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "Já tens uma conta chamada «Revolut»."
+
+
+@pytest.mark.asyncio
 async def test_listar_contas_ligadas_de_ligacao_de_outro_utilizador_devolve_404(client, db_session):
     a = {"email": "a@example.com", "password": "palavrapasse123"}
     await client.post("/auth/registo", json=a)
@@ -315,3 +355,363 @@ async def test_callback_com_state_desconhecido_reencaminha_com_erro(client):
     localizacao = resposta.headers["location"]
     assert localizacao.startswith("http://localhost:5173/contas/nova?erro=")
     assert "usado" in localizacao
+
+
+# --- Sugestões para uma conta nova (funções puras, sem base de dados) ---
+
+
+def test_identificacao_bancaria_prefere_o_hash_e_cai_no_iban():
+    assert identificacao_bancaria("abc123", "PT50 0035 0001") == "abc123"
+    # Sem hash: o IBAN, sem espaços e em maiúsculas, com um prefixo que o
+    # impede de alguma vez coincidir com um hash.
+    assert identificacao_bancaria(None, "pt50 0035 0001") == "iban:PT5000350001"
+    # Com a moeda: bancos com várias moedas no mesmo IBAN (Revolut, Wise)
+    # ficam com uma identificação por moeda.
+    assert identificacao_bancaria(None, "PT50 0035 0001", "eur") == "iban:PT5000350001:EUR"
+    assert identificacao_bancaria(None, "PT50 0035 0001", "USD") == "iban:PT5000350001:USD"
+    assert identificacao_bancaria(None, None) is None
+    # Texto vazio (ou só espaços) conta como ausente, tal como na migração.
+    assert identificacao_bancaria("", "PT50 0035 0001", "EUR") == "iban:PT5000350001:EUR"
+    assert identificacao_bancaria("  ", "", "EUR") is None
+
+
+def test_tipo_sugerido_traduz_os_codigos_iso_20022():
+    assert tipo_sugerido("CACC") == "Conta à ordem"
+    assert tipo_sugerido("svgs") == "Poupança"
+    assert tipo_sugerido("CARD") == "Cartão de crédito"
+    # Código desconhecido ou em falta: sem sugestão.
+    assert tipo_sugerido("XXXX") is None
+    assert tipo_sugerido(None) is None
+
+
+def test_abreviar_banco_so_abrevia_nomes_longos():
+    assert abreviar_banco("Caixa Geral de Depósitos") == "CGD"
+    assert abreviar_banco("Banco Comercial Português") == "BCP"
+    assert abreviar_banco("Santander Totta") == "Santander Totta"
+    assert abreviar_banco("Banco BPI") == "Banco BPI"
+
+
+def test_nome_sugerido_junta_tipo_e_banco_e_nunca_repete_um_nome():
+    conta = ContaLigada(tipo_conta_banco="CACC", iban="PT50 0035 0123 2084", moeda="EUR", uid="x")
+    assert nome_sugerido(conta, "Caixa Geral de Depósitos", []) == "Conta à ordem CGD"
+    # Já existe uma conta com esse nome (sem contar acentos nem
+    # maiúsculas): junta o fim do IBAN.
+    assert (
+        nome_sugerido(conta, "Caixa Geral de Depósitos", ["conta a ordem cgd"])
+        == "Conta à ordem CGD ••2084"
+    )
+    # Sem tipo: o produto que o banco envia; sem nenhum dos dois, "Conta".
+    com_produto = ContaLigada(produto="Conta Mais", uid="y", moeda="EUR")
+    assert nome_sugerido(com_produto, "Banco BPI", []) == "Conta Mais Banco BPI"
+    sem_nada = ContaLigada(uid="z", moeda="EUR")
+    assert nome_sugerido(sem_nada, "Banco BPI", []) == "Conta Banco BPI"
+
+
+# --- Prazo do consentimento ---
+
+
+def test_validade_e_o_maximo_do_banco_ate_180_dias():
+    um_dia = 86400
+    # O banco aceita 180 dias: pede-se 180 (menos uma folga de minutos).
+    validade = validade_do_consentimento({"maximum_consent_validity": 180 * um_dia})
+    assert timedelta(days=179) < validade < timedelta(days=180)
+    assert dias_de_validade({"maximum_consent_validity": 180 * um_dia}) == 180
+    # O banco só aceita 90: 90.
+    assert dias_de_validade({"maximum_consent_validity": 90 * um_dia}) == 90
+    # O banco aceitaria mais do que a lei: fica nos 180.
+    assert dias_de_validade({"maximum_consent_validity": 365 * um_dia}) == 180
+    # O banco não diz: 90, o prazo que todos aceitam.
+    assert validade_do_consentimento({}) == timedelta(days=90)
+
+
+def test_validade_com_valores_estranhos_do_banco_usa_o_prazo_seguro():
+    """
+    O banco pode mandar o máximo num formato inesperado. Um decimal conta
+    como número; tudo o resto que não seja um prazo positivo (booleano,
+    texto, zero, negativo, ou mais curto do que a folga de 5 minutos, que
+    daria uma data já no passado) cai nos 90 dias seguros.
+    """
+    um_dia = 86400
+    noventa = timedelta(days=90)
+    # Um decimal é aceite como número.
+    assert dias_de_validade({"maximum_consent_validity": 180.0 * um_dia}) == 180
+    # True é um "int" em Python, mas não é um prazo.
+    assert validade_do_consentimento({"maximum_consent_validity": True}) == noventa
+    assert validade_do_consentimento({"maximum_consent_validity": "15552000"}) == noventa
+    assert validade_do_consentimento({"maximum_consent_validity": 0}) == noventa
+    assert validade_do_consentimento({"maximum_consent_validity": -100}) == noventa
+    # 60 segundos menos a folga de 5 minutos daria um prazo negativo.
+    assert validade_do_consentimento({"maximum_consent_validity": 60}) == noventa
+
+
+# --- Reconhecer contas já conhecidas, ao gravar uma ligação ---
+
+
+def _sessao(
+    hash_: str | None, iban: str | None = "PT50000000000000000002084", moeda: str = "EUR"
+) -> dict:
+    """Uma sessão fictícia, com a forma real devolvida pela Enable Banking."""
+    return {
+        "session_id": str(uuid.uuid4()),
+        "aspsp": {"name": "Caixa Geral de Depósitos", "country": "PT"},
+        "access": {"valid_until": "2027-04-01T10:00:00+00:00"},
+        "accounts": [
+            {
+                "uid": str(uuid.uuid4()),
+                "identification_hash": hash_,
+                "account_id": {"iban": iban},
+                "currency": moeda,
+                "product": "Conta Caixa",
+                "cash_account_type": "CACC",
+            }
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_ligacao_nova_a_conta_ja_ligada_renova_a_ligacao(cliente_autenticado, db_session):
+    """
+    A conta bancária já alimenta uma Conta, com uma ligação activa (ex.: o
+    prazo do consentimento está a acabar e o utilizador voltou a
+    autorizar): a ligação passa para a nova, sem o utilizador fazer nada.
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    antiga_id = await _criar_conta_ligada(db_session, "teste@example.com", conta_id)
+    conta = await db_session.get(Conta, uuid.UUID(conta_id))
+    conta.identificacao_bancaria = "hash-cgd"
+    await db_session.commit()
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao("hash-cgd"))
+
+    nova = await db_session.scalar(select(ContaLigada).where(ContaLigada.ligacao_id == ligacao.id))
+    assert nova.conta_id == uuid.UUID(conta_id)
+    # A ponte antiga desapareceu: nunca há duas ligações activas para a
+    # mesma Conta.
+    assert await db_session.get(ContaLigada, uuid.UUID(antiga_id)) is None
+
+    resposta = await cliente_autenticado.get(f"/open-banking/ligacoes/{ligacao.id}/contas-ligadas")
+    [conta_devolvida] = resposta.json()
+    assert conta_devolvida["conta_id"] == conta_id
+    assert conta_devolvida["conta_nome"] == CONTA_VALIDA["nome"]
+    assert conta_devolvida["valido_ate"].startswith("2027-04-01")
+
+
+@pytest.mark.asyncio
+async def test_ligacao_nova_a_conta_desvinculada_nao_religa_sozinha(cliente_autenticado, db_session):
+    """
+    A conta bancária já alimentou uma Conta, entretanto desvinculada (sem
+    ponte activa): nada se associa sozinho — aparece como nova, com a
+    Conta antiga indicada («Já foi a «X»»). Religar precisa de
+    reconciliações, que ainda não existem.
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    conta = await db_session.get(Conta, uuid.UUID(conta_id))
+    conta.identificacao_bancaria = "iban:PT50000000000000000002084:EUR"
+    await db_session.commit()
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+
+    # O banco não envia hash: reconhece-se pelo IBAN.
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao(None))
+
+    resposta = await cliente_autenticado.get(f"/open-banking/ligacoes/{ligacao.id}/contas-ligadas")
+    [conta_devolvida] = resposta.json()
+    assert conta_devolvida["conta_id"] is None
+    assert conta_devolvida["conta_antiga"] == {"id": conta_id, "nome": CONTA_VALIDA["nome"]}
+
+
+@pytest.mark.asyncio
+async def test_contas_ligadas_trazem_tipo_e_nome_sugeridos(cliente_autenticado, db_session):
+    """Uma conta nunca vista: sem conta antiga, com tipo e nome sugeridos."""
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao("hash-novo"))
+
+    resposta = await cliente_autenticado.get(f"/open-banking/ligacoes/{ligacao.id}/contas-ligadas")
+    [conta_devolvida] = resposta.json()
+    assert conta_devolvida["conta_id"] is None
+    assert conta_devolvida["conta_antiga"] is None
+    assert conta_devolvida["tipo_sugerido"] == "Conta à ordem"
+    assert conta_devolvida["nome_sugerido"] == "Conta à ordem CGD"
+
+
+@pytest.mark.asyncio
+async def test_conta_bancaria_sem_hash_nem_iban_nao_corresponde_a_conta_manual(
+    cliente_autenticado, db_session
+):
+    """
+    Uma conta manual tem identificacao_bancaria vazia (NULL). Uma conta
+    bancária sem hash nem IBAN também não tem identificação. As duas
+    nunca podem corresponder: sem a guarda em conta_com_identificacao, o
+    SQL "= NULL" passaria a "IS NULL" e ligaria a conta bancária a uma
+    conta manual qualquer.
+    """
+    await cliente_autenticado.post("/contas", json=CONTA_VALIDA)
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao(None, iban=None))
+
+    nova = await db_session.scalar(select(ContaLigada).where(ContaLigada.ligacao_id == ligacao.id))
+    assert nova.conta_id is None
+    assert await conta_antiga_de(db_session, utilizador.id, nova) is None
+
+
+@pytest.mark.asyncio
+async def test_a_mesma_conta_bancaria_noutro_utilizador_nao_se_cruza(cliente_autenticado, db_session):
+    """
+    Duas pessoas com a mesma conta bancária (ex.: uma conta conjunta): o
+    segundo utilizador, ao ligá-la, não "rouba" a ligação do primeiro nem
+    vê a conta dele como «Já foi a «X»».
+    """
+    # Utilizador A: uma Conta ligada e uma desvinculada, com identificações.
+    ligada_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    antiga_id = await _criar_conta_ligada(db_session, "teste@example.com", ligada_id)
+    desvinculada_id = (
+        await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Antiga"})
+    ).json()["id"]
+    (await db_session.get(Conta, uuid.UUID(ligada_id))).identificacao_bancaria = "hash-a"
+    (await db_session.get(Conta, uuid.UUID(desvinculada_id))).identificacao_bancaria = "hash-b"
+    await db_session.commit()
+
+    # Utilizador B liga as mesmas duas contas bancárias.
+    b = {"email": "b@example.com", "password": "palavrapasse123"}
+    await cliente_autenticado.post("/auth/registo", json=b)
+    utilizador_b = await db_session.scalar(select(User).where(User.email == "b@example.com"))
+    lig_a = await gravar_ligacao(db_session, utilizador_b.id, _sessao("hash-a"))
+    lig_b = await gravar_ligacao(db_session, utilizador_b.id, _sessao("hash-b"))
+
+    nova_a = await db_session.scalar(select(ContaLigada).where(ContaLigada.ligacao_id == lig_a.id))
+    nova_b = await db_session.scalar(select(ContaLigada).where(ContaLigada.ligacao_id == lig_b.id))
+    # A ligação de A continua intacta e a de B não herdou a Conta de A.
+    antiga = await db_session.get(ContaLigada, uuid.UUID(antiga_id))
+    assert antiga is not None and antiga.conta_id == uuid.UUID(ligada_id)
+    assert nova_a.conta_id is None
+    # B não vê a conta desvinculada de A como sua.
+    assert await conta_antiga_de(db_session, utilizador_b.id, nova_b) is None
+
+
+@pytest.mark.asyncio
+async def test_renovacao_so_na_mesma_moeda(cliente_autenticado, db_session):
+    """
+    Uma conta bancária noutra moeda nunca renova a ligação de uma Conta:
+    uma conta em USD não pode passar a alimentar uma Conta em EUR.
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    antiga_id = await _criar_conta_ligada(db_session, "teste@example.com", conta_id)
+    (await db_session.get(Conta, uuid.UUID(conta_id))).identificacao_bancaria = "hash-x"
+    await db_session.commit()
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao("hash-x", moeda="USD"))
+
+    nova = await db_session.scalar(select(ContaLigada).where(ContaLigada.ligacao_id == ligacao.id))
+    assert nova.conta_id is None
+    assert await db_session.get(ContaLigada, uuid.UUID(antiga_id)) is not None
+
+
+@pytest.mark.asyncio
+async def test_duas_contas_com_a_mesma_identificacao_sao_recusadas_pela_base_de_dados(
+    cliente_autenticado, db_session
+):
+    """
+    O índice único (user_id, identificacao_bancaria) impede duas Contas do
+    mesmo utilizador com a mesma identificação (contas manuais, com a
+    identificação vazia, não contam: o PostgreSQL trata cada NULL como
+    diferente).
+    """
+    um = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    dois = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Outra"})).json()["id"]
+    (await db_session.get(Conta, uuid.UUID(um))).identificacao_bancaria = "hash-dup"
+    (await db_session.get(Conta, uuid.UUID(dois))).identificacao_bancaria = "hash-dup"
+
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_associar_nova_conta_ja_vinculada_noutra_conta_devolve_409(
+    cliente_autenticado, db_session
+):
+    """
+    A conta bancária já alimenta uma Conta ainda ligada (por outra
+    ligação). Criar uma Conta nova a partir de uma ligação antiga, por
+    associar, poria a mesma conta bancária a alimentar duas Contas: é
+    recusado, antes de qualquer pedido ao banco (este teste não precisa
+    de substituir a Enable Banking).
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _criar_conta_ligada(db_session, "teste@example.com", conta_id)
+    (await db_session.get(Conta, uuid.UUID(conta_id))).identificacao_bancaria = "hash-x"
+    # Uma ContaLigada antiga, por associar, da mesma conta bancária.
+    pendente_id = await _criar_conta_ligada(db_session, "teste@example.com", conta_id=None)
+    (await db_session.get(ContaLigada, uuid.UUID(pendente_id))).identification_hash = "hash-x"
+    await db_session.commit()
+
+    resposta = await cliente_autenticado.post(
+        f"/open-banking/contas-ligadas/{pendente_id}/associar-nova-conta",
+        params={"nome": "Duplicada"},
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["detail"] == "Esta conta bancária já está vinculada à conta «Conta à ordem»."
+
+
+@pytest.mark.asyncio
+async def test_associar_nova_conta_valida_o_nome(cliente_autenticado, db_session):
+    """
+    O nome tem as regras do formulário manual: sem espaços nas pontas, não
+    vazio, até 120 caracteres. Validado antes de qualquer pedido ao banco.
+    """
+    conta_ligada_id = await _criar_conta_ligada(db_session, "teste@example.com", conta_id=None)
+    rota = f"/open-banking/contas-ligadas/{conta_ligada_id}/associar-nova-conta"
+
+    so_espacos = await cliente_autenticado.post(rota, params={"nome": "   "})
+    longo = await cliente_autenticado.post(rota, params={"nome": "x" * 121})
+
+    assert so_espacos.status_code == 422
+    assert longo.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_criar_conta_a_partir_de_ligacao_transfere_a_identificacao(
+    cliente_autenticado, db_session, monkeypatch
+):
+    """
+    A conta bancária já foi de uma Conta, entretanto desvinculada. Ao criar
+    uma Conta NOVA a partir dela, a identificação passa para a nova: a
+    antiga fica manual, sem identificação (nunca duas com a mesma), e a
+    próxima ligação reconhece a nova.
+
+    As chamadas à Enable Banking são substituídas ("monkeypatch", do
+    pytest, troca uma função só durante o teste) por versões falsas: um
+    saldo fixo e nenhuma transação.
+    """
+
+    async def obter_saldos_falso(uid):
+        return {"balances": [{"balance_type": "CLBD", "balance_amount": {"amount": "100.00"}}]}
+
+    async def obter_movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        return {"transactions": []}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_saldos", obter_saldos_falso)
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", obter_movimentos_falso)
+
+    velha_id = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Velha"})).json()["id"]
+    (await db_session.get(Conta, uuid.UUID(velha_id))).identificacao_bancaria = "hash-x"
+    await db_session.commit()
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    ligacao = await gravar_ligacao(db_session, utilizador.id, _sessao("hash-x"))
+    pendente = await db_session.scalar(
+        select(ContaLigada).where(ContaLigada.ligacao_id == ligacao.id)
+    )
+
+    resposta = await cliente_autenticado.post(
+        f"/open-banking/contas-ligadas/{pendente.id}/associar-nova-conta",
+        params={"nome": "Nova"},
+    )
+
+    assert resposta.status_code == 200
+    nova_id = uuid.UUID(resposta.json()["conta_id"])
+    await db_session.refresh(await db_session.get(Conta, uuid.UUID(velha_id)))
+    assert (await db_session.get(Conta, uuid.UUID(velha_id))).identificacao_bancaria is None
+    assert (await db_session.get(Conta, nova_id)).identificacao_bancaria == "hash-x"

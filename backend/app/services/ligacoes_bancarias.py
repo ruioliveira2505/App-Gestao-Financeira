@@ -13,6 +13,28 @@ uma ligação/consentimento, várias contas trazidas por ela).
 Este ficheiro NUNCA fala directamente com a API da Enable Banking (isso
 fica em app/services/enable_banking.py) — só grava, na nossa própria base
 de dados, o que essa API já devolveu.
+
+RECONHECER CONTAS JÁ CONHECIDAS. Ao gravar uma ligação nova, cada conta
+bancária trazida é comparada com as Conta do utilizador pela sua
+IDENTIFICAÇÃO ESTÁVEL (ver identificacao_bancaria, abaixo — guardada na
+própria Conta, em Conta.identificacao_bancaria, única por utilizador), e
+só na mesma moeda:
+  - a Conta existe e ainda está LIGADA (tem uma ContaLigada activa, de uma
+    ligação anterior): a ligação RENOVA-SE — a ponte antiga é apagada e a
+    nova passa a apontar para a mesma Conta, com a validade nova. O
+    utilizador não tem de fazer nada (é o caso de voltar a autorizar o
+    banco quando o prazo do consentimento acaba);
+  - a Conta existe mas foi DESVINCULADA: nada se associa sozinho. A conta
+    bancária aparece como nova, e o frontend diz «Já foi a «X»» (ver
+    conta_antiga_de, abaixo). Religar à Conta antiga precisa de uma
+    reconciliação de saldo (o buraco entre desvincular e religar), que
+    ainda não existe na aplicação;
+  - não existe: é uma conta nova.
+
+SUGESTÕES PARA UMA CONTA NOVA. tipo_sugerido traduz o código de tipo de
+conta que o banco envia; nome_sugerido junta-lhe o nome do banco (ex.:
+"Conta à ordem CGD"). O frontend mostra o nome como EXEMPLO no campo, e o
+tipo já preenchido.
 """
 
 import uuid
@@ -22,8 +44,101 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.conta import Conta
 from app.models.conta_ligada import ContaLigada
 from app.models.ligacao_bancaria import LigacaoBancaria
+from app.services.contas import normalizar_nome
+
+# Tipo de conta, a partir do código ISO 20022 que o banco envia em
+# "cash_account_type". Só os tipos que fazem sentido nesta aplicação; um
+# código desconhecido fica sem sugestão (o utilizador escolhe).
+TIPOS_POR_CODIGO = {
+    "CACC": "Conta à ordem",
+    "SVGS": "Poupança",
+    "CARD": "Cartão de crédito",
+    "LOAN": "Empréstimo",
+}
+
+# Palavras que não entram na sigla de um banco ("Caixa Geral de
+# Depósitos" → "CGD", não "CGDD").
+_PALAVRAS_SEM_SIGLA = {"de", "do", "da", "dos", "das", "e"}
+
+
+def _cortar(texto: str | None, limite: int) -> str | None:
+    """
+    O texto cortado ao limite da coluna onde vai ser gravado, ou None se
+    vier vazio — um banco que envie um texto mais longo do que o previsto
+    não deve fazer falhar a ligação inteira.
+    """
+    return texto[:limite] if texto else None
+
+
+def identificacao_bancaria(
+    identification_hash: str | None, iban: str | None, moeda: str | None = None
+) -> str | None:
+    """
+    A identificação ESTÁVEL de uma conta bancária real, que não muda entre
+    ligações (ao contrário do "uid", que a Enable Banking gera de novo em
+    cada ligação):
+      - o "identification_hash" da Enable Banking, se o banco o der (um
+        código calculado pela Enable Banking a partir dos dados da conta,
+        igual em todas as ligações à mesma conta);
+      - senão, "iban:" seguido do IBAN sem espaços e em maiúsculas e, se a
+        moeda for indicada, ":" e a moeda (ex.: "iban:PT50…2084:EUR"). O
+        prefixo impede que um IBAN alguma vez coincida com um hash. A moeda
+        distingue as contas de bancos com várias moedas no MESMO IBAN (ex.:
+        Revolut, Wise: uma conta em EUR e outra em USD com o mesmo IBAN),
+        que sem ela teriam a mesma identificação.
+    Texto vazio (ou só espaços) conta como ausente. None se não houver nem
+    hash nem IBAN: essa conta não se consegue reconhecer.
+
+    A migração b7d4e2a1c9f3 (alembic/versions) aplica exatamente esta
+    regra, em SQL, às contas que já existiam.
+    """
+    hash_limpo = (identification_hash or "").strip()
+    if hash_limpo:
+        return hash_limpo
+    iban_limpo = (iban or "").replace(" ", "").upper()
+    if iban_limpo:
+        return "iban:" + iban_limpo + (":" + moeda.upper() if moeda else "")
+    return None
+
+
+def tipo_sugerido(codigo: str | None) -> str | None:
+    """O tipo de conta, a partir do código ISO 20022 (ver TIPOS_POR_CODIGO)."""
+    return TIPOS_POR_CODIGO.get((codigo or "").upper())
+
+
+def abreviar_banco(nome: str) -> str:
+    """
+    O nome do banco, curto para caber num nome de conta: nomes de três ou
+    mais palavras viram sigla ("Caixa Geral de Depósitos" → "CGD", "Banco
+    Comercial Português" → "BCP"); os mais curtos ficam como estão
+    ("Santander Totta", "Banco BPI").
+    """
+    palavras = [p for p in nome.split() if p.lower() not in _PALAVRAS_SEM_SIGLA]
+    if len(palavras) >= 3:
+        return "".join(p[0].upper() for p in palavras)
+    return nome
+
+
+def nome_sugerido(
+    conta_ligada: ContaLigada, banco: str, nomes_existentes: list[str]
+) -> str:
+    """
+    Um nome para a conta nova: o tipo (ou, na falta dele, o produto que o
+    banco envia, ou só "Conta") seguido do banco abreviado — "Conta à ordem
+    CGD". Se o utilizador já tiver uma conta com esse nome (comparado sem
+    acentos nem maiúsculas — ver normalizar_nome, em app/services/
+    contas.py), junta o fim do IBAN ("Conta à ordem CGD ••2084"), para a
+    sugestão nunca chocar com a regra do nome único.
+    """
+    base = tipo_sugerido(conta_ligada.tipo_conta_banco) or conta_ligada.produto or "Conta"
+    nome = f"{base} {abreviar_banco(banco)}"
+    existentes = {normalizar_nome(n) for n in nomes_existentes}
+    if normalizar_nome(nome) in existentes and conta_ligada.iban:
+        nome = f"{nome} ••{conta_ligada.iban.replace(' ', '')[-4:]}"
+    return nome
 
 
 async def gravar_ligacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict) -> LigacaoBancaria:
@@ -34,10 +149,12 @@ async def gravar_ligacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict) -> 
     testes desta integração: {"session_id": ..., "aspsp": {"name":...,
     "country": ...}, "access": {"valid_until": ...}, "accounts": [...]}.
 
-    conta_id fica sempre vazio nas ContaLigada criadas aqui — a associação
-    a uma Conta desta aplicação é sempre um passo posterior, confirmado
-    explicitamente pelo utilizador (ver a nota em
-    app/models/conta_ligada.py sobre nunca associar automaticamente).
+    conta_id fica vazio nas ContaLigada criadas aqui, com UMA exceção: se
+    a conta bancária já alimenta uma Conta do utilizador, com uma ligação
+    ativa, a ponte nova herda essa Conta (é uma renovação, a continuação de
+    uma associação que o utilizador já confirmou — ver
+    _renovar_se_ja_ligada, abaixo). Associar uma conta bancária NOVA a uma
+    Conta é sempre um passo posterior, confirmado pelo utilizador.
     """
     ligacao = LigacaoBancaria(
         user_id=user_id,
@@ -59,22 +176,101 @@ async def gravar_ligacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict) -> 
     await db.flush()
 
     for conta in sessao["accounts"]:
-        db.add(
-            ContaLigada(
-                ligacao_id=ligacao.id,
-                uid=conta["uid"],
-                identification_hash=conta.get("identification_hash"),
-                # "account_id" pode, em teoria, não vir preenchido; .get()
-                # em cadeia evita um erro caso algum banco não o devolva.
-                iban=(conta.get("account_id") or {}).get("iban"),
-                nome_titular=conta.get("name"),
-                moeda=conta["currency"],
-            )
+        nova = ContaLigada(
+            ligacao_id=ligacao.id,
+            uid=conta["uid"],
+            identification_hash=conta.get("identification_hash"),
+            # "account_id" pode, em teoria, não vir preenchido; .get()
+            # em cadeia evita um erro caso algum banco não o devolva.
+            iban=(conta.get("account_id") or {}).get("iban"),
+            nome_titular=conta.get("name"),
+            moeda=conta["currency"],
+            produto=_cortar(conta.get("product"), 120),
+            tipo_conta_banco=_cortar(conta.get("cash_account_type"), 4),
         )
+        db.add(nova)
+        await _renovar_se_ja_ligada(db, user_id, nova)
 
     await db.commit()
     await db.refresh(ligacao)
     return ligacao
+
+
+async def conta_com_identificacao(
+    db: AsyncSession, user_id: uuid.UUID, identificacao: str | None
+) -> Conta | None:
+    """
+    A Conta DESTE utilizador com esta identificação bancária, se houver.
+    Filtra sempre por user_id: duas pessoas com a mesma conta bancária
+    (ex.: uma conta conjunta) nunca se cruzam. Há no máximo uma, garantido
+    pelo índice único (user_id, identificacao_bancaria) da tabela contas
+    (app/models/conta.py). None se a identificação for None: uma conta
+    bancária sem identificação nunca corresponde a nenhuma Conta, nem às
+    manuais, cuja identificação também é vazia (sem esta guarda, o SQL
+    "identificacao_bancaria = NULL" passaria a "IS NULL" e apanharia todas
+    as contas manuais).
+    """
+    if identificacao is None:
+        return None
+    resultado = await db.execute(
+        select(Conta).where(
+            Conta.user_id == user_id, Conta.identificacao_bancaria == identificacao
+        )
+    )
+    return resultado.scalars().first()
+
+
+async def _renovar_se_ja_ligada(db: AsyncSession, user_id: uuid.UUID, nova: ContaLigada) -> None:
+    """
+    Se a conta bancária de "nova" já alimenta uma Conta do utilizador, com
+    uma ligação ACTIVA, renova essa ligação: apaga a ponte antiga e associa
+    "nova" à mesma Conta (ver RECONHECER CONTAS JÁ CONHECIDAS, no topo do
+    ficheiro). Uma Conta desvinculada (sem ponte activa) fica como está —
+    não se religa sozinha.
+    """
+    conta = await conta_com_identificacao(
+        db, user_id, identificacao_bancaria(nova.identification_hash, nova.iban, nova.moeda)
+    )
+    if conta is None:
+        return
+    # Uma conta bancária só alimenta uma Conta na mesma moeda: uma conta em
+    # USD nunca renova a ligação de uma Conta em EUR.
+    if conta.moeda != nova.moeda:
+        return
+    antiga = await obter_ligacao_de_conta(db, conta.id)
+    if antiga is None:
+        return
+    await db.delete(antiga)
+    # flush entre os dois passos: a ponte antiga sai da base de dados
+    # ANTES de a nova passar a apontar para a mesma Conta — nunca há,
+    # nem por um instante, duas pontes activas para a mesma Conta (o
+    # resto da aplicação assume que há no máximo uma — ver
+    # obter_ligacao_de_conta, abaixo).
+    await db.flush()
+    nova.conta_id = conta.id
+
+
+async def conta_antiga_de(
+    db: AsyncSession, user_id: uuid.UUID, conta_ligada: ContaLigada
+) -> Conta | None:
+    """
+    A Conta DESVINCULADA que esta conta bancária já alimentou, se houver —
+    o «Já foi a «X»» do frontend. None se a conta bancária nunca esteve na
+    aplicação, ou se a Conta que a tem ainda está ligada (nesse caso a
+    ligação renovou-se — ver _renovar_se_ja_ligada, acima).
+    """
+    if conta_ligada.conta_id is not None:
+        return None
+    conta = await conta_com_identificacao(
+        db,
+        user_id,
+        identificacao_bancaria(
+            conta_ligada.identification_hash, conta_ligada.iban, conta_ligada.moeda
+        ),
+    )
+    if conta is None or await obter_ligacao_de_conta(db, conta.id) is not None:
+        return None
+    return conta
 
 
 async def conta_esta_ligada(db: AsyncSession, conta_id: uuid.UUID) -> bool:

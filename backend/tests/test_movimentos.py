@@ -65,8 +65,17 @@ _CATEGORIA_QUALQUER = "00000000-0000-0000-0000-000000000000"
 
 
 async def _criar_conta(cliente, **overrides) -> str:
-    """Cria uma conta pelo cliente autenticado e devolve o seu id."""
-    resposta = await cliente.post("/contas", json={**CONTA_VALIDA, **overrides})
+    """
+    Cria uma conta pelo cliente autenticado e devolve o seu id.
+
+    O nome, por omissão, é único ("Conta 3f9a1c"): os nomes de conta não se
+    podem repetir no mesmo utilizador (ver garantir_nome_livre, em
+    app/services/contas.py), e vários testes criam mais do que uma conta
+    sem se interessarem pelo nome. Quem precisa de um nome concreto passa-o
+    em "overrides".
+    """
+    nome_unico = f"Conta {uuid.uuid4().hex[:6]}"
+    resposta = await cliente.post("/contas", json={**CONTA_VALIDA, "nome": nome_unico, **overrides})
     return resposta.json()["id"]
 
 

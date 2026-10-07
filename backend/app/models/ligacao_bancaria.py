@@ -78,9 +78,10 @@ class LigacaoBancaria(Base):
     aspsp_pais: Mapped[str] = mapped_column(String(2), nullable=False)
 
     # Até quando este consentimento é válido (campo "access.valid_until"
-    # da resposta da Enable Banking — normalmente 90 dias a partir da
-    # autorização, o período habitual associado ao PSD2 para este tipo de
-    # consentimento). Permite calcular se uma ligação está "activa" ou
+    # da resposta da Enable Banking — o prazo pedido ao banco: o máximo que
+    # ele aceita, até 180 dias a partir da autorização pela regra europeia,
+    # ou 90 se o banco não o indicar; ver validade_do_consentimento, em
+    # app/services/enable_banking.py). Permite calcular se uma ligação está "activa" ou
     # "expirada" comparando este valor com o momento actual, em vez de
     # guardar esse estado numa coluna à parte que poderia ficar
     # desactualizada.

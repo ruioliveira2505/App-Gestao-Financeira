@@ -17,10 +17,15 @@ PONTE: guarda os identificadores que a Enable Banking usa para esta conta
 em concreto (o "uid", usado nas chamadas de saldo/movimentos), e associa-a
 a uma Conta desta aplicação — através de conta_id, que fica vazio até o
 utilizador confirmar explicitamente a que Conta sua corresponde esta conta
-externa (nunca uma associação automática e silenciosa — o mesmo princípio
-já adoptado para a futura categorização por modelo de linguagem: qualquer
-sugestão passa sempre por aprovação explícita antes de mexer em dados
-reais).
+externa (nunca uma associação NOVA automática e silenciosa — o mesmo
+princípio já adoptado para a futura categorização por modelo de
+linguagem: qualquer sugestão passa sempre por aprovação explícita antes de
+mexer em dados reais).
+
+Exceção: se a conta bancária já alimenta uma Conta com uma ligação ativa,
+a ponte nova herda essa Conta ao ser gravada. Não é uma associação nova,
+é a continuação de uma que o utilizador já confirmou (o caso de voltar a
+autorizar o banco quando o prazo do consentimento acaba).
 """
 
 import uuid
@@ -74,10 +79,10 @@ class ContaLigada(Base):
     # Um hash fornecido pela Enable Banking que parece identificar a
     # MESMA conta real de forma estável entre diferentes ligações (ao
     # contrário de uid, acima) — pelo conteúdo observado, é calculado a
-    # partir do IBAN e da moeda da conta. Guardado para uso futuro: quando
-    # for preciso religar um banco após o consentimento expirar,
-    # reconhecer automaticamente "esta é a mesma conta de antes" sem obrigar
-    # o utilizador a repetir manualmente a associação a uma Conta.
+    # partir do IBAN e da moeda da conta. Usado (através de
+    # identificacao_bancaria, em app/services/ligacoes_bancarias.py) para
+    # reconhecer a mesma conta real numa ligação nova, por exemplo ao
+    # voltar a autorizar o banco quando o consentimento acaba.
     # Nullable porque ainda não se confirmou que todos os bancos o
     # devolvem sempre.
     identification_hash: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -95,6 +100,19 @@ class ContaLigada(Base):
     # Código ISO da moeda desta conta ("EUR", "USD"...) — mesmo formato
     # já usado em Conta.moeda (app/models/conta.py).
     moeda: Mapped[str] = mapped_column(String(3), nullable=False)
+
+    # O nome do produto, tal como o banco o dá (ex.: "Conta Caixa", "Conta
+    # Poupança Mais") — campo "product" da Enable Banking. Usado para
+    # sugerir um nome à conta nova (ver nome_sugerido, em
+    # app/services/ligacoes_bancarias.py). Nem todos os bancos o devolvem.
+    produto: Mapped[str | None] = mapped_column(String(120), nullable=True)
+
+    # O tipo de conta, num código da norma bancária ISO 20022 (campo
+    # "cash_account_type" da Enable Banking): "CACC" conta à ordem, "SVGS"
+    # poupança, "CARD" cartão, "LOAN" empréstimo… Usado para preencher o
+    # "Tipo" sugerido da conta nova (ver tipo_sugerido, em
+    # app/services/ligacoes_bancarias.py). Nem todos os bancos o devolvem.
+    tipo_conta_banco: Mapped[str | None] = mapped_column(String(4), nullable=True)
 
     # A Conta desta aplicação a que esta conta externa corresponde.
     # NULLABLE de propósito: fica vazio assim que a conta externa é

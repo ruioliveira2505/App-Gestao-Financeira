@@ -30,7 +30,12 @@ from app.models.user import User
 from app.models.ligacao_bancaria import LigacaoBancaria
 from app.schemas.contas import ContaCriar, ContaEditar, ContaOut, LigacaoOpenBankingOut
 from app.services.cambio import SemTaxaCambio, converter
-from app.services.contas import obter_conta_do_utilizador, soma_movimentos, somas_de_movimentos
+from app.services.contas import (
+    garantir_nome_livre,
+    obter_conta_do_utilizador,
+    soma_movimentos,
+    somas_de_movimentos,
+)
 from app.services.ligacoes_bancarias import conta_esta_ligada, obter_ligacao_de_conta
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
@@ -100,7 +105,9 @@ async def _para_saida(
     if conta_ligada is not None:
         ligacao_bancaria = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
         ligacao_out = LigacaoOpenBankingOut(
-            conta_ligada_id=conta_ligada.id, aspsp_nome=ligacao_bancaria.aspsp_nome
+            conta_ligada_id=conta_ligada.id,
+            aspsp_nome=ligacao_bancaria.aspsp_nome,
+            valido_ate=ligacao_bancaria.valido_ate,
         )
 
     return ContaOut(
@@ -129,14 +136,17 @@ async def criar_conta(
     Cria uma conta para o utilizador autenticado.
 
     O corpo do pedido já chega validado pelo schema ContaCriar (nome não
-    vazio, moeda suportada, comprimentos máximos). Fica a cargo desta rota
-    a única regra de negócio: a data de início não pode ser no futuro.
+    vazio, moeda suportada, comprimentos máximos). Ficam a cargo desta rota
+    as regras de negócio: a data de início não pode ser no futuro, e o
+    nome não pode repetir o de outra conta do utilizador (409 — ver
+    garantir_nome_livre, em app/services/contas.py).
     """
     if dados.data_ancora > date.today():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="A data de início não pode ser no futuro.",
         )
+    await garantir_nome_livre(db, utilizador.id, dados.nome)
 
     conta = Conta(
         user_id=utilizador.id,
@@ -211,6 +221,9 @@ async def editar_conta(
     editáveis, tal como numa conta manual.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+
+    # Outro nome já usado noutra conta: 409 (a própria conta não conta).
+    await garantir_nome_livre(db, utilizador.id, dados.nome, ignorar_conta_id=conta.id)
 
     if await conta_esta_ligada(db, conta.id):
         if dados.banco != conta.banco or dados.moeda != conta.moeda:
