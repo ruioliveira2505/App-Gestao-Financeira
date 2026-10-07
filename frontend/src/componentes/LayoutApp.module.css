@@ -76,5 +76,12 @@
     padding-right: var(--espaco-4);
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--espaco-5));
     padding-left: var(--espaco-4);
+
+    /* Sempre 1px mais alta do que o ecrã: com pouco conteúdo (ex.: só 6
+       contas), a página era mais curta do que o <main> e não havia nada
+       para rolar — no iPhone, uma área assim nem faz o efeito elástico, e
+       o dedo parecia "preso". Com este píxel a mais há sempre scroll, e o
+       elástico nativo volta a funcionar em todas as páginas. */
+    min-height: calc(100% + 1px);
   }
 }

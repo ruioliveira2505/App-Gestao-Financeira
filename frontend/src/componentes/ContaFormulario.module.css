@@ -25,6 +25,20 @@
    espaço no topo do <fieldset>); o rótulo do grupo é um "aria-label" do
    <fieldset> (agrupa para o leitor de ecrã). Contorno, sem sombra — sobre
    fundo branco lê-se pela borda. */
+/* O monograma neutro (sem nome nem banco ainda): um círculo do tamanho do
+   Avatar "xl", cinzento-claro, com uma carteira — no lugar do antigo "?"
+   rosa, que gritava sem dizer nada. */
+.monogramaVazio {
+  display: grid;
+  place-items: center;
+  /* O mesmo tamanho do Avatar "xl" (Avatar.module.css). */
+  width: 8rem;
+  height: 8rem;
+  border-radius: 50%;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-3);
+}
+
 .grupo {
   padding: 0;
   margin: 0;

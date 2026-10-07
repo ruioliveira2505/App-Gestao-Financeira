@@ -28,8 +28,8 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    transform var(--movimento-aparecer) var(--curva-aparecer);
 }
 
 .procuraEscondida {
@@ -95,7 +95,7 @@
   background: none;
   text-decoration: none;
   color: var(--cor-texto);
-  transition: background-color 120ms ease-out;
+  transition: background-color var(--movimento-toque) var(--curva-toque);
 }
 
 .linha:active {
@@ -147,6 +147,41 @@
 .checkboxSelecionado {
   border-color: var(--cor-acento);
   background: var(--cor-acento);
+}
+
+/* O checkbox entra a crescer de largura zero — o resto da linha desliza
+   para a direita em vez de saltar 34px de uma vez — e sai a encolher
+   (".checkboxASair"). A margem negativa anula o "gap" da linha enquanto o
+   checkbox não tem largura, para o espaço também crescer suavemente. O
+   preenchimento ao (des)selecionar muda com a duração de "toque". */
+.checkbox {
+  overflow: hidden;
+  animation: checkbox-entrar var(--movimento-deslocar) var(--curva-deslocar);
+  transition:
+    background-color var(--movimento-toque) var(--curva-toque),
+    border-color var(--movimento-toque) var(--curva-toque);
+}
+
+.checkboxASair {
+  animation: checkbox-sair var(--movimento-deslocar) var(--curva-deslocar) forwards;
+}
+
+@keyframes checkbox-entrar {
+  from {
+    width: 0;
+    margin-right: calc(-1 * var(--espaco-3));
+    border-width: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes checkbox-sair {
+  to {
+    width: 0;
+    margin-right: calc(-1 * var(--espaco-3));
+    border-width: 0;
+    opacity: 0;
+  }
 }
 
 /* Coluna do meio: descrição (a âncora da linha, negrito) por cima, nome da
@@ -398,6 +433,21 @@
   color: var(--cor-texto);
 }
 
+/* O "X" e a pílula "Selecionar"/"Filtros" trocam de lugar ao entrar e
+   sair do modo de seleção — cada um aparece a desvanecer (e a crescer um
+   pouco), em vez de substituir o outro de golpe. */
+.botaoCancelarSelecao,
+.grupoAcoes {
+  animation: acao-aparecer var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+@keyframes acao-aparecer {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+
 .botaoCancelarSelecao:active {
   background: var(--cor-superficie);
 }
@@ -420,7 +470,10 @@
    "overflow: hidden" no mesmo elemento cortava-a a direito, o mesmo bug
    já corrigido na pílula "Selecionar"/"Filtros" (ver a nota, mais acima)
    e na zona esquerda da barra de topo (BarraTopoMobile.module.css). */
+/* A barra sobe do fundo ao entrar no modo de seleção e desce ao sair
+   (".barraAcoesLoteASair") — o mesmo gesto de uma folha. */
 .barraAcoesLote {
+  animation: barra-lote-subir var(--movimento-deslocar) var(--curva-deslocar);
   position: absolute;
   left: 0;
   right: 0;
@@ -430,6 +483,22 @@
   border-radius: 20px 20px 0 0;
   box-shadow: 0 -2px 12px rgb(0 0 0 / 6%);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.barraAcoesLoteASair {
+  animation: barra-lote-descer var(--movimento-deslocar) var(--curva-deslocar) forwards;
+}
+
+@keyframes barra-lote-subir {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes barra-lote-descer {
+  to {
+    transform: translateY(100%);
+  }
 }
 
 /* Recorta o fundo de toque dos botões aos cantos arredondados — separado

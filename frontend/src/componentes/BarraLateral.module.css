@@ -32,7 +32,7 @@
 
   /* Anima a mudança de largura ao recolher/expandir (só tem efeito em
      ecrã largo — em estreito a largura não muda). */
-  transition: width 0.15s ease;
+  transition: width var(--movimento-deslocar) var(--curva-deslocar);
 }
 
 /* Altura fixa: não muda ao esconder o nome da aplicação (modo recolhido),

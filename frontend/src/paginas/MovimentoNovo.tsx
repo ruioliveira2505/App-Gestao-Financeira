@@ -22,10 +22,12 @@
  * "voltar" do sistema, tal como em toda a aplicação).
  */
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useMemo, useRef, useState } from 'react'
 
 import { useLocation, useNavigate } from 'react-router-dom'
 
+import { CHAVES } from '../lib/consultas'
 import { Folha } from '../componentes/Folha'
 import { ContextoFolha } from '../componentes/contextoFolha'
 import { MovimentoFormulario, type DadosMovimento } from '../componentes/MovimentoFormulario'
@@ -68,6 +70,8 @@ export function MovimentoNovo() {
     [],
   )
 
+  const clienteConsultas = useQueryClient()
+
   function aoSair() {
     if (typeof destino.current === 'number') navegar(destino.current)
     else navegar(destino.current)
@@ -75,6 +79,13 @@ export function MovimentoNovo() {
 
   async function guardar(dados: DadosMovimento, fechar: () => void) {
     await criarMovimento(dados)
+    // OS SALDOS DAS CONTAS MUDARAM. A lista e o detalhe das contas vivem
+    // numa cache partilhada (TanStack Query: uma cópia em memória dos
+    // dados pedidos ao servidor, identificada por uma "chave", aqui
+    // ['contas']). Um movimento novo muda o saldo de uma conta, por isso
+    // "invalida-se" essa chave: os dados passam a desatualizados, e as
+    // páginas que os mostram voltam a pedi-los ao servidor.
+    void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
     fechar()
   }
 

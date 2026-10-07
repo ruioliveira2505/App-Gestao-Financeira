@@ -3,16 +3,28 @@
  * ================================
  */
 
-import { render, screen, within } from '@testing-library/react'
+import { render as renderBase, screen, waitFor, within } from '@testing-library/react'
+import { useQueryClient } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 
 import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { AuthProvider } from '../auth/AuthProvider'
+import { PilhaDePaginas } from '../componentes/PilhaDePaginas'
+import { CHAVES } from '../lib/consultas'
 import { Contas } from './Contas'
+import { ComConsultas } from '../test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
+// ver test/consultas.tsx). "wrapper" é a opção do Testing Library para
+// envolver o que se monta num componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const UTILIZADOR = { id: 'u1', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 
@@ -22,8 +34,12 @@ afterEach(() => {
   localStorage.clear()
 })
 
+// Por omissão, "saldo_convertido" é igual a "saldo" — é o que o backend
+// devolve para uma conta já na moeda principal (converter de EUR para EUR
+// não precisa de taxa nenhuma). Um teste que queira outra coisa (outra
+// moeda, ou sem taxa — null) indica-o explicitamente.
 function conta(sobrepor: Record<string, unknown> = {}) {
-  return {
+  const base: Record<string, unknown> = {
     id: 'c1',
     nome: 'Conta X',
     banco: 'BPI',
@@ -32,12 +48,21 @@ function conta(sobrepor: Record<string, unknown> = {}) {
     data_ancora: '2026-01-01',
     saldo_ancora: '100.00',
     saldo: '100.00',
-    saldo_convertido: null,
     ligacao: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...sobrepor,
   }
+  if (!('saldo_convertido' in sobrepor)) base.saldo_convertido = base.saldo
+  return base
+}
+
+// Uma ligação ao banco válida até daqui a "dias" dias (negativo = já
+// expirou). Relativa ao momento em que o teste corre, porque o estado da
+// ligação (ligada / a expirar / expirada) depende da data de hoje.
+function ligacao(dias: number, id = 'cl1') {
+  const validoAte = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString()
+  return { conta_ligada_id: id, aspsp_nome: 'BPI', valido_ate: validoAte }
 }
 
 function montar() {
@@ -75,11 +100,10 @@ describe('Página Contas', () => {
     // A linha mostra só o nome (banco e tipo servem para procurar/agrupar).
     expect(linhaOrdem).not.toHaveTextContent('Conta corrente')
 
-    // Contagem total por baixo do título.
-    expect(screen.getByText('2 contas')).toBeInTheDocument()
-
-    // Não há saldo total agregado nesta página (isso vive no Início).
-    expect(screen.queryByText('Saldo total')).not.toBeInTheDocument()
+    // Nada por baixo do título: nem contagem de contas, nem saldo total
+    // (esse vive no Início).
+    expect(screen.queryByText('2 contas')).not.toBeInTheDocument()
+    expect(screen.queryByText(/4.?000,00/)).not.toBeInTheDocument()
 
     expect(screen.getByRole('link', { name: 'Nova conta' })).toHaveAttribute(
       'href',
@@ -112,6 +136,61 @@ describe('Página Contas', () => {
     expect(screen.queryByRole('link', { name: /Poupança/ })).not.toBeInTheDocument()
   })
 
+  describe('modo de pesquisa', () => {
+    it('em telemóvel, tocar na procura dá um "‹" para sair, que limpa a pesquisa', async () => {
+      definirEcraMobile(true)
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([conta({ id: 'a', nome: 'À ordem' }), conta({ id: 'b', nome: 'Poupança' })]),
+        ),
+      )
+
+      montar()
+      const campo = await screen.findByRole('searchbox', { name: 'Procurar conta' })
+      expect(screen.queryByRole('button', { name: 'Sair da pesquisa' })).not.toBeInTheDocument()
+
+      await userEvent.type(campo, 'poup')
+      expect(screen.getByRole('button', { name: 'Sair da pesquisa' })).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /À ordem/ })).not.toBeInTheDocument()
+
+      await userEvent.click(screen.getByRole('button', { name: 'Sair da pesquisa' }))
+
+      // Sai limpo: campo vazio, lista inteira de volta, e o "‹" desaparece
+      // no fim da animação de regresso.
+      expect(campo).toHaveValue('')
+      expect(screen.getByRole('link', { name: /À ordem/ })).toBeInTheDocument()
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Sair da pesquisa' })).not.toBeInTheDocument(),
+      )
+    })
+
+    it('em telemóvel, "Ver todas as contas" (procura sem resultados) sai do modo de pesquisa', async () => {
+      definirEcraMobile(true)
+      servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta({ nome: 'À ordem' })])))
+
+      montar()
+      const campo = await screen.findByRole('searchbox', { name: 'Procurar conta' })
+      await userEvent.type(campo, 'zzz')
+      await userEvent.click(screen.getByRole('button', { name: 'Ver todas as contas' }))
+
+      // De volta à página normal: campo vazio, lista inteira, sem o "‹".
+      expect(campo).toHaveValue('')
+      expect(screen.getByRole('link', { name: /À ordem/ })).toBeInTheDocument()
+      await waitFor(() =>
+        expect(screen.queryByRole('button', { name: 'Sair da pesquisa' })).not.toBeInTheDocument(),
+      )
+    })
+
+    it('em ecrã largo, o campo de procura fica onde está (sem modo de pesquisa)', async () => {
+      servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta()])))
+
+      montar()
+      await userEvent.click(await screen.findByRole('searchbox', { name: 'Procurar conta' }))
+
+      expect(screen.queryByRole('button', { name: 'Sair da pesquisa' })).not.toBeInTheDocument()
+    })
+  })
+
   it('mostra uma mensagem quando a pesquisa não encontra nada', async () => {
     servidorMsw.use(
       http.get('/api/contas', () =>
@@ -124,8 +203,13 @@ describe('Página Contas', () => {
 
     await userEvent.type(campo, 'zzz')
 
-    expect(screen.getByText(/Nenhuma conta corresponde/)).toBeInTheDocument()
+    expect(screen.getByText('Nenhuma conta com «zzz»')).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: /À ordem/ })).not.toBeInTheDocument()
+
+    // "Ver todas as contas" esvazia o campo e a lista volta.
+    await userEvent.click(screen.getByRole('button', { name: 'Ver todas as contas' }))
+    expect(campo).toHaveValue('')
+    expect(screen.getByRole('link', { name: /À ordem/ })).toBeInTheDocument()
   })
 
   it('ordena a lista por campo e direção, e guarda as escolhas', async () => {
@@ -155,10 +239,10 @@ describe('Página Contas', () => {
     // "⋯" da barra de topo abre na vista-raiz ("Ordenar por" / "Agrupar
     // por"); toca-se em "Ordenar por" para ver as opções. O menu fecha a
     // cada escolha, por isso reabre-se (e volta à vista-raiz).
-    await userEvent.click(screen.getByRole('button', { name: 'Ordenar e agrupar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Ordenar por' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Saldo' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Ordenar e agrupar' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Ordenar por' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Descendente' }))
 
@@ -172,7 +256,39 @@ describe('Página Contas', () => {
     expect(localStorage.getItem('contasOrdemDirecao')).toBe('desc')
   })
 
-  it('agrupa a lista por tipo, com a contagem de contas por grupo', async () => {
+  it('ordena por saldo convertido para a moeda principal, com as contas sem câmbio no fim', async () => {
+    servidorMsw.use(
+      http.get('/api/contas', () =>
+        HttpResponse.json([
+          // 640 dólares valem 548,61 € — menos do que os 600 € da outra
+          // conta, apesar de 640 > 600.
+          conta({ id: 'a', nome: 'Dólares', moeda: 'USD', saldo: '640.00', saldo_convertido: '548.61' }),
+          conta({ id: 'b', nome: 'Euros', saldo: '600.00' }),
+          // Sem taxa de câmbio: não se pode comparar — vai para o fim.
+          conta({ id: 'c', nome: 'Francos', moeda: 'CHF', saldo: '9999.00', saldo_convertido: null }),
+        ]),
+      ),
+    )
+
+    montar()
+    await screen.findByRole('link', { name: /Euros/ })
+    await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Ordenar por' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Saldo' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Ordenar por' }))
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Descendente' }))
+
+    const nomes = screen
+      .getAllByRole('link')
+      .map((no) => no.textContent ?? '')
+      .filter((texto) => /Dólares|Euros|Francos/.test(texto))
+    expect(nomes[0]).toMatch(/Euros/)
+    expect(nomes[1]).toMatch(/Dólares/)
+    expect(nomes[2]).toMatch(/Francos/)
+  })
+
+  it('agrupa a lista por tipo, só com o nome do grupo no cabeçalho', async () => {
     servidorMsw.use(
       http.get('/api/contas', () =>
         HttpResponse.json([
@@ -184,13 +300,15 @@ describe('Página Contas', () => {
     )
 
     montar()
-    await userEvent.click(await screen.findByRole('button', { name: 'Ordenar e agrupar' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Agrupar por' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Por tipo' }))
 
-    // Cada tipo é um cabeçalho de grupo, com a contagem à direita.
+    // Cada tipo é um cabeçalho de grupo, só com o nome — sem contagem nem
+    // subtotal (3000 + 500).
     const grupoPoupanca = screen.getByText('Conta poupança').closest('section') as HTMLElement
-    expect(within(grupoPoupanca).getByText('2 contas')).toBeInTheDocument()
+    expect(within(grupoPoupanca).queryByText('2 contas')).not.toBeInTheDocument()
+    expect(within(grupoPoupanca).queryByText(/3.?500,00/)).not.toBeInTheDocument()
     expect(within(grupoPoupanca).getByRole('link', { name: /Reserva/ })).toBeInTheDocument()
     expect(within(grupoPoupanca).getByRole('link', { name: /Extra/ })).toBeInTheDocument()
 
@@ -214,7 +332,7 @@ describe('Página Contas', () => {
     )
 
     montar()
-    await userEvent.click(await screen.findByRole('button', { name: 'Ordenar e agrupar' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Agrupar por' }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Por tipo' }))
 
@@ -244,10 +362,15 @@ describe('Página Contas', () => {
 
     montar()
 
-    expect(await screen.findByText('Ainda não tens contas.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Criar a primeira' })).toHaveAttribute(
+    expect(await screen.findByText('Ainda não tens contas')).toBeInTheDocument()
+    // Os dois caminhos de "Nova conta", cada um a abrir já no seu passo.
+    expect(screen.getByRole('link', { name: 'Ligar um banco' })).toHaveAttribute(
       'href',
-      '/contas/nova',
+      '/contas/nova?via=banco',
+    )
+    expect(screen.getByRole('link', { name: 'Adicionar manualmente' })).toHaveAttribute(
+      'href',
+      '/contas/nova?via=manual',
     )
   })
 
@@ -261,6 +384,139 @@ describe('Página Contas', () => {
     montar()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Sessão inválida ou expirada.')
+  })
+
+  it('quando uma página por cima altera as contas (ex.: cria uma), a lista por baixo actualiza-se', async () => {
+    // A lista fica montada por baixo do detalhe (a pilha de páginas). A
+    // conta "Recém-criada" só existe a partir do segundo pedido — como se
+    // tivesse sido criada lá em cima, que depois invalida a cache das
+    // contas (o que ContaNova faz ao criar).
+    let pedidos = 0
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.get('/api/contas', () => {
+        pedidos += 1
+        return HttpResponse.json(
+          pedidos === 1
+            ? [conta({ id: 'a', nome: 'Antiga' })]
+            : [conta({ id: 'a', nome: 'Antiga' }), conta({ id: 'b', nome: 'Recém-criada' })],
+        )
+      }),
+    )
+    function PaginaPorCima() {
+      const navegar = useNavigate()
+      const cliente = useQueryClient()
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            void cliente.invalidateQueries({ queryKey: CHAVES.contas })
+            navegar(-1)
+          }}
+        >
+          criar e recuar
+        </button>
+      )
+    }
+    render(
+      <AuthProvider>
+        <MemoryRouter initialEntries={['/contas', '/contas/b']} initialIndex={1}>
+          <Routes>
+            <Route path="/contas" element={<PilhaDePaginas fundo={<Contas />} />}>
+              <Route index element={null} />
+              <Route path=":id" element={<PaginaPorCima />} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    )
+    // Por baixo da página de cima, a lista já carregou uma vez.
+    await waitFor(() => expect(pedidos).toBe(1))
+    expect(screen.queryByText('Recém-criada')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'criar e recuar' }))
+
+    expect(await screen.findByRole('link', { name: /Recém-criada/ })).toBeInTheDocument()
+    expect(pedidos).toBe(2)
+  })
+
+  it('"Tentar outra vez" volta a pedir as contas depois de um erro', async () => {
+    let pedidos = 0
+    servidorMsw.use(
+      http.get('/api/contas', () => {
+        pedidos += 1
+        // O primeiro pedido falha; o segundo corre bem.
+        return pedidos === 1
+          ? HttpResponse.json({ detail: 'Erro temporário.' }, { status: 500 })
+          : HttpResponse.json([conta({ nome: 'Recuperada' })])
+      }),
+    )
+
+    montar()
+    await screen.findByRole('alert')
+    await userEvent.click(screen.getByRole('button', { name: 'Tentar outra vez' }))
+
+    expect(await screen.findByRole('link', { name: /Recuperada/ })).toBeInTheDocument()
+    expect(pedidos).toBe(2)
+  })
+
+  describe('ligação ao banco', () => {
+    it('diz o estado da ligação de cada conta ligada (ligada, a expirar, expirada)', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({ id: 'a', nome: 'Ativa', ligacao: ligacao(60, 'cl1') }),
+            conta({ id: 'b', nome: 'Quase', ligacao: ligacao(3, 'cl2') }),
+            conta({ id: 'c', nome: 'Antiga', ligacao: ligacao(-1, 'cl3') }),
+            conta({ id: 'd', nome: 'Manual' }),
+          ]),
+        ),
+      )
+
+      montar()
+
+      // O ícone é só visual; o estado vai, em texto, no nome da linha.
+      expect(await screen.findByRole('link', { name: /Ativa.*ligada ao banco/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Quase.*a expirar/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Antiga.*expirada/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Manual/ })).not.toHaveTextContent(/ligad|ligação/)
+    })
+
+    it('"Sincronizar agora" fica desativado, com a razão, sem contas ligadas', async () => {
+      servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta()])))
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+
+      const item = screen.getByRole('menuitem', { name: /Sincronizar agora/ })
+      expect(item).toHaveAttribute('aria-disabled', 'true')
+      expect(item).toHaveTextContent('Nenhuma conta ligada')
+    })
+
+    it('"Sincronizar agora" sincroniza as contas com ligação válida e diz o resultado', async () => {
+      const sincronizadas: string[] = []
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({ id: 'a', nome: 'Uma', ligacao: ligacao(60, 'cl1') }),
+            conta({ id: 'b', nome: 'Outra', ligacao: ligacao(3, 'cl2') }),
+            // Expirada: o banco já não responde — não é pedida.
+            conta({ id: 'c', nome: 'Velha', ligacao: ligacao(-1, 'cl3') }),
+          ]),
+        ),
+        http.post('/api/open-banking/contas-ligadas/:id/sincronizar', ({ params }) => {
+          sincronizadas.push(String(params.id))
+          return HttpResponse.json({ movimentos_importados: params.id === 'cl1' ? 2 : 1 })
+        }),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+
+      expect(await screen.findByText('Atualizado · 3 movimentos novos')).toBeInTheDocument()
+      expect(sincronizadas).toEqual(['cl1', 'cl2'])
+    })
   })
 
   describe('conversão de moeda', () => {

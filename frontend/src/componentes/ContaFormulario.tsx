@@ -13,25 +13,54 @@
  *     mostrada.
  *
  * Os campos estão em dois grupos: "Identificação" (nome, banco, tipo,
- * moeda) e a âncora — data e saldo de início, só na criação. Cada grupo é
- * um cartão; não há título visível. Por BAIXO dos campos da âncora há uma
- * nota pequena a explicar o que ela é (o rodapé de grupo das listas
- * agrupadas do iOS).
+ * moeda) e a âncora — data e saldo de início, e se esse saldo é negativo,
+ * só na criação. Cada grupo é um cartão; não há título visível. Por BAIXO
+ * dos campos da âncora há uma nota pequena a explicar o que ela é (o
+ * rodapé de grupo das listas agrupadas do iOS).
  *
  * BANCO e TIPO são seletores de campos ABERTOS (CampoSelecao com
- * "permiteNovo"): "Sem banco"/"Sem tipo" no topo, a seguir a lista (banco
- * começa vazia e cresce com o uso; tipo tem a lista-semente TIPOS_COMUNS
- * mais o uso), e no fim "Outro banco"/"Outro tipo" para escrever um valor
- * à mão. MOEDA é um seletor de conjunto fechado (o símbolo e a futura
- * conversão dependem do código).
+ * "permiteNovo"), no modo "procurar ou adicionar" (ver ListaDeOpcoes.tsx):
+ * a lista tem só os valores já usados noutras contas — sem listas
+ * pré-feitas (decisão de desenho: não restringir a um país nem influenciar
+ * a escolha) —, "Sem banco"/"Sem tipo" no topo, e escrever um nome novo
+ * oferece "Adicionar «…»". MOEDA é um seletor de conjunto fechado (o
+ * símbolo e a futura conversão dependem do código).
+ *
+ * DATA DE INÍCIO: o calendário SeletorData (sobe de baixo como o teclado,
+ * em telemóvel), sem dias futuros — o backend não os aceita.
+ *
+ * MOEDA: numa conta nova, começa na moeda principal do utilizador (a das
+ * Preferências), não sempre em Euro — é a que a maioria das contas dele
+ * vai usar.
+ *
+ * SALDO NEGATIVO: o teclado numérico do iPhone não tem a tecla "−", por
+ * isso o sinal escolhe-se num interruptor à parte ("Saldo negativo") — ex.:
+ * um cartão de crédito com dívida. O valor escreve-se sempre sem sinal,
+ * mas o campo MOSTRA o efeito do interruptor: "−412,90 €", a vermelho
+ * (o símbolo da moeda escolhida aparece sempre depois do valor).
+ *
+ * MONOGRAMA: a cor e a inicial saem do banco (ou do nome); sem nenhum dos
+ * dois, um círculo neutro com uma carteira (no lugar do antigo "?" rosa).
  *
  * APRESENTAÇÃO: fichas ao estilo das listas agrupadas do iOS — cartão
- * branco com contorno (sem sombra), cada campo com o nome em cima (ténue)
- * e o valor por baixo, e um traço fino recuado a separar as linhas.
+ * branco com contorno (sem sombra), cada campo numa linha com o nome à
+ * esquerda e o valor à direita (disposicao="lado", como nas Definições do
+ * iOS e como a linha do interruptor), e um traço fino recuado a separar as
+ * linhas. O Nome, vazio, mostra um exemplo esbatido ("Ex.: Conta
+ * ordenado"), tal como o saldo mostra "0,00 €" — diz o que escrever sem
+ * repetir o rótulo. Os rótulos da âncora são curtos ("Data inicial",
+ * "Saldo inicial") para caberem ao lado do valor; o que significam
+ * explica-o a nota por baixo da ficha.
  *
  * AGRUPAMENTO: cada grupo é um <fieldset> SEM <legend> — o rótulo do grupo
  * vai num "aria-label" do <fieldset>. Um <legend>, mesmo escondido fora do
  * ecrã, faz o Safari reservar-lhe espaço no topo do <fieldset>.
+ *
+ * ERRO AO GUARDAR: a caixa de erro fica no TOPO do formulário, logo
+ * abaixo do monograma, e o formulário desliza até ela quando aparece. No
+ * fundo (onde estava antes) ficava escondida fora do ecrã num telemóvel,
+ * e o toque no "✓" parecia não ter feito nada. No topo fica também junto
+ * do Nome — o campo do erro mais provável ("Já tens uma conta chamada…").
  *
  * BOTÃO DE SUBMETER: por omissão, no rodapé do formulário ("Criar conta" /
  * "Guardar alterações"). Quem preferir um botão FORA (ex.: o "✓" no
@@ -40,7 +69,7 @@
  * e um "aoMudarSubmissao" (para saber quando desativar esse botão).
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { Avatar } from './Avatar'
 import { Botao } from './Botao'
@@ -49,8 +78,13 @@ import { CampoDinheiro } from './CampoDinheiro'
 import { CampoSelecao } from './CampoSelecao'
 import { CampoTexto } from './CampoTexto'
 import { Formulario } from './Formulario'
+import { IconeCarteira } from './icones'
+import { Interruptor } from './Interruptor'
+import { SeletorData } from './SeletorData'
+import { useAuth } from '../auth/useAuth'
 import { ErroApi } from '../lib/http'
-import { TIPOS_COMUNS, listarContas, sugestoes, type Conta } from '../lib/contas'
+import { useContas } from '../hooks/useContas'
+import { sugestoes, type Conta } from '../lib/contas'
 import { OPCOES_MOEDA } from '../lib/moedas'
 import estilos from './ContaFormulario.module.css'
 
@@ -79,7 +113,15 @@ type Props = {
   aoMudarValidez?: (valido: boolean) => void
 }
 
-const HOJE = new Date().toISOString().slice(0, 10)
+// A data de HOJE em ISO ("AAAA-MM-DD"), no fuso local (o
+// "toISOString()" daria a data em UTC — perto da meia-noite, o dia
+// errado).
+function hojeLocal(): string {
+  const agora = new Date()
+  const mes = String(agora.getMonth() + 1).padStart(2, '0')
+  const dia = String(agora.getDate()).padStart(2, '0')
+  return `${agora.getFullYear()}-${mes}-${dia}`
+}
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível guardar. Tenta novamente.'
 
 export function ContaFormulario({
@@ -95,34 +137,44 @@ export function ContaFormulario({
   const [nome, setNome] = useState(inicial?.nome ?? '')
   const [banco, setBanco] = useState(inicial?.banco ?? '')
   const [tipo, setTipo] = useState(inicial?.tipo ?? '')
-  const [moeda, setMoeda] = useState(inicial?.moeda ?? 'EUR')
-  const [dataAncora, setDataAncora] = useState(inicial?.data_ancora ?? HOJE)
-  const [saldoAncora, setSaldoAncora] = useState(inicial?.saldo_ancora ?? '')
+  // Ver a nota MOEDA, no topo. "?? 'EUR'" só para o caso de o utilizador
+  // ainda não estar carregado (na app, este formulário só aparece depois).
+  const { utilizador } = useAuth()
+  const [moeda, setMoeda] = useState(inicial?.moeda ?? utilizador?.moeda_principal ?? 'EUR')
+  const hoje = hojeLocal()
+  const [dataAncora, setDataAncora] = useState(inicial?.data_ancora ?? hoje)
+  // O saldo sem sinal, e o sinal à parte (ver a nota SALDO NEGATIVO).
+  const [saldoAncora, setSaldoAncora] = useState(inicial?.saldo_ancora?.replace('-', '') ?? '')
+  const [negativo, setNegativo] = useState(inicial ? Number(inicial.saldo_ancora) < 0 : false)
 
   const [erro, setErro] = useState<string | null>(null)
   const [aSubmeter, setASubmeter] = useState(false)
 
-  // Opções dos seletores de banco e tipo. Banco começa vazio; tipo com a
-  // lista-semente. Ambos crescem com o que o utilizador já usou (obtido a
-  // seguir).
-  const [bancosSugeridos, setBancosSugeridos] = useState<string[]>([])
-  const [tiposSugeridos, setTiposSugeridos] = useState<string[]>(TIPOS_COMUNS)
-
+  // Quando aparece um erro, traz a caixa para dentro do ecrã (ver ERRO AO
+  // GUARDAR). "center" deixa à vista também o que está à volta (o
+  // monograma e o Nome). Sem animação se o sistema pedir movimento
+  // reduzido. "?." porque o jsdom dos testes não implementa scrollIntoView.
+  const erroRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    let activo = true
-    listarContas()
-      .then((contas) => {
-        if (!activo) return
-        setBancosSugeridos(sugestoes([], contas.map((c) => c.banco)))
-        setTiposSugeridos(sugestoes(TIPOS_COMUNS, contas.map((c) => c.tipo)))
-      })
-      // Falhar a obter as contas não é impeditivo — fica-se com as listas
-      // de partida.
-      .catch(() => {})
-    return () => {
-      activo = false
-    }
-  }, [])
+    if (erro === null) return
+    const reduzido = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    erroRef.current?.scrollIntoView?.({ block: 'center', behavior: reduzido ? 'auto' : 'smooth' })
+  }, [erro])
+
+  // Opções dos seletores de banco e tipo: só o que o utilizador já usou
+  // noutras contas — sem listas pré-feitas. As contas vêm da cache
+  // partilhada (useContas). A TanStack Query (uma biblioteca de gestão de
+  // dados vindos do servidor) guarda numa cache (uma cópia em memória)
+  // os dados já pedidos, identificados por uma "chave" (ex.: ['contas']).
+  // "Invalidar" uma chave marca esses dados como desatualizados: todas as
+  // páginas que os mostram voltam a pedi-los e redesenham-se sozinhas.
+  // Normalmente as contas já lá estão (a página
+  // Contas, por baixo, acabou de as pedir), por isso as opções aparecem
+  // logo. Sem contas (ou se o pedido falhar), as listas ficam vazias e
+  // escreve-se o valor à mão — não é impeditivo.
+  const { data: contasExistentes = [] } = useContas()
+  const bancosSugeridos = sugestoes([], contasExistentes.map((c) => c.banco))
+  const tiposSugeridos = sugestoes([], contasExistentes.map((c) => c.tipo))
 
   // O banco/tipo ESCOLHIDO AGORA, se for um valor à mão que ainda não está
   // nas sugestões, entra já como opção da lista — mas só ESSE. Um valor
@@ -170,8 +222,11 @@ export function ContaFormulario({
         moeda,
         data_ancora: dataAncora,
         // O utilizador pode escrever a vírgula decimal portuguesa; a API
-        // espera o ponto.
-        saldo_ancora: saldoAncora.replace(',', '.').trim(),
+        // espera o ponto. O sinal vem do interruptor "Saldo negativo" (um
+        // zero fica sempre sem sinal).
+        saldo_ancora: `${negativo && Number(saldoAncora.replace(',', '.')) !== 0 ? '-' : ''}${saldoAncora
+          .replace(',', '.')
+          .trim()}`,
       })
     } catch (erroApanhado) {
       setErro(erroApanhado instanceof ErroApi ? erroApanhado.message : MENSAGEM_ERRO_GENERICA)
@@ -182,26 +237,43 @@ export function ContaFormulario({
 
   // Pré-visualização do monograma: a cor e a inicial saem do banco (ou, na
   // falta dele, do nome) — como no monograma real de uma conta. Atualiza-se
-  // à medida que se escreve.
-  const monograma = banco.trim() || nome.trim() || '?'
+  // à medida que se escreve. Sem nenhum dos dois: o monograma neutro.
+  const monograma = banco.trim() || nome.trim()
 
   return (
     <Formulario id={idFormulario} aoSubmeter={submeter}>
       <div className={estilos.monograma}>
-        <Avatar nome={monograma} tamanho="xl" />
+        {monograma ? (
+          <Avatar nome={monograma} tamanho="xl" />
+        ) : (
+          <span className={estilos.monogramaVazio} aria-hidden="true">
+            <IconeCarteira tamanho={48} traco={1.5} />
+          </span>
+        )}
       </div>
+
+      {erro !== null && (
+        <div ref={erroRef}>
+          <CaixaErro>{erro}</CaixaErro>
+        </div>
+      )}
 
       {/* Ficha 1 — identificação. */}
       <fieldset className={estilos.grupo} aria-label="Identificação">
         <CampoTexto
-          disposicao="linha"
+          disposicao="lado"
           etiqueta="Nome"
           valor={nome}
           aoMudar={setNome}
           obrigatorio
+          // 120 caracteres: o limite do nome de uma conta no servidor (a
+          // mesma regra do backend, para nunca se escrever um nome que ele
+          // depois recusa).
+          maxCaracteres={120}
+          placeholder="Ex.: Conta ordenado"
         />
         <CampoSelecao
-          disposicao="linha"
+          disposicao="lado"
           etiqueta="Banco"
           valor={banco}
           aoMudar={setBanco}
@@ -209,9 +281,10 @@ export function ContaFormulario({
           rotuloVazio="Sem banco"
           permiteNovo
           rotuloNovo="Adicionar banco"
+          textoVazio="Escreve o nome do banco no campo acima para o adicionar."
         />
         <CampoSelecao
-          disposicao="linha"
+          disposicao="lado"
           etiqueta="Tipo"
           valor={tipo}
           aoMudar={setTipo}
@@ -219,13 +292,15 @@ export function ContaFormulario({
           rotuloVazio="Sem tipo"
           permiteNovo
           rotuloNovo="Adicionar tipo"
+          textoVazio="Escreve um tipo no campo acima (ex.: Conta à ordem) para o adicionar."
         />
         <CampoSelecao
-          disposicao="linha"
+          disposicao="lado"
           etiqueta="Moeda"
           valor={moeda}
           aoMudar={setMoeda}
           opcoes={OPCOES_MOEDA}
+          pesquisavel
         />
       </fieldset>
 
@@ -235,32 +310,36 @@ export function ContaFormulario({
       {!eEdicao && (
         <>
           <fieldset className={estilos.grupo} aria-label="Ponto de partida">
-            <CampoTexto
-              disposicao="linha"
-              etiqueta="Data de início"
-              tipo="date"
+            <SeletorData
+              disposicao="lado"
+              etiqueta="Data inicial"
               valor={dataAncora}
               aoMudar={setDataAncora}
-              obrigatorio
+              maximo={hoje}
             />
             <CampoDinheiro
-              disposicao="linha"
-              etiqueta="Saldo início"
+              disposicao="lado"
+              etiqueta="Saldo inicial"
               valor={saldoAncora}
               aoMudar={setSaldoAncora}
               moeda={moeda}
+              mostrarSimbolo
+              negativo={negativo}
             />
+            <Interruptor etiqueta="Saldo negativo" ligado={negativo} aoMudar={setNegativo} />
           </fieldset>
           {/* Nota a explicar a ficha acima — por baixo dela, à maneira do
-              rodapé de um grupo nas listas do iOS. */}
+              rodapé de um grupo nas listas do iOS. Diz o que a data
+              significa (o início do registo) e o que não é óbvio no
+              saldo: os movimentos do PRÓPRIO dia de início também contam
+              (o backend aceita-os e soma-os), por isso o saldo pedido é o
+              do início desse dia, antes de qualquer um deles. */}
           <p className={estilos.rodapeGrupo}>
-            Data a partir da qual vais registar movimentos nesta conta, e o saldo
-            nessa data — antes do primeiro movimento.
+            A data a partir da qual registas movimentos. O saldo é o do início desse dia, antes de
+            qualquer movimento.
           </p>
         </>
       )}
-
-      {erro !== null && <CaixaErro>{erro}</CaixaErro>}
 
       {botaoNoRodape && (
         <Botao type="submit" disabled={aSubmeter || !valido}>

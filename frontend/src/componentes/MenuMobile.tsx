@@ -49,10 +49,12 @@ import { inicial, nomeApresentado } from '../lib/nomeUtilizador'
 import { SECCOES, type Seccao } from '../lib/seccoes'
 import { IconeCheck, IconeFechar } from './icones'
 import estilos from './MenuMobile.module.css'
+import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 
-// Deve acompanhar a duração da animação ".painelAFechar" no CSS: quando a
-// animação de saída acaba, desmonta-se o painel.
-const DURACAO_SAIDA_MS = 250
+// A duração da animação ".painelAFechar" no CSS — a de "deslocar"
+// (src/lib/movimento.ts): quando a animação de saída acaba, desmonta-se o
+// painel.
+const DURACAO_SAIDA_MS = DURACAO_DESLOCAR_MS
 
 type Props = {
   aoFechar: () => void

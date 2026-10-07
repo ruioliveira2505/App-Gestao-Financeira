@@ -11,9 +11,10 @@
  * de facto, o Tab de sair para a página por trás).
  */
 
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 import { Confirmacao } from './Confirmacao'
 
 describe('Confirmacao', () => {
@@ -47,7 +48,7 @@ describe('Confirmacao', () => {
     expect(cancelar).toHaveFocus()
   })
 
-  it('o Escape chama aoCancelar', () => {
+  it('o Escape chama aoCancelar (depois da animação de saída)', async () => {
     const aoCancelar = vi.fn()
     render(
       <Confirmacao titulo="Eliminar" aoConfirmar={vi.fn()} aoCancelar={aoCancelar}>
@@ -57,7 +58,26 @@ describe('Confirmacao', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(aoCancelar).toHaveBeenCalledTimes(1)
+    // A folha primeiro desce; só no fim se avisa quem a abriu.
+    expect(aoCancelar).not.toHaveBeenCalled()
+    await waitFor(() => expect(aoCancelar).toHaveBeenCalledTimes(1))
+  })
+
+  it('enquanto a ação decorre (aConfirmar), o Escape NÃO fecha', async () => {
+    const aoCancelar = vi.fn()
+    render(
+      <Confirmacao titulo="Eliminar" aConfirmar aoConfirmar={vi.fn()} aoCancelar={aoCancelar}>
+        Tens a certeza?
+      </Confirmacao>,
+    )
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    // Espera um pouco mais do que a animação de saída (a mesma constante
+    // que o componente usa): se o Escape tivesse fechado, aoCancelar já
+    // teria sido chamada.
+    await new Promise((resolver) => setTimeout(resolver, DURACAO_DESLOCAR_MS + 100))
+    expect(aoCancelar).not.toHaveBeenCalled()
   })
 
   it('ao fechar (desmontar), devolve o foco a quem o abriu', () => {

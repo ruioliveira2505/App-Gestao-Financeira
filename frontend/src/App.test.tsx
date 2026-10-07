@@ -9,7 +9,7 @@
  * sessão e o reencaminhamento de quem não tem sessão.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
@@ -19,6 +19,15 @@ import { servidorMsw } from './test/servidor-msw'
 import { definirEcraMobile, simularEntradaNoEcra, simularSaidaDoEcra } from './test/setup'
 import { AuthProvider } from './auth/AuthProvider'
 import App from './App'
+import { ComConsultas } from './test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
+// ver test/consultas.tsx). "wrapper" é a opção do Testing Library para
+// envolver o que se monta num componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const UTILIZADOR = { id: '11111111-1111-1111-1111-111111111111', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 const semSessao = () =>
@@ -96,7 +105,7 @@ describe('Moldura da aplicação', () => {
     await userEvent.click(screen.getByRole('link', { name: 'Contas' }))
 
     // A página de Contas — sem contas ainda — mostra o estado vazio.
-    expect(await screen.findByText('Ainda não tens contas.')).toBeInTheDocument()
+    expect(await screen.findByText('Ainda não tens contas')).toBeInTheDocument()
   })
 
   it('abre o Perfil ao clicar na zona de perfil da barra lateral', async () => {
@@ -265,7 +274,7 @@ describe('Moldura da aplicação', () => {
     await abrir()
     expect(within(menu()).getByText('Gestão Financeira')).toBeInTheDocument()
     await userEvent.click(within(menu()).getByRole('link', { name: 'Contas' }))
-    expect(await screen.findByText('Ainda não tens contas.')).toBeInTheDocument()
+    expect(await screen.findByText('Ainda não tens contas')).toBeInTheDocument()
     await esperarMenuFechado()
 
     // Reabre e vai a Perfil pela zona de perfil no fundo (o avatar + nome
@@ -294,7 +303,7 @@ describe('Moldura da aplicação', () => {
       mockResumo(),
     )
     montar('/contas')
-    await screen.findByText('Ainda não tens contas.')
+    await screen.findByText('Ainda não tens contas')
 
     const menu = () => screen.getByRole('dialog', { name: 'Menu de navegação' })
     const esperarMenuFechado = () =>
@@ -462,7 +471,7 @@ describe('Moldura da aplicação', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Fechar' }))
 
     // Sem histórico, o "X" foi para "/contas" como recurso.
-    expect(await screen.findByText('Ainda não tens contas.')).toBeInTheDocument()
+    expect(await screen.findByText('Ainda não tens contas')).toBeInTheDocument()
   })
 
   it('reencaminha para /login quem não tem sessão', async () => {

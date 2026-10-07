@@ -23,10 +23,16 @@
  *
  * O conteúdo do menu são <MenuItem> (acções), opcionalmente precedidos por
  * um <MenuCabecalho> (linha de contexto no topo).
+ *
+ * FECHAR COM ANIMAÇÃO: o painel não desaparece de golpe — desvanece (a
+ * duração de "aparecer", src/lib/movimento.ts) e só depois sai da página.
+ * Durante esse instante ("aFechar"), tocar outra vez no gatilho reabre-o
+ * em vez de esperar que acabe de fechar.
  */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 
+import { DURACAO_APARECER_MS } from '../lib/movimento'
 import { IconeCheck } from './icones'
 import estilos from './Menu.module.css'
 
@@ -53,6 +59,36 @@ export function Menu({
   alinhamento = 'esquerda',
 }: Props) {
   const [aberto, setAberto] = useState(false)
+  // A desvanecer, antes de sair da página (ver FECHAR COM ANIMAÇÃO).
+  const [aFechar, setAFechar] = useState(false)
+
+  function fechar() {
+    setAFechar(true)
+  }
+
+  function alternar() {
+    if (aberto && !aFechar) {
+      fechar()
+    } else if (aberto && aFechar) {
+      // A meio de fechar: cancela o fecho e fica aberto (o efeito abaixo
+      // desfaz o seu temporizador ao "aFechar" voltar a false).
+      setAFechar(false)
+    } else {
+      setAberto(true)
+    }
+  }
+
+  // Enquanto desvanece: no fim da animação, sai mesmo da página. O
+  // temporizador é desfeito se o fecho for cancelado (reabrir) ou se o
+  // componente sair antes disso.
+  useEffect(() => {
+    if (!aFechar) return
+    const temporizador = window.setTimeout(() => {
+      setAberto(false)
+      setAFechar(false)
+    }, DURACAO_APARECER_MS)
+    return () => window.clearTimeout(temporizador)
+  }, [aFechar])
 
   // Referência ao elemento que envolve o gatilho e o painel — serve para
   // distinguir "clicou dentro do menu" de "clicou fora".
@@ -62,15 +98,15 @@ export function Menu({
   // para o fechar. A função devolvida remove os ouvintes quando o menu
   // fecha (ou o componente sai do ecrã).
   useEffect(() => {
-    if (!aberto) return
+    if (!aberto || aFechar) return
 
     function aoClicarFora(evento: MouseEvent) {
       if (raizRef.current && !raizRef.current.contains(evento.target as Node)) {
-        setAberto(false)
+        setAFechar(true)
       }
     }
     function aoTeclar(evento: KeyboardEvent) {
-      if (evento.key === 'Escape') setAberto(false)
+      if (evento.key === 'Escape') setAFechar(true)
     }
 
     document.addEventListener('mousedown', aoClicarFora)
@@ -79,14 +115,14 @@ export function Menu({
       document.removeEventListener('mousedown', aoClicarFora)
       document.removeEventListener('keydown', aoTeclar)
     }
-  }, [aberto])
+  }, [aberto, aFechar])
 
   return (
     <div
       ref={raizRef}
       className={alinhamento === 'pagina' ? estilos.raizPagina : estilos.raiz}
     >
-      {gatilho({ aberto, alternar: () => setAberto((v) => !v) })}
+      {gatilho({ aberto: aberto && !aFechar, alternar })}
 
       {aberto && (
         // Um clique em qualquer parte do painel (portanto, em qualquer
@@ -97,11 +133,12 @@ export function Menu({
             posicao === 'baixo' && estilos.painelBaixo,
             alinhamento === 'direita' && estilos.painelDireita,
             alinhamento === 'pagina' && estilos.painelPagina,
+            aFechar && estilos.painelAFechar,
           ]
             .filter(Boolean)
             .join(' ')}
           role="menu"
-          onClick={() => setAberto(false)}
+          onClick={fechar}
         >
           {children}
         </div>
@@ -125,6 +162,18 @@ type PropsItem = {
   mantemAberto?: boolean
   // Acção destrutiva ("Remover", "Apagar") — o rótulo fica na cor negativa.
   perigo?: boolean
+  // Ícone à esquerda do rótulo (ex.: o de "Sincronizar agora"). Numa
+  // mesma lista de itens, ou todos têm ícone ou nenhum tem — um ícone
+  // sozinho desalinha os rótulos e parece um engano.
+  icone?: ReactNode
+  // Item visível mas indisponível: rótulo esbatido, não reage ao toque e
+  // não fecha o menu. Mostrar a acção em vez de a esconder ensina que ela
+  // existe; "descricao" (abaixo) deve dizer porque não está disponível —
+  // um item cinzento sem explicação deixa a pessoa a adivinhar.
+  desativado?: boolean
+  // Segunda linha, mais pequena, por baixo do rótulo (ex.: "Nenhuma conta
+  // ligada", a razão de um item desativado).
+  descricao?: ReactNode
 }
 
 export function MenuItem({
@@ -134,14 +183,30 @@ export function MenuItem({
   sufixo,
   mantemAberto,
   perigo,
+  icone,
+  desativado,
+  descricao,
 }: PropsItem) {
+  const classes = [estilos.item, perigo && estilos.itemPerigo, desativado && estilos.itemDesativado]
+    .filter(Boolean)
+    .join(' ')
   return (
     <button
       type="button"
       role="menuitem"
       aria-current={selecionado ? 'true' : undefined}
-      className={perigo ? `${estilos.item} ${estilos.itemPerigo}` : estilos.item}
+      // "aria-disabled" (e não o atributo "disabled") mantém o item
+      // alcançável por teclado e leitores de ecrã — assim a pessoa ouve
+      // que ele existe e porquê está indisponível, em vez de o saltar.
+      aria-disabled={desativado || undefined}
+      className={classes}
       onClick={(evento) => {
+        // Um item desativado não faz nada e não fecha o menu (o painel
+        // fecha ao receber qualquer clique — daí o stopPropagation).
+        if (desativado) {
+          evento.stopPropagation()
+          return
+        }
         if (mantemAberto) evento.stopPropagation()
         onClick()
       }}
@@ -151,7 +216,19 @@ export function MenuItem({
           {selecionado ? <IconeCheck tamanho={16} /> : null}
         </span>
       )}
-      <span className={estilos.itemRotulo}>{children}</span>
+      {icone && (
+        <span className={estilos.itemIcone} aria-hidden="true">
+          {icone}
+        </span>
+      )}
+      {descricao ? (
+        <span className={estilos.itemTextos}>
+          <span className={estilos.itemRotulo}>{children}</span>
+          <span className={estilos.itemDescricao}>{descricao}</span>
+        </span>
+      ) : (
+        <span className={estilos.itemRotulo}>{children}</span>
+      )}
       {sufixo && (
         <span className={estilos.itemSufixo} aria-hidden="true">
           {sufixo}

@@ -57,14 +57,13 @@
   appearance: none;
 }
 
-/* "✕" para limpar — só existe no DOM quando há texto escrito. A margem
-   negativa à direita puxa o ícone para junto da borda da pílula sem comer
-   o "padding" do campo. */
+/* "✕" para limpar — só existe no DOM quando há texto escrito. Fica
+   dentro do "padding" do campo, sem margem negativa: antes, puxado 8px
+   para fora, ficava demasiado encostado à borda da pílula. */
 .limpar {
   display: flex;
   flex-shrink: 0;
   padding: var(--espaco-1);
-  margin-right: calc(-1 * var(--espaco-2));
   border: none;
   background: none;
   color: var(--cor-texto-3);

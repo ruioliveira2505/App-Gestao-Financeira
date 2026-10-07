@@ -33,9 +33,11 @@ export function etiquetaMoeda(codigo: string): string {
 }
 
 // Lista pronta para preencher um seletor de moeda, por ordem alfabética
-// da etiqueta.
+// da etiqueta ("Euro (€)"). O código ISO vai à direita de cada linha, em
+// tom ténue ("detalhe", ex.: "EUR") — é também por ele que se pode
+// procurar ("usd" encontra o dólar).
 export const OPCOES_MOEDA = Object.keys(MOEDAS)
-  .map((valor) => ({ valor, etiqueta: etiquetaMoeda(valor) }))
+  .map((valor) => ({ valor, etiqueta: etiquetaMoeda(valor), detalhe: valor }))
   .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'pt'))
 
 /** Símbolo de uma moeda (ex.: "€"), ou o próprio código se for desconhecida. */

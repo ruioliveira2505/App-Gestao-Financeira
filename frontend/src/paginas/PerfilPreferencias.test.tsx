@@ -12,15 +12,27 @@
  * só aparece um erro.
  */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { render as renderBase, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
 
 import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from '../auth/AuthProvider'
 import { PerfilPreferencias } from './PerfilPreferencias'
+import { ComConsultas } from '../test/consultas'
+import { CHAVES, criarClienteConsultas } from '../lib/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova).
+// A página usa a cache para avisar que os saldos das contas mudaram;
+// "wrapper" é a opção do Testing Library para envolver o que se monta num
+// componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 // moeda_principal "USD" (não "EUR"): distingue mostrar o valor REAL vindo
 // do servidor de mostrar o EUR do "utilizador ?? 'EUR'" (o alçapão para
@@ -137,5 +149,32 @@ describe('PerfilPreferencias', () => {
     await userEvent.click(await screen.findByRole('link', { name: 'Perfil' }))
 
     expect(await screen.findByText('página de perfil')).toBeInTheDocument()
+  })
+  it('mudar a moeda principal marca as contas como desatualizadas (o saldo convertido mudou)', async () => {
+    // Uma cache própria, já com a lista de contas lá dentro: depois de
+    // mudar a moeda, a chave ['contas'] tem de ficar "invalidada", para as
+    // páginas de contas voltarem a pedir os saldos convertidos.
+    const cliente = criarClienteConsultas({ testes: true })
+    cliente.setQueryData(CHAVES.contas, [])
+    servidorMsw.use(
+      http.get('/api/auth/me', () => HttpResponse.json(UTILIZADOR)),
+      http.patch('/api/auth/me', () => HttpResponse.json({ ...UTILIZADOR, moeda_principal: 'EUR' })),
+    )
+    renderBase(
+      <QueryClientProvider client={cliente}>
+        <AuthProvider>
+          <MemoryRouter initialEntries={['/perfil/preferencias']}>
+            <Routes>
+              <Route path="/perfil/preferencias" element={<PerfilPreferencias />} />
+            </Routes>
+          </MemoryRouter>
+        </AuthProvider>
+      </QueryClientProvider>,
+    )
+
+    await userEvent.click(await screen.findByText(/Dólar americano/))
+    await userEvent.click(screen.getByText(/Euro/))
+
+    await waitFor(() => expect(cliente.getQueryState(CHAVES.contas)?.isInvalidated).toBe(true))
   })
 })

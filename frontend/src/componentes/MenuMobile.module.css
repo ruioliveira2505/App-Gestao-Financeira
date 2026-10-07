@@ -5,9 +5,10 @@
  * Painel de navegação em ecrã estreito. Cobre o ecrã todo e desliza da
  * esquerda para a direita ao abrir; desliza de volta ao fechar.
  *
- * CURVA DE MOVIMENTO: cubic-bezier(0.32, 0.72, 0, 1) — a curva que o iOS
- * usa nas "sheets": arranca depressa e assenta com suavidade, sem
- * ressalto. Entrada ~0.30s, saída ~0.25s.
+ * MOVIMENTO: a duração e a curva de "deslocar" (--movimento-deslocar,
+ * --curva-deslocar, em src/index.css) — a curva das "sheets" do iOS:
+ * arranca depressa e assenta com suavidade, sem ressalto. A mesma na
+ * entrada e na saída, para a ida e a volta serem o mesmo gesto.
  *
  * ASPECTO (o mesmo da barra lateral do desktop): o fundo do painel é o tom
  * cinzento (--cor-superficie) e as linhas assentam nele, sem cartão. Ao
@@ -38,14 +39,14 @@
     env(safe-area-inset-bottom, 0px);
   background: var(--cor-superficie);
 
-  animation: deslizar-entrada 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: deslizar-entrada var(--movimento-deslocar) var(--curva-deslocar);
   /* Um scroll dentro do painel não "vaza" para a página por baixo. */
   overscroll-behavior: contain;
 }
 
 /* Vem depois de ".painel" para lhe ganhar na propriedade "animation". */
 .painelAFechar {
-  animation: deslizar-saida 0.25s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  animation: deslizar-saida var(--movimento-deslocar) var(--curva-deslocar) forwards;
 }
 
 @keyframes deslizar-entrada {

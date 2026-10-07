@@ -161,10 +161,12 @@
  * desativado, sem tentar e falhar.
  */
 
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react'
 
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 
+import { CHAVES } from '../lib/consultas'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { CaixaErro } from '../componentes/CaixaErro'
 import { CampoPesquisa } from '../componentes/CampoPesquisa'
@@ -194,6 +196,7 @@ import {
   type CursorMovimentos,
   type Movimento,
 } from '../lib/movimentos'
+import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 import estilos from './Movimentos.module.css'
 
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível concluir. Tenta novamente.'
@@ -312,12 +315,17 @@ function Esqueleto() {
  *  desaparece nem troca de aspeto, só entra mais uma coisa. Qualquer
  *  toque na linha alterna a seleção em vez de abrir a edição. Entrar no
  *  modo é sempre feito pelo botão "Selecionar" do cabeçalho (Movimentos,
- *  mais abaixo) — esta linha só reage a ele já estando activo. */
+ *  mais abaixo) — esta linha só reage a ele já estando activo.
+ *
+ *  O checkbox ENTRA a crescer de largura zero (o resto da linha desliza
+ *  para a direita, em vez de saltar) e, ao sair do modo ("aSairDaSelecao"),
+ *  encolhe de volta antes de desaparecer. */
 function LinhaMovimento({
   movimento,
   conta,
   nomeGrupo,
   modoSelecao,
+  aSairDaSelecao,
   selecionado,
   aoAlternarSelecao,
 }: {
@@ -325,6 +333,7 @@ function LinhaMovimento({
   conta: Conta | undefined
   nomeGrupo: string | undefined
   modoSelecao: boolean
+  aSairDaSelecao: boolean
   selecionado: boolean
   aoAlternarSelecao: () => void
 }) {
@@ -345,9 +354,13 @@ function LinhaMovimento({
     >
       {modoSelecao && (
         <span
-          className={
-            selecionado ? `${estilos.checkbox} ${estilos.checkboxSelecionado}` : estilos.checkbox
-          }
+          className={[
+            estilos.checkbox,
+            selecionado && estilos.checkboxSelecionado,
+            aSairDaSelecao && estilos.checkboxASair,
+          ]
+            .filter(Boolean)
+            .join(' ')}
           aria-hidden="true"
         >
           {selecionado && <IconeCheck tamanho={12} />}
@@ -549,8 +562,18 @@ export function Movimentos() {
   // recriar a cada render. Actualizada num efeito (nunca directamente
   // durante o render): mexer numa ref a meio do render é o género de
   // efeito secundário que os hooks de React não esperam ali.
+  //
+  // "useLayoutEffect" e não "useEffect": corre ANTES de o browser pintar.
+  // Com "useEffect" (que corre depois), havia um intervalo em que a
+  // sentinela já estava no ecrã mas a ref ainda guardava a versão ANTERIOR
+  // de "carregarMais" — a da renderização em que a primeira página ainda
+  // não tinha chegado, que não faz nada. Se o observador avisasse nesse
+  // intervalo, o aviso perdia-se e, como a sentinela continuava à vista,
+  // não voltava a avisar: o scroll infinito ficava parado até se rolar
+  // para fora e para dentro outra vez. (Descoberto por um teste que
+  // falhava de vez em quando.)
   const carregarMaisRef = useRef(carregarMais)
-  useEffect(() => {
+  useLayoutEffect(() => {
     carregarMaisRef.current = carregarMais
   })
 
@@ -643,6 +666,8 @@ export function Movimentos() {
 
   function abrirSelecao() {
     setModoSelecao(true)
+    // Se ainda estava a sair do modo, cancela essa saída.
+    setASairDaSelecao(false)
     setSelecionados(new Set())
   }
 
@@ -655,11 +680,30 @@ export function Movimentos() {
     })
   }
 
+  // Sair do modo de seleção também é animado (os checkboxes encolhem, a
+  // barra de ações desce): durante esse instante, "modoSelecao" continua
+  // verdadeiro (as peças ainda estão no ecrã, a sair) e "aSairDaSelecao"
+  // diz-lhes para animarem a saída; o cabeçalho, esse, volta logo ao
+  // normal ("emSelecao", mais abaixo).
+  const [aSairDaSelecao, setASairDaSelecao] = useState(false)
+  useEffect(() => {
+    if (!aSairDaSelecao) return
+    const temporizador = window.setTimeout(() => {
+      setModoSelecao(false)
+      setSelecionados(new Set())
+      setASairDaSelecao(false)
+    }, DURACAO_DESLOCAR_MS)
+    return () => window.clearTimeout(temporizador)
+  }, [aSairDaSelecao])
+
   function sairSelecao() {
-    setModoSelecao(false)
-    setSelecionados(new Set())
+    setASairDaSelecao(true)
     setErroLote(null)
   }
+
+  // Em seleção, para o cabeçalho (título e ações): já não conta enquanto
+  // o modo está a sair.
+  const emSelecao = modoSelecao && !aSairDaSelecao
 
   // Os movimentos selecionados e a sua direção (a partir do sinal do
   // valor, tal como em LinhaMovimento — nunca da categoria, que é
@@ -690,11 +734,20 @@ export function Movimentos() {
         )
     : []
 
+  const clienteConsultas = useQueryClient()
+
   async function confirmarEliminarLote() {
     setAEliminarLote(true)
     setErroLote(null)
     try {
       await eliminarMovimentosEmLote([...selecionados])
+      // OS SALDOS DAS CONTAS MUDARAM. A lista e o detalhe das contas vivem
+      // numa cache partilhada (TanStack Query: uma cópia em memória dos
+      // dados pedidos ao servidor, identificada por uma "chave", aqui
+      // ['contas']). Eliminar movimentos muda o saldo de uma conta, por isso
+      // "invalida-se" essa chave: os dados passam a desatualizados, e as
+      // páginas que os mostram voltam a pedi-los ao servidor.
+      void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
       await recarregar()
       setAConfirmarEliminarLote(false)
       sairSelecao()
@@ -724,7 +777,7 @@ export function Movimentos() {
     <div className={modoSelecao ? estilos.paginaComBarraLote : undefined}>
       <CabecalhoPagina
         titulo={
-          modoSelecao
+          emSelecao
             ? `${selecionados.size} selecionado${selecionados.size === 1 ? '' : 's'}`
             : 'Movimentos'
         }
@@ -736,7 +789,7 @@ export function Movimentos() {
         aoColapsar={setCabecalhoColapsado}
         acao={
           pronto && !semMovimentosDeTodo ? (
-            modoSelecao ? (
+            emSelecao ? (
               <button
                 type="button"
                 className={estilos.botaoCancelarSelecao}
@@ -803,7 +856,7 @@ export function Movimentos() {
       {pronto && !temContas && (
         <div className={estilos.vazio}>
           <p className={estilos.vazioTitulo}>Precisas de uma conta primeiro.</p>
-          <p>Os movimentos pertencem sempre a uma conta — cria a tua primeira conta.</p>
+          <p>Os movimentos pertencem sempre a uma conta. Cria a tua primeira conta.</p>
           <LinkBotao para="/contas/nova">Criar conta</LinkBotao>
         </div>
       )}
@@ -843,7 +896,7 @@ export function Movimentos() {
               aoMudar={setPesquisa}
               placeholder="Procurar movimento…"
               rotulo="Procurar movimento"
-              desativado={modoSelecao}
+              desativado={emSelecao}
             />
           </div>
 
@@ -882,6 +935,7 @@ export function Movimentos() {
                           conta={contaPorId.get(movimento.conta_id)}
                           nomeGrupo={grupoPorCategoriaId.get(movimento.categoria_id)}
                           modoSelecao={modoSelecao}
+                          aSairDaSelecao={aSairDaSelecao}
                           selecionado={selecionados.has(movimento.id)}
                           aoAlternarSelecao={() => alternarSelecao(movimento.id)}
                         />
@@ -931,7 +985,13 @@ export function Movimentos() {
           Folha e da Confirmacao — texto só, sem ícones, tal como os
           botões dessas duas. */}
       {modoSelecao && (
-        <div className={estilos.barraAcoesLote}>
+        <div
+          className={
+            aSairDaSelecao
+              ? `${estilos.barraAcoesLote} ${estilos.barraAcoesLoteASair}`
+              : estilos.barraAcoesLote
+          }
+        >
           {/* A sombra vive no invólucro exterior, sem "overflow" — ver a
               nota em Movimentos.module.css sobre o mesmo cuidado na
               pílula "Selecionar"/"Filtros", mais acima. */}

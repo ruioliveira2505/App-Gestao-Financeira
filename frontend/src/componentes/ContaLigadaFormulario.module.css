@@ -38,6 +38,28 @@
   color: var(--cor-texto-3);
 }
 
+/* O arranjo "lado" (o de todos os campos desta ficha menos o IBAN): rótulo
+   à esquerda, em tinta plena, e valor + cadeado à direita — como os campos
+   com disposicao="lado" (ver CampoTexto.module.css). */
+.fixoLado {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  min-height: 3.25rem;
+}
+
+.fixoLado .fixoEtiqueta {
+  flex-shrink: 0;
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.fixoLado .fixoValor {
+  min-width: 0;
+  justify-content: flex-end;
+}
+
 /* "Conta 1 · ••4021 · EUR" — por cima da ficha de cada conta, ao estilo do
    título de secção das listas agrupadas do iOS. */
 .legendaConta {

@@ -22,11 +22,18 @@
  * "atravessar" este diálogo para a página (ou o modal) por trás dele —
  * precisamente o que "aria-modal" promete impedir, mas que só de o
  * declarar não garante sozinho.
+ *
+ * FECHAR COM ANIMAÇÃO: ao cancelar (fora, "Cancelar", Escape), a folha
+ * desce e o fundo desvanece — o caminho inverso da entrada — e só DEPOIS
+ * se avisa quem a abriu ("aoCancelar"), que é quem a tira da página. Sem
+ * isto, desaparecia de golpe. Confirmar não anima a saída: a ação segue
+ * (ex.: eliminar e navegar), e é ela quem tira a folha de cena.
  */
 
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
+import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 import estilos from './Confirmacao.module.css'
 
 type Props = {
@@ -68,6 +75,28 @@ export function Confirmacao({
     cancelarRef.current?.focus()
   }, [])
 
+  // A sair (ver FECHAR COM ANIMAÇÃO): no fim da animação, avisa quem abriu.
+  const [aSair, setASair] = useState(false)
+  useEffect(() => {
+    if (!aSair) return
+    const temporizador = window.setTimeout(aoCancelar, DURACAO_DESLOCAR_MS)
+    return () => window.clearTimeout(temporizador)
+  }, [aSair, aoCancelar])
+
+  function cancelar() {
+    if (!aConfirmar) setASair(true)
+  }
+
+  // "aConfirmar" numa referência (um valor que sobrevive entre renders sem
+  // os provocar), para o tratador de teclas abaixo o ler sempre atualizado:
+  // esse tratador é registado UMA vez (efeito com dependências []), por
+  // isso, se usasse a variável diretamente, veria para sempre o valor do
+  // primeiro render (false).
+  const aConfirmarRef = useRef(aConfirmar)
+  useEffect(() => {
+    aConfirmarRef.current = aConfirmar
+  }, [aConfirmar])
+
   // Ao fechar (desmontar), devolve o foco a quem tinha antes de este
   // diálogo abrir — sem isto, o browser deixa-o em <body>, e quem navega
   // por teclado perde completamente o sítio onde estava.
@@ -83,7 +112,10 @@ export function Confirmacao({
       if (evento.key === 'Escape') {
         // Não deixar o Escape chegar ao modal por baixo.
         evento.stopPropagation()
-        aoCancelar()
+        // Enquanto a ação confirmada decorre (ex.: a eliminar), o Escape
+        // não fecha, tal como o botão Cancelar está desativado: fechar a
+        // meio deixaria o utilizador sem saber se a ação aconteceu.
+        if (!aConfirmarRef.current) setASair(true)
         return
       }
 
@@ -108,13 +140,13 @@ export function Confirmacao({
     }
     document.addEventListener('keydown', aoTeclar, true)
     return () => document.removeEventListener('keydown', aoTeclar, true)
-  }, [aoCancelar])
+  }, [])
 
   return createPortal(
-    <div className={estilos.fundo} onClick={aoCancelar}>
+    <div className={aSair ? `${estilos.fundo} ${estilos.fundoASair}` : estilos.fundo} onClick={cancelar}>
       <div
         ref={grupoRef}
-        className={estilos.grupo}
+        className={aSair ? `${estilos.grupo} ${estilos.grupoASair}` : estilos.grupo}
         role="dialog"
         aria-modal="true"
         aria-label={titulo}
@@ -139,7 +171,7 @@ export function Confirmacao({
           type="button"
           ref={cancelarRef}
           className={estilos.botaoCancelar}
-          onClick={aoCancelar}
+          onClick={cancelar}
           disabled={aConfirmar}
         >
           Cancelar

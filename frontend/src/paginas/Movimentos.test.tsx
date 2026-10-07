@@ -13,7 +13,7 @@
  * componente.
  */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
@@ -22,6 +22,16 @@ import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { simularEntradaNoEcra } from '../test/setup'
 import { servidorMsw } from '../test/servidor-msw'
 import { Movimentos } from './Movimentos'
+import { ComConsultas } from '../test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova).
+// A página usa a cache para avisar que os saldos das contas mudaram;
+// "wrapper" é a opção do Testing Library para envolver o que se monta num
+// componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 // "Hoje"/"Ontem" (os rótulos de grupo) dependem da data real do
 // teste — por isso calculados aqui, não escritos à mão, para o teste

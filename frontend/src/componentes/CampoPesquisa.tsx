@@ -36,9 +36,19 @@ type Props = {
   rotulo: string
   // Ver a nota "desativado", acima. Por omissão, false.
   desativado?: boolean
+  // Chamado quando o campo ganha o foco (ex.: a página Contas entra no
+  // modo de pesquisa, com a barra a subir para o topo do ecrã).
+  aoFocar?: () => void
 }
 
-export function CampoPesquisa({ valor, aoMudar, placeholder, rotulo, desativado = false }: Props) {
+export function CampoPesquisa({
+  valor,
+  aoMudar,
+  placeholder,
+  rotulo,
+  desativado = false,
+  aoFocar,
+}: Props) {
   // Referência ao <input> para lhe devolver o foco depois de limpar (quem
   // limpa quer, quase sempre, escrever outra coisa a seguir).
   const inputRef = useRef<HTMLInputElement>(null)
@@ -56,6 +66,7 @@ export function CampoPesquisa({ valor, aoMudar, placeholder, rotulo, desativado 
         value={valor}
         disabled={desativado}
         onChange={(evento) => aoMudar(evento.target.value)}
+        onFocus={aoFocar}
         aria-label={rotulo}
       />
       {valor !== '' && !desativado && (

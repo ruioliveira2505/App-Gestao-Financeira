@@ -8,7 +8,7 @@
  * no fim, com o diálogo de confirmação.
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse, type HttpHandler } from 'msw'
@@ -17,6 +17,16 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { MovimentoEditar } from './MovimentoEditar'
+import { ComConsultas } from '../test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova).
+// A página usa a cache para avisar que os saldos das contas mudaram;
+// "wrapper" é a opção do Testing Library para envolver o que se monta num
+// componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const CONTA = {
   id: 'c1',
@@ -174,9 +184,10 @@ describe('Página Editar movimento', () => {
     const dialogo = await screen.findByRole('dialog', { name: 'Eliminar movimento' })
     await userEvent.click(within(dialogo).getByRole('button', { name: 'Cancelar' }))
 
-    expect(
-      screen.queryByRole('dialog', { name: 'Eliminar movimento' }),
-    ).not.toBeInTheDocument()
+    // (Fecha a descer — espera-se pelo fim da animação de saída.)
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Eliminar movimento' })).not.toBeInTheDocument(),
+    )
     expect(eliminou).toBe(false)
   })
 

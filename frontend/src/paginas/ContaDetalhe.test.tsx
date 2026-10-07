@@ -3,7 +3,7 @@
  * =======================================
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
@@ -12,6 +12,15 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from '../auth/AuthProvider'
 import { ContaDetalhe } from './ContaDetalhe'
+import { ComConsultas } from '../test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
+// ver test/consultas.tsx). "wrapper" é a opção do Testing Library para
+// envolver o que se monta num componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const CONTA = {
   id: 'c1',
@@ -272,9 +281,17 @@ describe('Página de detalhe de uma conta — Open Banking', () => {
   })
 
   it('"Desvincular" pede confirmação e, ao confirmar, remove a secção', async () => {
+    // Depois de desvincular, a página volta a pedir a conta ao servidor
+    // (invalida a cache) — que já a devolve sem ligação.
+    let desvinculada = false
     servidorMsw.use(
-      http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
-      http.delete('/api/open-banking/contas-ligadas/cl-1', () => new HttpResponse(null, { status: 204 })),
+      http.get('/api/contas/c1', () =>
+        HttpResponse.json(desvinculada ? { ...CONTA_LIGADA, ligacao: null } : CONTA_LIGADA),
+      ),
+      http.delete('/api/open-banking/contas-ligadas/cl-1', () => {
+        desvinculada = true
+        return new HttpResponse(null, { status: 204 })
+      }),
     )
     montar()
 

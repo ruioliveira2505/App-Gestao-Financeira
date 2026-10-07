@@ -25,7 +25,8 @@
  * lista de contas.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { useMemo, useState } from 'react'
 
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
@@ -35,7 +36,9 @@ import { ContaFormulario, type DadosConta } from '../componentes/ContaFormulario
 import { ContextoFolha } from '../componentes/contextoFolha'
 import { Folha } from '../componentes/Folha'
 import { IconeCheck, IconeFechar } from '../componentes/icones'
-import { apagarConta, editarConta, obterConta, type Conta } from '../lib/contas'
+import { useConta } from '../hooks/useContas'
+import { apagarConta, editarConta, type Conta } from '../lib/contas'
+import { CHAVES } from '../lib/consultas'
 import { ErroApi } from '../lib/http'
 import estilos from './ContaEditar.module.css'
 
@@ -52,8 +55,22 @@ export function ContaEditar() {
   const destino: string | number =
     localizacao.key === 'default' ? `/contas/${id}` : -1
 
-  const [conta, setConta] = useState<Conta | null>(null)
-  const [erro, setErro] = useState<string | null>(null)
+  // A conta a editar vem da cache partilhada (useConta). A TanStack Query (uma biblioteca de gestão de
+  // dados vindos do servidor) guarda numa cache (uma cópia em memória)
+  // os dados já pedidos, identificados por uma "chave" (ex.: ['contas']).
+  // "Invalidar" uma chave marca esses dados como desatualizados: todas as
+  // páginas que os mostram voltam a pedi-los e redesenham-se sozinhas.
+  // A conta normalmente já lá está, porque
+  // o detalhe, por baixo, acabou de a pedir: o formulário aparece logo.
+  const consultaConta = useConta(id)
+  const conta: Conta | null = consultaConta.data ?? null
+  const erro =
+    conta === null && consultaConta.error
+      ? consultaConta.error instanceof ErroApi
+        ? consultaConta.error.message
+        : 'Não foi possível carregar a conta.'
+      : null
+  const clienteConsultas = useQueryClient()
   const [aSubmeter, setASubmeter] = useState(false)
   const [valido, setValido] = useState(false)
   const [aConfirmarEliminar, setAConfirmarEliminar] = useState(false)
@@ -89,23 +106,6 @@ export function ContaEditar() {
     [],
   )
 
-  useEffect(() => {
-    if (!id) return
-    let activo = true
-    obterConta(id)
-      .then((c) => {
-        if (activo) setConta(c)
-      })
-      .catch((e) => {
-        if (activo) {
-          setErro(e instanceof ErroApi ? e.message : 'Não foi possível carregar a conta.')
-        }
-      })
-    return () => {
-      activo = false
-    }
-  }, [id])
-
   function sairDaEdicao() {
     if (typeof destino === 'number') navegar(destino)
     else navegar(destino)
@@ -119,6 +119,9 @@ export function ContaEditar() {
       tipo: dados.tipo,
       moeda: dados.moeda,
     })
+    // Invalida as contas: o detalhe por baixo e a lista de Contas passam a
+    // mostrar o nome/banco/tipo novos.
+    void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
     // "fechar" anima a saída da folha e só depois "aoDispensar" navega.
     fechar()
   }
@@ -128,7 +131,26 @@ export function ContaEditar() {
     setAEliminar(true)
     try {
       await apagarConta(id)
-      navegar('/contas')
+      // A conta deixou de existir: recuar só uma página levaria ao seu
+      // detalhe (que já não existe). Se o detalhe foi aberto a partir de
+      // dentro da app, recua-se DUAS páginas — passa por cima do detalhe e
+      // chega a quem o abriu (normalmente a lista de Contas, que se
+      // actualiza pela invalidação de ['contas'] feita logo a seguir).
+      // Se o detalhe foi aberto
+      // directamente pelo URL, não há para onde recuar dentro da app: vai-
+      // -se para a lista, no lugar desta folha ("replace").
+      const detalheVeioDeDentro =
+        (localizacao.state as { detalheVeioDeDentro?: boolean } | null)?.detalheVeioDeDentro === true
+      if (detalheVeioDeDentro) navegar(-2)
+      else navegar('/contas', { replace: true })
+      // Só DEPOIS de sair: invalida a LISTA (exact: só ['contas'], não o
+      // ['contas', id] desta conta — invalidá-lo faria o detalhe, ainda
+      // montado durante a navegação, voltar a pedi-la e receber um 404).
+      // Pela mesma razão, a entrada ['contas', id] não é apagada da cache:
+      // o detalhe ainda a usa enquanto desaparece. Fica lá sem efeito: só
+      // se veria avançando no histórico até à conta apagada, e aí o pedido
+      // seguinte devolve 404 e a página mostra que a conta já não existe.
+      void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas, exact: true })
     } catch (erroApanhado) {
       setAEliminar(false)
       setAConfirmarEliminar(false)

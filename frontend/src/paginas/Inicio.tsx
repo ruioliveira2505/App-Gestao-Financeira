@@ -332,7 +332,7 @@
  * usado em ContaDetalhe.tsx.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useContext, useEffect, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 
@@ -340,6 +340,7 @@ import { useAuth } from '../auth/useAuth'
 import { FiltroContas } from '../componentes/FiltroContas'
 import { PontoCategoria } from '../componentes/PontoCategoria'
 import { SeletorPeriodo } from '../componentes/SeletorPeriodo'
+import { ContextoPorBaixo } from '../componentes/contextoPilha'
 import { useDefinirCabecalho } from '../componentes/useCabecalho'
 import { IconeChevronDireita, IconeMais, IconeMenos } from '../componentes/icones'
 import { useMediaQuery } from '../hooks/useMediaQuery'
@@ -506,14 +507,20 @@ export function Inicio() {
   const eMobile = useMediaQuery('(max-width: 768px)')
   const definirCabecalho = useDefinirCabecalho()
   const filtroContasNaBarraDeTopo = eMobile && Boolean(definirCabecalho)
+  // Tapado pelas páginas de categorias, que se abrem por cima do Início
+  // (ver PilhaDePaginas.tsx): a barra de topo é delas. Ao voltar a ficar
+  // à vista, "porBaixo" muda e o efeito devolve-lhe a barra — a mesma
+  // regra do CabecalhoPagina.
+  const porBaixo = useContext(ContextoPorBaixo)
   useEffect(() => {
+    if (porBaixo) return
     definirCabecalho?.({
       titulo: 'Início',
       acao: filtroContasNaBarraDeTopo ? (
         <FiltroContas contas={contas} selecionadas={contasSeleccionadas} aoMudar={mudarContas} />
       ) : undefined,
     })
-  }, [definirCabecalho, filtroContasNaBarraDeTopo, contas, contasSeleccionadas, mudarContas])
+  }, [definirCabecalho, porBaixo, filtroContasNaBarraDeTopo, contas, contasSeleccionadas, mudarContas])
 
   // Carrega as contas uma única vez — não dependem do filtro nem do
   // resumo (é a própria lista de OPÇÕES do filtro). Falha em silêncio: o

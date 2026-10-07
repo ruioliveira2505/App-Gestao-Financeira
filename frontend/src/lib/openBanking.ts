@@ -21,25 +21,42 @@ import { pedido } from './http'
 export type Banco = {
   name: string
   country: string
+  // Quanto tempo vai durar a autorização pedida a este banco, em dias: o
+  // máximo que ele aceita, até 180 (a regra europeia). Calculado pelo
+  // backend — mostrado no ecrã de permissões, antes de sair para o banco.
+  validade_dias: number
 }
 
 /**
- * Uma conta bancária trazida por uma ligação, ainda por confirmar como
- * "esta é a minha conta X" — ver GET /open-banking/ligacoes/{id}/
- * contas-ligadas. "conta_id" só vem preenchido se já tiver sido associada
- * a uma Conta desta aplicação (não deveria acontecer logo a seguir a uma
- * ligação nova, mas o campo existe para o caso de o utilizador voltar a
- * visitar o mesmo link).
+ * Uma conta bancária trazida por uma ligação — ver GET /open-banking/
+ * ligacoes/{id}/contas-ligadas. Ao voltar do banco, cada uma é de um de
+ * três casos (o backend reconhece-as pela identificação estável da conta
+ * bancária):
+ *   - JÁ NAS TUAS CONTAS: "conta_id" preenchido — a conta bancária já
+ *     alimentava uma conta tua, e a ligação renovou-se sozinha (ou já
+ *     tinha sido associada antes). "conta_nome" é o nome dessa conta;
+ *   - JÁ FOI UMA CONTA TUA, entretanto desvinculada: "conta_antiga"
+ *     preenchido. Por agora entra como conta nova (religar à antiga
+ *     precisa de reconciliações, que ainda não existem);
+ *   - NOVA: nenhum dos dois.
  */
 export type ContaLigada = {
   id: string
   // O banco desta conta (o mesmo para todas as contas de uma ligação) —
-  // mostrado, bloqueado, ao configurar a conta, e usado como nome sugerido.
+  // mostrado, bloqueado, ao configurar a conta.
   banco: string
   iban: string | null
   moeda: string
   nome_titular: string | null
   conta_id: string | null
+  conta_nome: string | null
+  // Até quando vale a ligação (ISO 8601) — «Ligação renovada até…».
+  valido_ate: string
+  // Sugestões para uma conta nova: o tipo (a partir do tipo de conta que
+  // o banco envia) e um nome, mostrado como EXEMPLO no campo.
+  tipo_sugerido: string | null
+  nome_sugerido: string
+  conta_antiga: { id: string; nome: string } | null
 }
 
 export function listarBancos(pais: string = 'PT'): Promise<Banco[]> {

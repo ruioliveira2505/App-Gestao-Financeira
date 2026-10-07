@@ -1,0 +1,407 @@
+/*
+ * ESTILOS DO SeletorData
+ * ======================
+ *
+ * O campo (uma linha de ficha, como CampoSelecao), o calendário, e as duas
+ * formas de o mostrar: em telemóvel, um cartão a flutuar na parte de baixo
+ * do ecrã, ao estilo dos calendários do iOS; em ecrã largo, por baixo do
+ * campo, dentro da ficha.
+ */
+
+/* --- O campo --- */
+
+.campo {
+  position: relative;
+}
+
+/* As margens laterais e o traço entre linhas vêm da ficha à volta (ver
+   ContaFormulario.module.css, ".grupo > div") — aqui só o espaço vertical,
+   o mesmo das outras linhas (CampoSelecao, ".linha"). */
+.gatilho {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+  width: 100%;
+  padding: var(--espaco-2) 0;
+  border: none;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: var(--cor-texto);
+}
+
+.textos {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-1);
+}
+
+.etiqueta {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
+}
+
+.valor {
+  font-size: var(--texto-base);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A seta do campo: aponta para baixo, e roda para cima com o calendário
+   aberto. */
+.seta2 {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--cor-texto-3);
+  transform: rotate(90deg);
+  transition: transform var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.seta2Aberta {
+  transform: rotate(-90deg);
+}
+
+/* disposicao="lado": o nome à esquerda, em tinta plena, e a data à
+   direita, em tinta secundária — como nos outros campos "lado" (ver
+   CampoSelecao.module.css). */
+.lado .gatilho {
+  min-height: 3.25rem;
+}
+
+.lado .textos {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+}
+
+.lado .etiqueta {
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.lado .valor {
+  color: var(--cor-texto-2);
+}
+
+/* --- O calendário (igual nas duas apresentações) --- */
+
+.calendario {
+  padding: 0 var(--espaco-2);
+}
+
+.cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 3rem;
+}
+
+.titulo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-1);
+  border: none;
+  background: none;
+  padding: var(--espaco-2) var(--espaco-1);
+  font: inherit;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  color: var(--cor-texto);
+}
+
+.tituloSeta {
+  display: flex;
+  transition: transform var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.tituloSetaAberta {
+  transform: rotate(90deg);
+}
+
+.setas {
+  display: flex;
+  gap: var(--espaco-1);
+}
+
+.seta {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--cor-texto);
+}
+
+.seta:active {
+  background: var(--cor-superficie);
+}
+
+/* Cabeçalho dos dias da semana: SEG … DOM. Altura fixa (1.75rem) — entra
+   na conta da altura das rodas, mais abaixo. */
+.semana {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  align-items: center;
+  height: 1.75rem;
+  font-size: var(--texto-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--cor-texto-3);
+}
+
+.grelha {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  /* Sempre seis linhas (o máximo que um mês ocupa): o cartão não muda de
+     altura ao passar de um mês de cinco linhas para um de seis. */
+  grid-template-rows: repeat(6, 2.5rem);
+  row-gap: 2px;
+}
+
+.dia {
+  display: grid;
+  place-items: center;
+  height: 2.5rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--cor-texto);
+}
+
+/* O círculo à volta do número. */
+.dia span {
+  display: grid;
+  place-items: center;
+  width: 2.375rem;
+  height: 2.375rem;
+  border-radius: 50%;
+  font-size: var(--texto-md);
+  font-variant-numeric: tabular-nums;
+  transition: background-color var(--movimento-toque) var(--curva-toque);
+}
+
+.dia:active span {
+  background: var(--cor-superficie);
+}
+
+/* Hoje: o número a vermelho, sem círculo. */
+.diaHoje span {
+  color: var(--cor-negativo);
+  font-weight: 700;
+}
+
+/* O dia escolhido: círculo preenchido. */
+.diaEscolhido span,
+.diaEscolhido:active span {
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font-weight: 600;
+}
+
+/* Depois do "maximo": esbatido e não tocável. */
+.dia:disabled {
+  color: var(--cor-texto-3);
+  opacity: 0.45;
+}
+
+/* As rodas de mês e ano (o componente Roda): duas colunas que rolam, com
+   uma faixa cinzenta comum ao centro. A altura é a da semana + a grelha
+   (1.75rem + 6 × 2.5rem + 5 × 2px ≈ 17.4rem), para o cartão não mudar de
+   tamanho ao trocar entre dias e rodas. */
+.rodas {
+  --altura-rodas: 17.375rem;
+  --altura-item: 2.75rem; /* = ALTURA_ITEM no SeletorData.tsx (44px) */
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  height: var(--altura-rodas);
+}
+
+/* A faixa onde fica o valor escolhido, atrás das duas rodas. */
+.faixa {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc((var(--altura-rodas) - var(--altura-item)) / 2);
+  height: var(--altura-item);
+  border-radius: var(--raio-lg);
+  background: var(--cor-superficie);
+  pointer-events: none;
+}
+
+.roda {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  /* Antes da primeira linha e depois da última, meia roda menos meia
+     linha de espaço vazio — para a primeira e a última também poderem
+     ficar ao centro. */
+  padding-block: calc((var(--altura-rodas) - var(--altura-item)) / 2);
+  scroll-snap-type: y mandatory;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* As linhas desvanecem para cima e para baixo, como num cilindro. */
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    #000 35%,
+    #000 65%,
+    transparent
+  );
+}
+
+.roda::-webkit-scrollbar {
+  display: none;
+}
+
+.item {
+  flex-shrink: 0;
+  height: var(--altura-item);
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: var(--texto-base);
+  font-variant-numeric: tabular-nums;
+  color: var(--cor-texto-2);
+  scroll-snap-align: center;
+  transition: font-size var(--movimento-toque) var(--curva-toque);
+}
+
+/* O escolhido: maior e em tinta plena (a faixa já lhe dá o fundo). */
+.itemEscolhido {
+  font-size: var(--texto-lg);
+  color: var(--cor-texto);
+}
+
+/* --- Ecrã largo: por baixo do campo, dentro da ficha --- */
+
+.emLinha {
+  padding: 0 var(--espaco-2) var(--espaco-3);
+}
+
+/* --- Telemóvel: um cartão a flutuar em baixo, ao estilo do iOS --- */
+
+/* Véu por trás do cartão: escurece um pouco o formulário e apanha o toque
+   "fora" (que cancela). Acima das folhas (z-index 50), abaixo do cartão. */
+.veu {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(0, 0, 0, 0.2);
+  animation: veu-entrar var(--movimento-deslocar) var(--curva-aparecer);
+}
+
+.veuAFechar {
+  animation: veu-sair var(--movimento-deslocar) var(--curva-aparecer) forwards;
+}
+
+@keyframes veu-entrar {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes veu-sair {
+  to {
+    opacity: 0;
+  }
+}
+
+/* O cartão exterior, cinzento claro, com margem dos lados e em baixo — não
+   toca nas bordas do ecrã, por isso tem os quatro cantos arredondados. */
+.painel {
+  position: fixed;
+  left: var(--espaco-2);
+  right: var(--espaco-2);
+  bottom: calc(var(--espaco-2) + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  box-sizing: border-box;
+  padding: var(--espaco-3);
+  border-radius: 2rem;
+  background: var(--cor-superficie);
+  box-shadow: var(--sombra-menu);
+  animation: painel-subir var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.painelAFechar {
+  animation: painel-descer var(--movimento-deslocar) var(--curva-deslocar) forwards;
+}
+
+/* Sobe/desce a sua altura inteira mais a margem de baixo, para sair
+   completamente do ecrã. */
+@keyframes painel-subir {
+  from {
+    transform: translateY(calc(100% + 2rem));
+  }
+}
+
+@keyframes painel-descer {
+  to {
+    transform: translateY(calc(100% + 2rem));
+  }
+}
+
+/* A barra do topo: os mesmos botões redondos das folhas da app — "✕"
+   branco com sombra à esquerda, "✓" preenchido com a cor de acento à
+   direita — e o nome do campo ao centro. */
+.barra {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr) 2.5rem;
+  align-items: center;
+  padding-bottom: var(--espaco-3);
+}
+
+.barraTitulo {
+  text-align: center;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.botaoCancelar,
+.botaoConfirmar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.botaoCancelar {
+  background: var(--cor-fundo);
+  color: var(--cor-texto);
+  box-shadow: var(--sombra-flutuante);
+}
+
+.botaoCancelar:active {
+  background: var(--cor-superficie);
+}
+
+.botaoConfirmar {
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+.botaoConfirmar:active {
+  background: var(--cor-acento-hover);
+}
+
+/* O cartão interior, branco, onde vive o calendário. */
+.cartao {
+  padding: var(--espaco-2) var(--espaco-2) var(--espaco-3);
+  border-radius: 1.5rem;
+  background: var(--cor-fundo);
+}

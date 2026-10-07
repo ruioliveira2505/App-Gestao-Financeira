@@ -36,7 +36,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { IconeMais } from '../componentes/icones'
@@ -89,7 +89,18 @@ function LinhaGrupo({ grupo }: { grupo: GrupoArvore }) {
 
 export function Categorias() {
   const [estado, setEstado] = useState<Estado>({ fase: 'a-carregar' })
+  const localizacao = useLocation()
 
+  // VOLTAR A PEDIR A ÁRVORE AO VOLTAR A ESTA PÁGINA. Esta página fica sempre
+  // montada por baixo das que se abrem por cima dela (criar um grupo,
+  // abrir um grupo para mudar o nome ou eliminar subcategorias): a pilha
+  // de páginas desenha as rotas filhas POR CIMA, sem desmontar a lista.
+  // Por isso um efeito que só corresse ao montar ([]) nunca voltava a
+  // correr, e a lista continuava a mostrar a árvore antiga depois de uma
+  // alteração. "localizacao.key" é um identificador que o React Router dá
+  // a cada navegação (um valor novo sempre que se avança ou recua no
+  // histórico); usá-lo como dependência faz o pedido repetir-se sempre
+  // que se navega, incluindo ao fechar a página de cima e voltar aqui.
   useEffect(() => {
     let activo = true
     obterArvoreCategorias()
@@ -105,7 +116,7 @@ export function Categorias() {
     return () => {
       activo = false
     }
-  }, [])
+  }, [localizacao.key])
 
   const entradas = estado.fase === 'pronto' ? estado.arvore.filter((g) => g.direcao === 'entrada') : []
   const saidas = estado.fase === 'pronto' ? estado.arvore.filter((g) => g.direcao === 'saida') : []

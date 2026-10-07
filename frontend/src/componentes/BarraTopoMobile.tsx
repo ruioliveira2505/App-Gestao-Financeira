@@ -75,6 +75,12 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
   // Sem "voltar" a página é principal → ☰ à esquerda. Com "voltar" é de
   // detalhe → "‹ voltar" à esquerda.
   const ePaginaDetalhe = Boolean(cabecalho?.voltar)
+  // Identifica a página dona da barra, para efeitos de animação: ao
+  // passar de uma página principal para uma de detalhe (ou o contrário),
+  // muda — e as zonas da barra, com esta "key", são recriadas pelo React,
+  // o que corre a sua animação de entrada (".zona"): o conteúdo novo
+  // desvanece em vez de substituir o anterior de golpe.
+  const chaveZonas = cabecalho?.voltar ?? 'principal'
 
   // "undefined" (a página nem é "colapsavel") é diferente de "false"
   // (colapsavel, mas ainda não rolado o suficiente) — só no primeiro caso
@@ -108,8 +114,14 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
   }
 
   return (
-    <header className={estilos.barra}>
-      <div className={estilos.esquerda}>
+    // "escondida": a página pediu o topo do ecrã só para si (ver
+    // cabecalhoContexto.ts) — a barra sai de cena e fica "inert" (fora do
+    // alcance do teclado e dos leitores de ecrã) enquanto escondida.
+    <header
+      className={cabecalho?.escondida ? `${estilos.barra} ${estilos.barraEscondida}` : estilos.barra}
+      inert={cabecalho?.escondida || undefined}
+    >
+      <div key={`esquerda-${chaveZonas}`} className={`${estilos.esquerda} ${estilos.zona}`}>
         {ePaginaDetalhe ? (
           <button
             type="button"
@@ -157,10 +169,14 @@ export function BarraTopoMobile({ aoAbrirMenu }: Props) {
           transição nenhuma: sempre foi assim, e não há porque animar algo
           que só aparece uma vez, ao entrar na página. */}
       {ePaginaDetalhe && cabecalho?.titulo && (
-        <span className={estilos.titulo}>{cabecalho.titulo}</span>
+        <span key={`titulo-${chaveZonas}`} className={`${estilos.titulo} ${estilos.zona}`}>
+          {cabecalho.titulo}
+        </span>
       )}
 
-      <div className={estilos.direita}>{cabecalho?.acao}</div>
+      <div key={`direita-${chaveZonas}`} className={`${estilos.direita} ${estilos.zona}`}>
+        {cabecalho?.acao}
+      </div>
     </header>
   )
 }

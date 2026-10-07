@@ -83,15 +83,6 @@
   letter-spacing: 0.02em;
 }
 
-/* --- Passo "banco" --- */
-
-/* Separa o campo "País" (um filtro) da lista de bancos com um traço. */
-.campoPais {
-  padding-bottom: var(--espaco-4);
-  margin-bottom: var(--espaco-2);
-  border-bottom: 1px solid var(--cor-borda-leve);
-}
-
 /* --- Cartão de lista (contas descobertas, permissões, progresso) --- */
 
 .cartaoLista {
@@ -275,7 +266,7 @@
   border: 2.5px solid var(--cor-superficie-2);
   border-top-color: var(--cor-acento);
   flex-shrink: 0;
-  animation: rodar 0.9s linear infinite;
+  animation: rodar 0.8s linear infinite;
 }
 
 @keyframes rodar {
@@ -391,4 +382,59 @@
   background: var(--cor-superficie-2);
   color: var(--cor-texto-3);
   cursor: not-allowed;
+}
+
+/* --- Linha "nome · valor" (permissões, detalhes técnicos) ---
+   O mesmo arranjo das fichas dos formulários (nome à esquerda, valor à
+   direita, 52 px de altura). Serve um <li>, um <a> (link externo) ou um
+   <button> (abrir/fechar), por isso anula o aspecto de link e de botão. */
+.linhaInfo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--espaco-3);
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 3.25rem;
+  padding: 0 var(--espaco-4);
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--cor-texto);
+  text-decoration: none;
+}
+
+a.linhaInfo:active,
+button.linhaInfo:active {
+  background: var(--cor-superficie);
+}
+
+.linhaInfoValor {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  color: var(--cor-texto-2);
+  text-align: right;
+}
+
+.linhaInfoValor svg {
+  color: var(--cor-texto-3);
+}
+
+/* A seta de "Detalhes técnicos": aponta para a direita, e roda para baixo
+   com os detalhes abertos. */
+.setaDetalhes {
+  display: flex;
+  color: var(--cor-texto-3);
+  transition: transform var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.setaDetalhesAberta {
+  transform: rotate(90deg);
+}
+
+/* O nome do banco no topo das permissões: o título do ecrã, sem ícone. */
+.tituloPermissoes {
+  text-align: center;
 }

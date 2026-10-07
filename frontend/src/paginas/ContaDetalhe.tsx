@@ -38,11 +38,14 @@
  * passa-se directamente ao <CabecalhoPagina>.
  */
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 
 import { useAuth } from '../auth/useAuth'
+import { useConta } from '../hooks/useContas'
+import { CHAVES } from '../lib/consultas'
 import { Avatar } from '../componentes/Avatar'
 import { Botao } from '../componentes/Botao'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
@@ -51,7 +54,7 @@ import { Confirmacao } from '../componentes/Confirmacao'
 import { IconeCheck, IconeGrafico, IconeLapis } from '../componentes/icones'
 import { LinkVoltar } from '../componentes/LinkVoltar'
 import { PaginaDeslizante } from '../componentes/PaginaDeslizante'
-import { obterConta, type Conta } from '../lib/contas'
+import { type Conta } from '../lib/contas'
 import { formatarData } from '../lib/datas'
 import { ErroApi } from '../lib/http'
 import { etiquetaMoeda, formatarDinheiro } from '../lib/moedas'
@@ -89,8 +92,25 @@ export function ContaDetalhe() {
   const localizacao = useLocation()
   const navegar = useNavigate()
 
-  const [conta, setConta] = useState<Conta | null>(null)
-  const [erro, setErro] = useState<string | null>(null)
+  // A conta vem da cache partilhada (useConta). A TanStack Query (uma biblioteca de gestão de
+  // dados vindos do servidor) guarda numa cache (uma cópia em memória)
+  // os dados já pedidos, identificados por uma "chave" (ex.: ['contas']).
+  // "Invalidar" uma chave marca esses dados como desatualizados: todas as
+  // páginas que os mostram voltam a pedi-los e redesenham-se sozinhas.
+  // Esta página fica montada por baixo da
+  // folha de editar; quando lá se guarda, a folha invalida a chave
+  // ['contas'], e o nome/banco/tipo aqui actualizam-se sozinhos.
+  const consultaConta = useConta(id)
+  const conta: Conta | null = consultaConta.data ?? null
+  // O erro só interessa sem dados (uma actualização em segundo plano que
+  // falhe não apaga a conta que já está à vista).
+  const erro =
+    conta === null && consultaConta.error
+      ? consultaConta.error instanceof ErroApi
+        ? consultaConta.error.message
+        : 'Não foi possível carregar a conta.'
+      : null
+  const clienteConsultas = useQueryClient()
 
   // AVISO DE CHEGADA ("Conta criada", "Conta ligada"): vem no "state" da
   // navegação quando se chega aqui a partir de /contas/nova (ver
@@ -114,23 +134,6 @@ export function ContaDetalhe() {
   const [aDesvincular, setADesvincular] = useState(false)
   const [erroDesvincular, setErroDesvincular] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!id) return
-    let activo = true
-    obterConta(id)
-      .then((c) => {
-        if (activo) setConta(c)
-      })
-      .catch((e) => {
-        if (activo) {
-          setErro(e instanceof ErroApi ? e.message : 'Não foi possível carregar a conta.')
-        }
-      })
-    return () => {
-      activo = false
-    }
-  }, [id])
-
   async function aoSincronizar() {
     if (!conta?.ligacao) return
     setASincronizar(true)
@@ -139,10 +142,10 @@ export function ContaDetalhe() {
     try {
       const resultado = await sincronizar(conta.ligacao.conta_ligada_id)
       // O saldo mostrado (conta.saldo/saldo_convertido) fica desactualizado
-      // assim que entram movimentos novos — volta a pedir a conta inteira
-      // em vez de tentar recalcular isto no cliente.
-      const contaActualizada = await obterConta(conta.id)
-      setConta(contaActualizada)
+      // assim que entram movimentos novos — invalida as contas (esta e a
+      // lista, por baixo) em vez de tentar recalcular isto no cliente. O
+      // "await" espera que os dados novos cheguem antes da mensagem.
+      await clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
       setMensagemSincronizar(
         resultado.movimentos_importados === 0
           ? 'Sem movimentos novos.'
@@ -164,11 +167,12 @@ export function ContaDetalhe() {
     setADesvincular(true)
     try {
       await desvincular(conta.ligacao.conta_ligada_id)
-      // Actualiza a conta em memória — deixa de mostrar a secção "Open
-      // Banking" e, do lado do backend, os seus movimentos já voltaram a
-      // ser totalmente editáveis (ver conta_esta_ligada, em
+      // Invalida as contas: esta deixa de mostrar a secção "Open Banking"
+      // (e a lista, por baixo, deixa de mostrar o selo de ligada). Do lado
+      // do backend, os seus movimentos já voltaram a ser totalmente
+      // editáveis (ver conta_esta_ligada, em
       // backend/app/services/ligacoes_bancarias.py).
-      setConta({ ...conta, ligacao: null })
+      await clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
       setAConfirmarDesvincular(false)
     } catch (erroApanhado) {
       setErroDesvincular(
@@ -207,6 +211,10 @@ export function ContaDetalhe() {
               conta ? (
                 <Link
                   to={`/contas/${conta.id}/editar`}
+                  // Diz à folha de editar se ESTA página tem uma página da
+                  // app atrás de si no histórico (ver "eliminar", em
+                  // ContaEditar.tsx) — só assim pode recuar duas de uma vez.
+                  state={{ detalheVeioDeDentro: localizacao.key !== 'default' }}
                   className={estilos.acaoIcone}
                   aria-label="Editar"
                 >

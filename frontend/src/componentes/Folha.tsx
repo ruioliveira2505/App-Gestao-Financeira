@@ -61,13 +61,15 @@ import { createPortal } from 'react-dom'
 import { ContextoFolha } from './contextoFolha'
 import { IconeChevronEsquerda } from './icones'
 import estilos from './Folha.module.css'
+import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 
 // Distância de arrasto (px) a partir da qual largar descarta a folha.
 const LIMIAR_DESCARTE = 120
 // Movimento (px) a partir do qual se decide o eixo de um arrasto ambíguo.
 const LIMIAR_EIXO = 6
-// Deve acompanhar a duração da transição de "transform" no CSS.
-const DURACAO_SAIDA_MS = 280
+// A duração da saída — a de "deslocar" (src/lib/movimento.ts, igual à
+// variável --movimento-deslocar do CSS): só depois dela se desmonta a folha.
+const DURACAO_SAIDA_MS = DURACAO_DESLOCAR_MS
 // A partir daqui é "desktop": a folha é um diálogo centrado, sem arrasto.
 const CONSULTA_DESKTOP = '(min-width: 769px)'
 
@@ -83,6 +85,11 @@ type NoOuComFechar = ReactNode | ((fechar: () => void) => ReactNode)
 type Props = {
   // Vai para o cabeçalho e para o "aria-label" da folha.
   titulo: string
+  // O nome da folha para o leitor de ecrã, quando tem de ser diferente do
+  // título visível — ex.: duas folhas empilhadas com o mesmo título («Nova
+  // conta»), que o leitor de ecrã precisa de distinguir sem que isso se
+  // veja no ecrã. Por omissão, o próprio título.
+  nomeAcessivel?: string
   // Lado por onde a folha entra.
   direcao?: Direcao
   // Abandonar o fluxo (arrasto para baixo). Corre DEPOIS da animação.
@@ -112,6 +119,7 @@ type Props = {
 
 export function Folha({
   titulo,
+  nomeAcessivel,
   direcao = 'baixo',
   aoDispensar,
   aoRecuar,
@@ -352,7 +360,7 @@ export function Folha({
         style={transformInline ? { transform: transformInline } : undefined}
         role="dialog"
         aria-modal="true"
-        aria-label={titulo}
+        aria-label={nomeAcessivel ?? titulo}
         onKeyDown={aoTeclar}
       >
         {/* O recorte aos cantos arredondados (cabeçalho + corpo) vive

@@ -155,7 +155,7 @@
    do index.css encurta a animação para ~0). */
 .personalizado {
   margin-top: var(--espaco-3);
-  animation: revelar-campos 0.18s ease-out;
+  animation: revelar-campos var(--movimento-aparecer) var(--curva-aparecer);
 }
 
 @keyframes revelar-campos {

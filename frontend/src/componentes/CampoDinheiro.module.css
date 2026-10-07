@@ -1,5 +1,5 @@
 /* Estilos de CampoDinheiro.tsx: um campo numérico para valores monetários
-   (ex.: "Saldo início" em Nova conta, "Valor" no formulário de
+   (ex.: "Saldo inicial" em Nova conta, "Valor" no formulário de
    movimento), com um símbolo de moeda fixo à esquerda dentro da mesma
    moldura do <input> (ver ".moldura"/".simbolo", mais abaixo). A
    disposição ".linha" (mais abaixo) é uma variante sem contorno nem
@@ -63,6 +63,7 @@
 
 .linha .input {
   width: 100%;
+  font-variant-numeric: tabular-nums;
   border: none;
   background: none;
   padding: 0;
@@ -70,4 +71,86 @@
   font: inherit;
   text-align: left;
   color: var(--cor-texto);
+}
+
+/* --- "linha" com símbolo da moeda (ver a nota no CampoDinheiro.tsx) --- */
+
+.valorLinha {
+  display: flex;
+  align-items: baseline;
+  cursor: text;
+  font-variant-numeric: tabular-nums;
+  color: var(--cor-texto);
+}
+
+/* A grelha de uma célula: o <input> e a cópia invisível do valor
+   ("::after") ocupam a MESMA célula, que fica com a largura da cópia. */
+.ajusta {
+  display: inline-grid;
+  min-width: 0;
+}
+
+.ajusta::after {
+  content: attr(data-valor);
+  grid-area: 1 / 1;
+  visibility: hidden;
+  white-space: pre;
+  font: inherit;
+}
+
+.ajusta > .input {
+  grid-area: 1 / 1;
+  /* "width: 0" tira ao <input> a largura mínima que o browser lhe dá por
+     omissão (perto de 55px, mesmo vazio) — senão era ela a mandar na
+     célula, e não a cópia do texto. "min-width: 100%" estica-o depois até
+     à largura da célula, que é a da cópia. */
+  width: 0;
+  min-width: 100%;
+}
+
+/* O "−" fica colado ao valor ("−412,90"); o símbolo, a um espaço curto
+   dele ("412,90 €"). */
+.simboloLinha {
+  flex-shrink: 0;
+  margin-left: 0.25em;
+}
+
+/* Sem valor escrito, o símbolo acompanha o texto de exemplo, esbatido. */
+.simboloVazio {
+  color: var(--cor-texto-3);
+}
+
+/* "Saldo negativo": o "−", o valor e o símbolo a vermelho. */
+.valorNegativo,
+.valorNegativo .input {
+  color: var(--cor-negativo);
+}
+
+.input::placeholder {
+  color: var(--cor-texto-3);
+}
+
+/* --- disposicao="lado": rótulo à esquerda, valor à direita ---
+   Junta-se a ".linha" e muda só o arranjo (ver CampoTexto.module.css). */
+.lado {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--espaco-3);
+  min-height: 3.25rem;
+}
+
+.lado .etiqueta {
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.lado .input {
+  text-align: right;
+}
+
+/* Com símbolo: o valor (já com a largura do texto) e o "€" encostados à
+   direita. */
+.lado .valorLinha {
+  justify-content: flex-end;
 }

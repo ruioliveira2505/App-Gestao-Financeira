@@ -21,7 +21,8 @@
  * MOVIMENTO: a ENTRADA é uma animação CSS. O ARRASTO e a SAÍDA usam
  * "transform" (definido em linha, em píxeis, pelo Folha.tsx) com uma
  * transição — durante o arrasto a transição desliga-se (.painelAArrastar).
- * Curva das "sheets" do iOS: cubic-bezier(0.32, 0.72, 0, 1).
+ * Duração e curva de "deslocar" (src/index.css) — a das "sheets" do iOS;
+ * o fundo escurecido acompanha-a, com a mesma duração.
  *
  * "prefers-reduced-motion": o index.css encurta a duração de animações e
  * transições para ~0 — aparece/desaparece no sítio; a desmontagem (adiada
@@ -35,11 +36,11 @@
   inset: 0;
   z-index: 50;
   background: rgba(0, 0, 0, 0.4);
-  animation: fundo-entrar 0.3s ease;
+  animation: fundo-entrar var(--movimento-deslocar) var(--curva-aparecer);
 }
 
 .fundoASair {
-  animation: fundo-sair 0.28s ease forwards;
+  animation: fundo-sair var(--movimento-deslocar) var(--curva-aparecer) forwards;
 }
 
 @keyframes fundo-entrar {
@@ -81,7 +82,7 @@
      recorte aos cantos arredondados passar para dentro. */
   box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.16);
 
-  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: transform var(--movimento-deslocar) var(--curva-deslocar);
   overscroll-behavior: contain;
 }
 
@@ -108,11 +109,11 @@
 
 /* A prop "direcao" só troca a animação de entrada. */
 .entraDeBaixo {
-  animation: painel-entrar-baixo 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: painel-entrar-baixo var(--movimento-deslocar) var(--curva-deslocar);
 }
 
 .entraDaDireita {
-  animation: painel-entrar-direita 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: painel-entrar-direita var(--movimento-deslocar) var(--curva-deslocar);
 }
 
 @keyframes painel-entrar-baixo {
@@ -275,7 +276,7 @@
   /* As duas direções entram com o mesmo fade + "scale" no desktop. */
   .entraDeBaixo,
   .entraDaDireita {
-    animation: painel-entrar-centro 0.18s ease-out;
+    animation: painel-entrar-centro var(--movimento-aparecer) var(--curva-aparecer);
   }
 
   /* ... e SAEM com o mesmo, espelhado — senão o painel aparecia com
@@ -286,7 +287,7 @@
   .saiParaBaixo,
   .saiParaLado {
     transform: none;
-    animation: painel-sair-centro 0.18s ease-in forwards;
+    animation: painel-sair-centro var(--movimento-aparecer) var(--curva-aparecer) forwards;
   }
 
   .pega {

@@ -188,6 +188,18 @@ export function IconeChevronEsquerda(props: PropsIcone) {
   )
 }
 
+// Seta a sair de uma caixa — o link abre fora da app (outro site, num
+// separador novo). Diz isso antes do toque, para não surpreender.
+export function IconeExterno(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M14 5h5v5" />
+      <path d="M19 5l-8 8" />
+      <path d="M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4" />
+    </Svg>
+  )
+}
+
 // Lupa — pesquisar.
 export function IconeLupa(props: PropsIcone) {
   return (
@@ -346,6 +358,86 @@ export function IconeBanco(props: PropsIcone) {
       <line x1="14" x2="14" y1="18" y2="11" />
       <line x1="18" x2="18" y1="18" y2="11" />
       <line x1="3" x2="21" y1="22" y2="22" />
+    </Svg>
+  )
+}
+
+// Duas setas opostas, uma para cima e outra para baixo — "Ordenar por",
+// no menu ⋯ da página Contas.
+export function IconeOrdenar(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M7 4v16M3.5 7.5 7 4l3.5 3.5" />
+      <path d="M17 20V4M13.5 16.5 17 20l3.5-3.5" />
+    </Svg>
+  )
+}
+
+// Duas camadas sobrepostas — "Agrupar por", no menu ⋯ da página Contas.
+export function IconeCamadas(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M12 3l9 5-9 5-9-5 9-5z" />
+      <path d="M3 13l9 5 9-5" />
+    </Svg>
+  )
+}
+
+// Duas setas em círculo — "Sincronizar agora" (pedir movimentos novos ao
+// banco).
+export function IconeSincronizar(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M20 11a8 8 0 0 0-14.5-4.5L4 8" />
+      <path d="M4 4v4h4" />
+      <path d="M4 13a8 8 0 0 0 14.5 4.5L20 16" />
+      <path d="M20 20v-4h-4" />
+    </Svg>
+  )
+}
+
+// Dois elos de corrente — uma conta ligada ao banco (ver EstadoLigacao, em
+// src/lib/contas.ts).
+export function IconeLigacao(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" />
+      <path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" />
+    </Svg>
+  )
+}
+
+// A mesma corrente, partida ao meio — uma ligação ao banco já expirada.
+export function IconeLigacaoPartida(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M9 15l-2 2a3.5 3.5 0 0 1-5-5l2-2" />
+      <path d="M15 9l2-2a3.5 3.5 0 0 1 5 5l-2 2" />
+      <path d="M8 4v2M4 8h2M16 20v-2M20 16h-2" />
+    </Svg>
+  )
+}
+
+// Um ponto de exclamação dentro de um círculo — estados de erro (ex.: não
+// foi possível carregar as contas).
+export function IconeAlerta(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5v5.5" />
+      <path d="M12 16.5h.01" />
+    </Svg>
+  )
+}
+
+// Uma carteira — uma conta ainda sem nome nem banco (o monograma vazio de
+// "Nova conta").
+export function IconeCarteira(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="6" width="18" height="13" rx="3" />
+      <path d="M16 12.5h2" />
+      <path d="M3 9.5h12a2 2 0 0 0 2-2V6" />
     </Svg>
   )
 }

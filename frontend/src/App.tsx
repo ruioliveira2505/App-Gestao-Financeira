@@ -43,10 +43,11 @@
  * /login quem não tenha sessão, antes de o layout sequer aparecer.
  */
 
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
 import { RotaProtegida } from './auth/RotaProtegida'
 import { LayoutApp } from './componentes/LayoutApp'
+import { PilhaDePaginas } from './componentes/PilhaDePaginas'
 import { Categorias } from './paginas/Categorias'
 import { CategoriaGrupo } from './paginas/CategoriaGrupo'
 import { CategoriaNova } from './paginas/CategoriaNova'
@@ -81,101 +82,86 @@ function App() {
           </RotaProtegida>
         }
       >
-        <Route path="/" element={<Inicio />} />
-        {/* Páginas de detalhe da repartição por categoria — alcançadas a
-            partir do título "Categorias" no cartão de Início (ver a nota
-            "DÉCIMA TERCEIRA FATIA" em Inicio.tsx). Nomes distintos de
-            "/categorias" e "/categorias/:grupoId", logo abaixo — essas
-            são a GESTÃO de categorias (criar/editar/eliminar grupos e
-            subcategorias), uma funcionalidade diferente, nada a ver com
-            este resumo por período. Duas páginas de detalhe próprias
-            (como "/contas/:id"), não uma folha sobre a lista anterior —
-            cada uma com o seu próprio <PaginaDeslizante>. */}
-        <Route path="/resumo/categorias" element={<CategoriasResumo />} />
-        <Route path="/resumo/categorias/:grupoId" element={<CategoriaResumoDetalhe />} />
-        <Route path="/movimentos" element={<Movimentos />} />
-        {/* Tal como "Nova conta": a folha desenha-se SOBRE a lista de
-            movimentos, para o que está por trás — ao arrastar para
-            descartar — não ser um vazio. */}
-        <Route
-          path="/movimentos/novo"
-          element={
-            <>
-              <Movimentos />
-              <MovimentoNovo />
-            </>
-          }
-        />
-        {/* Editar: também uma folha sobre a lista. Um movimento não tem
-            página de detalhe (ao contrário de uma conta) — tocar numa
-            linha da lista abre diretamente esta edição. */}
-        <Route
-          path="/movimentos/:id/editar"
-          element={
-            <>
-              <Movimentos />
-              <MovimentoEditar />
-            </>
-          }
-        />
-        <Route path="/contas" element={<Contas />} />
-        {/* O modal "Nova conta" é uma folha sobre a lista de contas: a
-            rota rende a lista POR TRÁS e a folha por cima, para que, ao
-            arrastar a folha para baixo, se veja a página Contas a
-            aparecer (e não um fundo vazio). */}
-        <Route
-          path="/contas/nova"
-          element={
-            <>
-              <Contas />
-              <ContaNova />
-            </>
-          }
-        />
-        <Route path="/contas/:id" element={<ContaDetalhe />} />
-        {/* Tal como o "Nova conta": a folha de editar é desenhada SOBRE o
-            detalhe da conta, para o que está por trás não ser um vazio. */}
-        <Route
-          path="/contas/:id/editar"
-          element={
-            <>
-              <ContaDetalhe />
-              <ContaEditar />
-            </>
-          }
-        />
-        <Route path="/categorias" element={<Categorias />} />
-        {/* O "Novo grupo" é uma folha sobre a lista, tal como "Nova conta". */}
-        <Route
-          path="/categorias/novo"
-          element={
-            <>
-              <Categorias />
-              <CategoriaNova />
-            </>
-          }
-        />
-        {/* Um grupo abre como folha SOBRE a lista, tal como "Nova conta" e
-            "Novo movimento" (ver a nota em CategoriaGrupo.tsx) — não é uma
-            página de detalhe própria (ao contrário de ContaDetalhe). Um
-            grupo não tem detalhe e edição separados: a mesma folha trata
-            das duas coisas. */}
-        <Route
-          path="/categorias/:grupoId"
-          element={
-            <>
-              <Categorias />
-              <CategoriaGrupo />
-            </>
-          }
-        />
-        <Route path="/perfil" element={<Perfil />} />
-        <Route path="/perfil/conta" element={<PerfilSeccao titulo="Conta" />} />
-        <Route
-          path="/perfil/seguranca"
-          element={<PerfilSeccao titulo="Segurança" />}
-        />
-        <Route path="/perfil/preferencias" element={<PerfilPreferencias />} />
+        {/* PILHAS DE PÁGINAS (ver componentes/PilhaDePaginas.tsx): em cada
+            secção, a página principal ("fundo") fica SEMPRE montada, e as
+            rotas filhas — páginas de detalhe e folhas — abrem-se POR CIMA
+            dela. Ao navegar entre filhas da mesma pilha, o React nunca
+            desmonta o fundo: ao abrir o detalhe de uma conta, a lista
+            continua por baixo (e o detalhe desliza por cima, em vez de
+            sobre um fundo vazio); ao recuar, a lista está lá tal como
+            estava — mesmo scroll, sem recarregar. "index" com "null": no
+            endereço da própria secção, não há nada por cima. */}
+
+        {/* Início → as páginas da repartição por categoria (ver a nota
+            "DÉCIMA TERCEIRA FATIA" em Inicio.tsx) — nomes distintos de
+            "/categorias", mais abaixo, que é a GESTÃO de categorias, uma
+            funcionalidade diferente. Duas camadas encaixadas: a lista de
+            categorias por cima do Início, e a de subcategorias por cima
+            dessa (uma pilha dentro da outra). */}
+        <Route path="/" element={<PilhaDePaginas fundo={<Inicio />} />}>
+          <Route index element={null} />
+          <Route
+            path="resumo/categorias"
+            element={<PilhaDePaginas fundo={<CategoriasResumo />} />}
+          >
+            <Route index element={null} />
+            <Route path=":grupoId" element={<CategoriaResumoDetalhe />} />
+          </Route>
+        </Route>
+
+        {/* Movimentos: novo e editar são folhas sobre a lista (um movimento
+            não tem página de detalhe — tocar numa linha abre a edição). */}
+        <Route path="/movimentos" element={<PilhaDePaginas fundo={<Movimentos />} />}>
+          <Route index element={null} />
+          <Route path="novo" element={<MovimentoNovo />} />
+          <Route path=":id/editar" element={<MovimentoEditar />} />
+        </Route>
+
+        {/* Contas: "Nova conta" é uma folha sobre a lista; o detalhe de uma
+            conta é uma página por cima da lista — e a folha de editar
+            abre-se, por sua vez, sobre o detalhe (rota filha dele, para o
+            detalhe também não ser recriado ao abri-la). */}
+        <Route path="/contas" element={<PilhaDePaginas fundo={<Contas />} />}>
+          <Route index element={null} />
+          <Route path="nova" element={<ContaNova />} />
+          <Route
+            path=":id"
+            element={
+              <>
+                <ContaDetalhe />
+                <Outlet />
+              </>
+            }
+          >
+            <Route index element={null} />
+            <Route path="editar" element={<ContaEditar />} />
+          </Route>
+        </Route>
+
+        {/* Perfil: as suas secções e a gestão de categorias são páginas por
+            cima do Perfil. Rota de layout SEM "path" — "/categorias" não
+            começa por "/perfil", mas recua para lá, por isso pertence a
+            esta pilha. Dentro de "/categorias", o grupo e o "Novo grupo"
+            são folhas sobre a lista de categorias. */}
+        <Route element={<PilhaDePaginas fundo={<Perfil />} />}>
+          <Route path="/perfil" element={null} />
+          <Route path="/perfil/conta" element={<PerfilSeccao titulo="Conta" />} />
+          <Route path="/perfil/seguranca" element={<PerfilSeccao titulo="Segurança" />} />
+          <Route path="/perfil/preferencias" element={<PerfilPreferencias />} />
+          <Route
+            path="/categorias"
+            element={
+              <>
+                <Categorias />
+                <Outlet />
+              </>
+            }
+          >
+            <Route index element={null} />
+            <Route path="novo" element={<CategoriaNova />} />
+            <Route path=":grupoId" element={<CategoriaGrupo />} />
+          </Route>
+        </Route>
       </Route>
 
       {/* path="*" corresponde a qualquer endereço não apanhado acima. */}

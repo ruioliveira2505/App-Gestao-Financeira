@@ -11,7 +11,15 @@ import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 
 import { servidorMsw } from '../test/servidor-msw'
-import { apagarConta, criarConta, editarConta, listarContas, obterConta } from './contas'
+import {
+  apagarConta,
+  criarConta,
+  editarConta,
+  estadoLigacao,
+  listarContas,
+  obterConta,
+  valorParaComparar,
+} from './contas'
 import { ErroApi } from './http'
 
 const CONTA = {
@@ -90,5 +98,39 @@ describe('cliente da API de contas', () => {
     const erro = await obterConta('x').catch((e) => e)
     expect(erro).toBeInstanceOf(ErroApi)
     expect(erro.estado).toBe(404)
+  })
+})
+
+// --- Funções puras (sem rede) ---
+
+describe('estadoLigacao', () => {
+  // Um momento fixo, para os testes não dependerem do dia em que correm.
+  const AGORA = new Date('2026-10-01T12:00:00Z')
+
+  it('com mais de 7 dias de validade, está ligada', () => {
+    expect(estadoLigacao('2026-12-30T12:00:00Z', AGORA)).toBe('ligada')
+  })
+
+  it('a 7 dias ou menos do fim, está a expirar', () => {
+    expect(estadoLigacao('2026-10-08T12:00:00Z', AGORA)).toBe('a-expirar')
+    expect(estadoLigacao('2026-10-01T13:00:00Z', AGORA)).toBe('a-expirar')
+  })
+
+  it('com a validade ultrapassada, está expirada', () => {
+    expect(estadoLigacao('2026-09-30T12:00:00Z', AGORA)).toBe('expirada')
+    expect(estadoLigacao('2026-10-01T12:00:00Z', AGORA)).toBe('expirada')
+  })
+})
+
+describe('valorParaComparar', () => {
+  const conta = (saldo_convertido: string | null) => ({ ...CONTA, saldo_convertido })
+
+  it('valorParaComparar usa o saldo convertido, não o da própria conta', () => {
+    // Uma conta em dólares: saldo 640, convertido 548,61 — compara-se 548,61.
+    expect(valorParaComparar({ ...CONTA, moeda: 'USD', saldo: '640.00', saldo_convertido: '548.61' })).toBe(548.61)
+  })
+
+  it('valorParaComparar é null sem taxa de câmbio', () => {
+    expect(valorParaComparar(conta(null))).toBeNull()
   })
 })

@@ -15,6 +15,9 @@
  *   2. O ciclo de vida do servidor de simulação de rede (MSW): arrancá-lo
  *      antes dos testes, repor as regras entre testes, e encerrá-lo no
  *      fim.
+ *
+ *   3. O tempo máximo das esperas da Testing Library (findBy…, waitFor) —
+ *      ver a nota junto ao "configure", mais abaixo.
  */
 
 // A importação com o sufixo "/vitest" regista os matchers do jest-dom
@@ -22,9 +25,23 @@
 // nada — o efeito é o próprio acto de importar.
 import '@testing-library/jest-dom/vitest'
 
+import { configure } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 
 import { servidorMsw } from './servidor-msw'
+
+/*
+ * TEMPO MÁXIMO DAS ESPERAS: 3 segundos, em vez de 1 (o valor por omissão).
+ * "findByRole(…)" e "waitFor(…)" esperam que algo apareça no ecrã — e
+ * terminam ASSIM QUE aparece, por isso este limite não atrasa nenhum teste
+ * que corra bem. Com 1 segundo, os testes mais pesados (ex.: Movimentos,
+ * com dezenas de linhas, filtros e folhas) falhavam de vez em quando quando
+ * a máquina estava ocupada com os outros ficheiros de teste em paralelo —
+ * não por um defeito, só por chegarem ao limite (as falhas registadas
+ * aconteceram aos 1,3 e 1,4 segundos). Um teste que falha ao acaso ensina
+ * a ignorar falhas; esta folga torna-os estáveis.
+ */
+configure({ asyncUtilTimeout: 3000 })
 
 /*
  * MOCK DE window.matchMedia

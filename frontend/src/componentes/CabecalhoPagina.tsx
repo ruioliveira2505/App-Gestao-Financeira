@@ -42,22 +42,32 @@
  * procura, logo a seguir a este cabeçalho).
  */
 
-import { useEffect, type ReactNode } from 'react'
+import { useContext, useEffect, type ReactNode } from 'react'
 
 import { useColapsarAoRolar } from '../hooks/useColapsarAoRolar'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { ContextoPorBaixo } from './contextoPilha'
 import { useDefinirCabecalho } from './useCabecalho'
 import estilos from './CabecalhoPagina.module.css'
 
 type Props = {
   titulo: string
-  subtitulo?: string
+  // Texto ou elementos (ex.: uma frase com uma parte em destaque).
+  subtitulo?: ReactNode
   icone?: ReactNode
   acao?: ReactNode
   voltar?: string
   aoRecuar?: (navegarDeFacto: () => void) => void
   colapsavel?: boolean
   aoColapsar?: (colapsado: boolean) => void
+  // Esconde a barra de topo mobile (ver "escondida" em
+  // cabecalhoContexto.ts) — ex.: o modo de pesquisa da página Contas.
+  barraEscondida?: boolean
+  // Suspende o título compacto de uma página "colapsavel" (fica como se
+  // não se tivesse rolado) — para quando o título grande sai do ecrã por
+  // outra razão que não o scroll (ex.: o modo de pesquisa de Contas, que o
+  // recolhe).
+  suspenderColapso?: boolean
 }
 
 export function CabecalhoPagina({
@@ -69,6 +79,8 @@ export function CabecalhoPagina({
   aoRecuar,
   colapsavel = false,
   aoColapsar,
+  barraEscondida = false,
+  suspenderColapso = false,
 }: Props) {
   const eMobile = useMediaQuery('(max-width: 768px)')
   const definir = useDefinirCabecalho()
@@ -82,17 +94,22 @@ export function CabecalhoPagina({
   // diz à barra de topo para nem sequer desenhar ali o título compacto
   // (ver BarraTopoMobile.tsx): "false" significaria "colapsavel, mas
   // ainda não rolado", um estado bem diferente de "nem faz parte disto".
-  const tituloCompacto = ehColapsavel ? colapsado : undefined
+  const tituloCompacto = ehColapsavel ? colapsado && !suspenderColapso : undefined
+
+  // Tapada por outra página (ver PilhaDePaginas.tsx): a barra de topo é
+  // da página de cima — esta não lhe mexe. Quando volta a ficar à vista,
+  // "porBaixo" muda e o efeito corre outra vez, devolvendo-lhe a barra.
+  const porBaixo = useContext(ContextoPorBaixo)
 
   useEffect(() => {
-    if (!definir) return
-    definir({ titulo, acao, voltar, aoRecuar, tituloCompacto })
+    if (!definir || porBaixo) return
+    definir({ titulo, acao, voltar, aoRecuar, tituloCompacto, escondida: barraEscondida })
     // "definir" é estável (ver cabecalhoContexto). "acao" entra nas
     // dependências porque muda dentro da mesma página — ex.: no detalhe de
     // uma conta, só existe depois de a conta carregar. Não há ciclo: este
     // componente só re-renderiza quando a sua página re-renderiza (não
     // consome o contexto que muda a cada "definir").
-  }, [definir, titulo, acao, voltar, aoRecuar, tituloCompacto])
+  }, [definir, porBaixo, titulo, acao, voltar, aoRecuar, tituloCompacto, barraEscondida])
 
   useEffect(() => {
     if (ehColapsavel) aoColapsar?.(colapsado)

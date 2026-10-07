@@ -6,15 +6,25 @@
  * página — a acção "Eliminar conta" no fim (com diálogo de confirmação).
  */
 
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 
+import { AuthProvider } from '../auth/AuthProvider'
 import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { ContaEditar } from './ContaEditar'
+import { ComConsultas } from '../test/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
+// ver test/consultas.tsx). "wrapper" é a opção do Testing Library para
+// envolver o que se monta num componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const CONTA = {
   id: 'c1',
@@ -32,14 +42,22 @@ const CONTA = {
 }
 
 function montar() {
+  // O formulário lê do utilizador autenticado a moeda principal.
+  servidorMsw.use(
+    http.get('/api/auth/me', () =>
+      HttpResponse.json({ id: 'u1', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }),
+    ),
+  )
   return render(
-    <MemoryRouter initialEntries={['/contas/c1/editar']}>
-      <Routes>
-        <Route path="/contas/:id/editar" element={<ContaEditar />} />
-        <Route path="/contas/:id" element={<p>detalhe da conta</p>} />
-        <Route path="/contas" element={<p>lista de contas</p>} />
-      </Routes>
-    </MemoryRouter>,
+    <AuthProvider>
+      <MemoryRouter initialEntries={['/contas/c1/editar']}>
+        <Routes>
+          <Route path="/contas/:id/editar" element={<ContaEditar />} />
+          <Route path="/contas/:id" element={<p>detalhe da conta</p>} />
+          <Route path="/contas" element={<p>lista de contas</p>} />
+        </Routes>
+      </MemoryRouter>
+    </AuthProvider>,
   )
 }
 
@@ -105,16 +123,17 @@ describe('Página Editar conta', () => {
     // O campo "Banco" mostra "BPI"; clicar abre a lista NO SÍTIO.
     await userEvent.click(screen.getByText('BPI'))
 
-    // Não abre um diálogo/modal — a lista fica em linha.
+    // Não abre um diálogo/modal — a lista fica em linha, com o campo de
+    // procurar ou adicionar no topo.
     expect(screen.queryByRole('dialog', { name: 'Banco' })).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /Adicionar banco/ }),
+      screen.getByRole('textbox', { name: 'Procurar ou adicionar banco' }),
     ).toBeInTheDocument()
 
     // Escolher "Sem banco" fecha a lista e muda o valor.
     await userEvent.click(screen.getByRole('button', { name: 'Sem banco' }))
     expect(
-      screen.queryByRole('button', { name: /Adicionar banco/ }),
+      screen.queryByRole('textbox', { name: 'Procurar ou adicionar banco' }),
     ).not.toBeInTheDocument()
     expect(screen.getByText('Sem banco')).toBeInTheDocument()
   })
@@ -155,6 +174,44 @@ describe('Página Editar conta', () => {
     expect(eliminou).toBe(true)
   })
 
+  it('eliminar recua por cima do detalhe (que já não existe) até à lista', async () => {
+    servidorMsw.use(
+      http.get('/api/auth/me', () =>
+        HttpResponse.json({ id: 'u1', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }),
+      ),
+      http.get('/api/contas/c1', () => HttpResponse.json(CONTA)),
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.delete('/api/contas/c1', () => new HttpResponse(null, { status: 204 })),
+    )
+    // Histórico: lista → detalhe → editar (aberto a partir do detalhe, que
+    // por sua vez foi aberto dentro da app — o "state" que o detalhe passa).
+    render(
+      <AuthProvider>
+        <MemoryRouter
+          initialEntries={[
+            '/contas',
+            '/contas/c1',
+            { pathname: '/contas/c1/editar', state: { detalheVeioDeDentro: true } },
+          ]}
+          initialIndex={2}
+        >
+          <Routes>
+            <Route path="/contas/:id/editar" element={<ContaEditar />} />
+            <Route path="/contas/:id" element={<p>detalhe da conta</p>} />
+            <Route path="/contas" element={<p>lista de contas</p>} />
+          </Routes>
+        </MemoryRouter>
+      </AuthProvider>,
+    )
+    await userEvent.click(await screen.findByRole('button', { name: 'Eliminar conta' }))
+    const dialogo = await screen.findByRole('dialog', { name: 'Eliminar conta' })
+    await userEvent.click(within(dialogo).getByRole('button', { name: 'Eliminar' }))
+
+    // Recuou DUAS páginas: não para no detalhe da conta eliminada.
+    expect(await screen.findByText('lista de contas')).toBeInTheDocument()
+    expect(screen.queryByText('detalhe da conta')).not.toBeInTheDocument()
+  })
+
   it('cancela a eliminação sem apagar nada', async () => {
     let eliminou = false
     servidorMsw.use(
@@ -172,9 +229,10 @@ describe('Página Editar conta', () => {
     await userEvent.click(within(dialogo).getByRole('button', { name: 'Cancelar' }))
 
     // Fecha o action sheet de confirmação (o modal "Editar conta" fica).
-    expect(
-      screen.queryByRole('dialog', { name: 'Eliminar conta' }),
-    ).not.toBeInTheDocument()
+    // (Fecha a descer — espera-se pelo fim da animação de saída.)
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Eliminar conta' })).not.toBeInTheDocument(),
+    )
     expect(eliminou).toBe(false)
   })
 

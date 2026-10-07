@@ -34,8 +34,10 @@
  * vez de "Em breve".
  */
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
+import { CHAVES } from '../lib/consultas'
 import { useAuth } from '../auth/useAuth'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { CaixaErro } from '../componentes/CaixaErro'
@@ -51,6 +53,7 @@ const MENSAGEM_ERRO_GENERICA = 'Não foi possível guardar. Tenta novamente.'
 export function PerfilPreferencias() {
   const { utilizador, atualizarPreferencias } = useAuth()
   const [aGuardar, setAGuardar] = useState(false)
+  const clienteConsultas = useQueryClient()
   const [erro, setErro] = useState<string | null>(null)
 
   const moedaAtual = utilizador?.moeda_principal ?? 'EUR'
@@ -65,6 +68,13 @@ export function PerfilPreferencias() {
     setErro(null)
     try {
       await atualizarPreferencias(moeda)
+      // OS SALDOS CONVERTIDOS MUDARAM. A lista e o detalhe das contas vivem
+      // numa cache partilhada (TanStack Query: uma cópia em memória dos
+      // dados pedidos ao servidor, identificada por uma "chave", aqui
+      // ['contas']), e cada conta traz o saldo convertido para a moeda
+      // principal. Mudar a moeda principal muda essa conversão, por isso
+      // "invalida-se" a chave: as páginas de contas voltam a pedi-las.
+      void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
     } catch (erroApanhado) {
       setErro(erroApanhado instanceof ErroApi ? erroApanhado.message : MENSAGEM_ERRO_GENERICA)
     } finally {
@@ -96,6 +106,10 @@ export function PerfilPreferencias() {
               // (ver a nota "DUAS DIREÇÕES" em PainelDeEscolha.tsx): em
               // mobile, o seletor sobe de baixo, não entra da direita.
               direcaoPainel="baixo"
+              // O mesmo campo "Procurar …" no topo da lista que a moeda
+              // tem ao criar uma conta — o mesmo seletor comporta-se igual
+              // em toda a app.
+              pesquisavel
             />
           </fieldset>
           {aGuardar && <p className={estilos.aAtualizar}>A atualizar…</p>}

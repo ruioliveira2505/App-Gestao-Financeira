@@ -25,10 +25,12 @@
  * volta-se à lista.
  */
 
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 
+import { CHAVES } from '../lib/consultas'
 import { CaixaErro } from '../componentes/CaixaErro'
 import { Confirmacao } from '../componentes/Confirmacao'
 import { MovimentoFormulario, type DadosMovimento } from '../componentes/MovimentoFormulario'
@@ -105,6 +107,8 @@ export function MovimentoEditar() {
     }
   }, [id])
 
+  const clienteConsultas = useQueryClient()
+
   function sairDaEdicao() {
     if (typeof destino === 'number') navegar(destino)
     else navegar(destino)
@@ -113,6 +117,13 @@ export function MovimentoEditar() {
   async function guardar(dados: DadosMovimento, fechar: () => void) {
     if (!id) return
     await editarMovimento(id, dados)
+    // OS SALDOS DAS CONTAS MUDARAM. A lista e o detalhe das contas vivem
+    // numa cache partilhada (TanStack Query: uma cópia em memória dos
+    // dados pedidos ao servidor, identificada por uma "chave", aqui
+    // ['contas']). Editar um movimento (valor, data, conta) muda o saldo de uma conta, por isso
+    // "invalida-se" essa chave: os dados passam a desatualizados, e as
+    // páginas que os mostram voltam a pedi-los ao servidor.
+    void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
     // "fechar" anima a saída da folha e só depois "aoDispensar" navega.
     fechar()
   }
@@ -122,6 +133,9 @@ export function MovimentoEditar() {
     setAEliminar(true)
     try {
       await apagarMovimento(id)
+      // Eliminar muda o saldo da conta: invalidar ['contas'] (a mesma
+      // razão explicada em guardar, acima).
+      void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
       navegar('/movimentos')
     } catch (erroApanhado) {
       setAEliminar(false)

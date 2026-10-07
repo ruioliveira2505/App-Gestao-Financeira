@@ -78,7 +78,7 @@
   flex-shrink: 0;
   margin-left: auto;
   color: var(--cor-texto-3);
-  transition: transform 0.15s ease;
+  transition: transform var(--movimento-aparecer) var(--curva-aparecer);
 }
 
 .linha .apontaBaixo {
@@ -98,4 +98,40 @@
   max-height: 15rem;
   overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+/* --- disposicao="lado": rótulo à esquerda, valor e ">" à direita ---
+   Junta-se a ".linha" e muda só o arranjo: uma grelha de duas colunas (o
+   rótulo com a largura que precisa, o botão com o resto). A lista em linha
+   do desktop (".painelLinha") ocupa as duas colunas, por baixo. O valor
+   fica em tinta secundária, como nas Definições do iOS — o rótulo, em
+   tinta plena, é o que se lê primeiro. */
+.lado {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--espaco-3);
+  min-height: 3.25rem;
+}
+
+.lado .etiqueta {
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.lado .gatilho {
+  justify-content: flex-end;
+  min-height: 2.25rem;
+}
+
+.lado .gatilhoValor {
+  color: var(--cor-texto-2);
+}
+
+.lado .gatilhoSeta {
+  margin-left: 0;
+}
+
+.lado .painelLinha {
+  grid-column: 1 / -1;
 }

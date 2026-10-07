@@ -57,6 +57,17 @@ function guardarRecolhida(valor: boolean): void {
   }
 }
 
+/** A secção a que um endereço pertence — o primeiro segmento, com duas
+ *  exceções: "/resumo/…" (as páginas de categorias do Início) é do Início,
+ *  e "/categorias" (a gestão de categorias, aberta a partir do Perfil) é
+ *  do Perfil. */
+function seccaoDe(caminho: string): string {
+  const primeiro = caminho.split('/')[1] ?? ''
+  if (primeiro === 'resumo') return ''
+  if (primeiro === 'categorias') return 'perfil'
+  return primeiro
+}
+
 export function LayoutApp() {
   // Função como valor inicial: lê o localStorage uma só vez, na montagem.
   const [recolhida, setRecolhida] = useState(lerRecolhida)
@@ -65,14 +76,19 @@ export function LayoutApp() {
   const eMobile = useMediaQuery('(max-width: 768px)')
 
   // O <main> é o único elemento com scroll (ver .module.css). Ao mudar de
-  // página, volta-se ao topo — sem isto, abrir uma conta ou voltar à lista
-  // podia aparecer a meio, na posição de scroll da página anterior.
+  // SECÇÃO (Início, Movimentos, Contas, Perfil), volta-se ao topo — sem
+  // isto, a secção nova podia aparecer a meio, na posição de scroll da
+  // anterior. Mas SÓ ao mudar de secção: dentro de uma secção, as páginas
+  // de detalhe e as folhas abrem-se POR CIMA da página principal (ver
+  // PilhaDePaginas.tsx), que continua no <main> — voltar ao topo aí fazia
+  // a lista saltar por trás, à vista, ao abrir uma folha ou um detalhe.
   const { pathname } = useLocation()
+  const seccao = seccaoDe(pathname)
   const refConteudo = useRef<HTMLElement>(null)
   useEffect(() => {
     // Salto imediato (não suave — suave seria estranho a cada navegação).
     if (refConteudo.current) refConteudo.current.scrollTop = 0
-  }, [pathname])
+  }, [seccao])
 
   function alternarRecolher() {
     setRecolhida((anterior) => {

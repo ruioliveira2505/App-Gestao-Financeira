@@ -306,6 +306,13 @@
 @media (prefers-reduced-motion: reduce) {
   .aviso {
     animation: aviso-mostrar-sem-movimento 2.8s ease forwards;
+    /* A regra global de index.css encurta TODAS as animações para quase
+       zero neste modo (com !important). Aqui isso deixaria o aviso a
+       saltar logo para o fim da animação, invisível, e o utilizador nunca
+       o leria. Este aviso só aparece e desvanece (sem deslizar), por isso
+       mantém a sua duração: o !important numa classe ganha ao do "*",
+       por ser um seletor mais específico. */
+    animation-duration: 2.8s !important;
   }
   @keyframes aviso-mostrar-sem-movimento {
     0%, 80% { opacity: 1; transform: translateX(-50%); }

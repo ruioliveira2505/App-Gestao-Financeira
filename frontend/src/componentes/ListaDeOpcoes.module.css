@@ -152,3 +152,176 @@
   background: var(--cor-superficie-2);
   color: var(--cor-texto-3);
 }
+
+/* --- Modo PROCURAR OU ADICIONAR (ver a nota em ListaDeOpcoes.tsx) --- */
+
+.comProcura {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-4);
+}
+
+/* O campo no topo: a mesma pílula do campo de procura da página Contas
+   (CampoPesquisa), mas com fundo CINZENTO e o contorno transparente. Aqui
+   está numa folha branca, logo acima de cartões brancos com contorno — em
+   branco confundia-se com mais um cartão; o cinzento diz "isto é para
+   escrever". O contorno (transparente, para não mudar o tamanho) escurece
+   com o foco, como na página Contas. */
+.procura {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  min-height: 2.75rem;
+  padding: 0 var(--espaco-4);
+  background: var(--cor-superficie);
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--cor-texto-3);
+}
+
+.procura:focus-within {
+  border-color: var(--cor-acento);
+}
+
+.procuraInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  /* 16px: abaixo disto o Safari do iPhone dá zoom ao focar o campo. */
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.procuraInput::placeholder {
+  color: var(--cor-texto-3);
+}
+
+.procuraInput:focus {
+  outline: none;
+}
+
+/* Um cartão de opções: o mesmo das fichas dos formulários — fundo
+   branco, contorno fino, cantos arredondados. */
+.cartao {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--cor-fundo);
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  /* Recorta o fundo de toque das linhas aos cantos arredondados. */
+  overflow: hidden;
+}
+
+.cartao .linha {
+  padding: var(--espaco-3) var(--espaco-4);
+  border-bottom: none;
+}
+
+/* O traço entre linhas: num pseudo-elemento (uma "border" iria de ponta
+   a ponta), recuado até onde começa o texto. */
+.cartao li + li {
+  position: relative;
+}
+
+.cartao li + li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--espaco-4);
+  right: 0;
+  border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* Com um monograma à esquerda (2rem), o traço começa depois dele —
+   alinhado com o texto, como nas listas do iOS. */
+.cartao li + li:has(.avatar)::before {
+  left: calc(var(--espaco-4) + 2rem + var(--espaco-3));
+}
+
+/* Nas linhas do cartão, a etiqueta ocupa o espaço livre, empurrando o
+   detalhe e o "✓" para a direita. */
+.cartao .rotulo {
+  flex: 1;
+}
+
+/* Texto ténue à direita (ex.: "EUR"). */
+.detalhe {
+  flex-shrink: 0;
+  font-size: var(--texto-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--cor-texto-3);
+}
+
+/* O lugar do "✓", sempre reservado (ver "linhaComProcura"). */
+.marca {
+  flex-shrink: 0;
+  display: flex;
+  width: 18px;
+  color: var(--cor-acento);
+}
+
+/* "Adicionar «…»": a primeira linha do cartão, com um "+" num círculo
+   preto — a acção deste momento, sem precisar de uma caixa à parte. */
+.linhaAdicionar {
+  font-weight: 500;
+}
+
+.adicionarMais {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+}
+
+/* O traço por baixo do "Adicionar «…»" também começa no texto. */
+.cartao li:has(.linhaAdicionar) + li::before {
+  left: calc(var(--espaco-4) + 2rem + var(--espaco-3));
+}
+
+/* Um grupo (ex.: a letra de uma secção de bancos): o nome por cima do
+   seu cartão, pequeno e ténue, alinhado com o texto das linhas. */
+.grupoComProcura {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+}
+
+.cabecalhoProcura {
+  padding: 0 var(--espaco-4);
+  font-size: var(--texto-sm);
+  font-weight: 600;
+  color: var(--cor-texto-3);
+}
+
+/* Desktop (lista em linha, já dentro de uma ficha): sem cartões. */
+.esbatido .cartao {
+  border: none;
+  border-radius: 0;
+  background: none;
+}
+
+.esbatido .cartao .linha {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.esbatido .cartao li + li::before {
+  left: 0;
+}
+
+/* A ajuda da primeira vez (nada usado ainda) e o "Sem resultados". */
+.textoVazio {
+  margin: var(--espaco-2) var(--espaco-2) 0;
+  text-align: center;
+  font-size: var(--texto-ui);
+  line-height: 1.4;
+  color: var(--cor-texto-2);
+}

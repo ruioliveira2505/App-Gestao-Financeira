@@ -53,7 +53,7 @@
   background: none;
   text-decoration: none;
   color: var(--cor-texto);
-  transition: background-color 120ms ease-out;
+  transition: background-color var(--movimento-toque) var(--curva-toque);
 }
 
 /* Realce de toque, como nas linhas da lista de contas. O ":hover" fica

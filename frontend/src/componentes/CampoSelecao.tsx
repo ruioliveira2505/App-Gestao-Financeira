@@ -22,10 +22,14 @@
  *     A escolha faz-se com useMediaQuery — são árvores de DOM diferentes.
  *
  * "rotuloVazio" acrescenta no topo uma opção de "nenhum" (ex.: "Sem
- * banco"), com valor "". "permiteNovo" acrescenta no fundo a linha
- * "Adicionar…" para escrever um valor à mão (campos abertos: banco, tipo);
- * um valor escrito que coincida com uma opção existente reaproveita-a, sem
- * duplicar.
+ * banco"), com valor "". "permiteNovo" (campos abertos: banco, tipo) liga
+ * o modo PROCURAR OU ADICIONAR da lista (ver ListaDeOpcoes.tsx): um campo
+ * no topo que filtra e, com um nome novo, oferece "Adicionar «…»"; um
+ * valor escrito que coincida com uma opção existente reaproveita-a, sem
+ * duplicar. "textoVazio" é a ajuda mostrada quando ainda não há opção
+ * nenhuma. "pesquisavel" (listas fechadas, como a moeda) põe o mesmo
+ * campo no topo, mas só para procurar ("Procurar moeda") — sem
+ * "Adicionar", porque não se podem inventar valores novos.
  *
  * FOCO: quando a lista fecha, o foco volta ao botão que a abriu.
  */
@@ -43,15 +47,20 @@ type Props = {
   valor: string
   aoMudar: (valor: string) => void
   opcoes: OpcaoLista[]
-  // "empilhado" (rótulo por cima, <select> nativo) ou "linha" (linha de
-  // ficha, abre a lista). Ver CampoTexto.
-  disposicao?: 'empilhado' | 'linha'
+  // "empilhado" (rótulo por cima, <select> nativo), "linha" (linha de
+  // ficha, rótulo em cima, abre a lista) ou "lado" (linha de ficha, rótulo
+  // à esquerda e valor à direita, abre a lista). Ver CampoTexto.
+  disposicao?: 'empilhado' | 'linha' | 'lado'
   // Se presente, acrescenta uma opção de "nenhum" no topo, com valor "".
   rotuloVazio?: string
   // Se true, a última linha da lista deixa escrever um valor à mão.
   permiteNovo?: boolean
   // Rótulo dessa linha (ex.: "Adicionar banco"). Só usado com "permiteNovo".
   rotuloNovo?: string
+  // Só com "permiteNovo": a ajuda da primeira vez (lista ainda vazia).
+  textoVazio?: string
+  // Se true (e sem "permiteNovo"), a lista ganha um campo só de procurar.
+  pesquisavel?: boolean
   // Só em mobile (ver PainelDeEscolha.tsx, nota "DUAS DIREÇÕES"): "direita"
   // (por omissão) quando este campo vive DENTRO de outra folha já aberta
   // (ex.: a moeda de uma conta, no modal "Nova conta"); "baixo" quando o
@@ -71,6 +80,8 @@ export function CampoSelecao({
   permiteNovo = false,
   rotuloNovo,
   direcaoPainel = 'direita',
+  textoVazio,
+  pesquisavel = false,
 }: Props) {
   const id = useId()
   const eMobile = useMediaQuery('(max-width: 768px)')
@@ -113,6 +124,16 @@ export function CampoSelecao({
   const opcoesFinais: OpcaoLista[] =
     rotuloVazio !== undefined ? [{ valor: '', etiqueta: rotuloVazio }, ...opcoes] : opcoes
 
+  // O texto do campo do topo da lista: "procurar ou adicionar" nos campos
+  // abertos (ex.: "Procurar ou adicionar banco"), só "procurar" nas listas
+  // fechadas pesquisáveis (ex.: "Procurar moeda"); sem campo nos outros.
+  const nomeCampo = etiqueta.toLocaleLowerCase('pt')
+  const procura = permiteNovo
+    ? `Procurar ou adicionar ${nomeCampo}`
+    : pesquisavel
+      ? `Procurar ${nomeCampo}`
+      : undefined
+
   const escolhida = opcoesFinais.find((opcao) => opcao.valor === valor)
   const textoValor = escolhida?.etiqueta ?? valor ?? rotuloVazio ?? ''
 
@@ -126,9 +147,12 @@ export function CampoSelecao({
     aoMudar(existente ? existente.valor : escrito)
   }
 
-  if (disposicao === 'linha') {
+  if (disposicao === 'linha' || disposicao === 'lado') {
     return (
-      <div ref={raizRef} className={`${estilos.campo} ${estilos.linha}`}>
+      <div
+        ref={raizRef}
+        className={`${estilos.campo} ${estilos.linha} ${disposicao === 'lado' ? estilos.lado : ''}`}
+      >
         <label htmlFor={id} className={estilos.etiqueta}>
           {etiqueta}
         </label>
@@ -176,6 +200,8 @@ export function CampoSelecao({
               aoAdicionar={permiteNovo ? tratarNovo : undefined}
               rotuloAdicionar={rotuloNovo}
               direcao={direcaoPainel}
+              procura={procura}
+              textoVazio={textoVazio}
             />
           ) : (
             <div className={estilos.painelLinha}>
@@ -196,6 +222,8 @@ export function CampoSelecao({
                     : undefined
                 }
                 rotuloAdicionar={rotuloNovo}
+                procura={procura}
+                textoVazio={textoVazio}
               />
             </div>
           ))}

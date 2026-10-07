@@ -87,6 +87,40 @@
      60px dá 10px de folga de cada lado aos botões de ícone de 40px. */
   --altura-barra-topo: 60px;
 
+  /* --- Movimento ---
+     As ÚNICAS durações e curvas de animação da aplicação — todas as
+     transições e animações usam estas variáveis, nunca valores soltos.
+     Antes delas havia 7 durações e 5 curvas diferentes, escolhidas peça a
+     peça, e o conjunto não se sentia como um todo, mesmo quando cada
+     animação, sozinha, estava razoável.
+
+     Três tipos de movimento, cada um com a sua duração e curva:
+       - TOQUE: a resposta a tocar num elemento (realce de uma linha ou de
+         um botão) — tem de ser quase imediata, senão a interface parece
+         lenta a reagir;
+       - APARECER: o que surge ou desaparece SEM se deslocar (fades,
+         menus, avisos, a seta de uma lista a rodar);
+       - DESLOCAR: o que se MOVE no ecrã (folhas, páginas, o menu ☰, a
+         barra de pesquisa a subir). Mais longo, porque a distância
+         percorrida é maior e o olho precisa de a acompanhar.
+
+     As curvas descrevem a velocidade ao longo do tempo. "ease-out" começa
+     depressa e abranda no fim — boa para respostas e fades. A curva de
+     "deslocar" é a das folhas do iOS: arranca com força e assenta muito
+     devagar, como um objecto com peso a travar — é o que dá a sensação de
+     suavidade às apps da Apple. Usa-se tanto a entrar como a sair, para
+     a ida e a volta serem o mesmo gesto.
+
+     Quando um temporizador em código precisa de esperar pelo fim de uma
+     animação (ex.: desmontar uma folha depois de ela sair), usa as mesmas
+     durações, em src/lib/movimento.ts — mantê-las iguais às daqui. */
+  --movimento-toque: 120ms;
+  --movimento-aparecer: 200ms;
+  --movimento-deslocar: 320ms;
+  --curva-toque: ease-out;
+  --curva-aparecer: ease-out;
+  --curva-deslocar: cubic-bezier(0.32, 0.72, 0, 1);
+
   /* --- Sombra ---
      Reservada ao que flutua sobre a interface. "--sombra-menu" para
      popovers e modais; "--sombra-flutuante", mais leve, para botões

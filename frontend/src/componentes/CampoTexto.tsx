@@ -20,6 +20,13 @@
  *   - "linha" — uma linha de um formulário em ficha: o nome do campo em
  *     cima, ténue, e o valor por baixo. Sem contorno próprio (o contorno e
  *     os traços de separação vêm da ficha à volta).
+ *   - "lado" — também uma linha de ficha, mas com o nome do campo À
+ *     ESQUERDA, em tinta plena, e o valor À DIREITA — o arranjo das
+ *     Definições do iOS. Mais compacta do que "linha" (uma só linha de
+ *     texto por campo), e igual à linha de um interruptor, que já tem o
+ *     nome à esquerda e o controlo à direita.
+ *     O texto escreve-se encostado à direita; vazio, mostra "placeholder"
+ *     (ex.: um exemplo do que escrever, "Ex.: Conta ordenado").
  *
  * tipo="date"/"month" mostram sempre um ícone de calendário, decorativo,
  * do lado direito (nas duas disposições) — só um sinal visual de "isto é
@@ -56,13 +63,21 @@ type Props = {
   // Pista para o browser e para os gestores de passwords sobre o que este
   // campo contém (ex.: "email", "current-password", "new-password").
   autoComplete?: string
-  // Arranjo: "empilhado" (rótulo por cima, com contorno) ou "linha" (linha
-  // de ficha: rótulo ténue em cima, valor por baixo). Ver docstring.
-  disposicao?: 'empilhado' | 'linha'
+  // Arranjo: "empilhado" (rótulo por cima, com contorno), "linha" (linha
+  // de ficha: rótulo ténue em cima, valor por baixo) ou "lado" (linha de
+  // ficha: rótulo à esquerda, valor à direita). Ver docstring.
+  disposicao?: 'empilhado' | 'linha' | 'lado'
+  // Texto esbatido mostrado enquanto o campo está vazio.
+  placeholder?: string
   // Limite superior nativo do campo — só relevante em tipo="date"/"month"
   // (ex.: impedir escolher um mês no futuro). Mesmo formato do valor
   // ("AAAA-MM-DD"/"AAAA-MM").
   max?: string
+  // Número máximo de caracteres que se podem escrever (atributo nativo
+  // "maxlength" do <input>): o browser não deixa escrever mais. Usado para
+  // o campo nunca aceitar um texto maior do que a coluna da base de dados
+  // onde vai ser guardado (ex.: 120 no nome de uma conta).
+  maxCaracteres?: number
 }
 
 export function CampoTexto({
@@ -75,6 +90,8 @@ export function CampoTexto({
   autoComplete,
   disposicao = 'empilhado',
   max,
+  placeholder,
+  maxCaracteres,
 }: Props) {
   const id = useId()
   const idSugestoes = useId()
@@ -97,6 +114,8 @@ export function CampoTexto({
         autoComplete={autoComplete}
         list={sugestoes ? idSugestoes : undefined}
         max={max}
+        maxLength={maxCaracteres}
+        placeholder={placeholder}
       />
       {sugestoes && (
         <datalist id={idSugestoes}>
@@ -137,10 +156,14 @@ export function CampoTexto({
     campo
   )
 
-  // Disposição "linha": rótulo ténue em cima, valor por baixo.
-  if (disposicao === 'linha') {
+  // Disposições de ficha: "linha" (rótulo ténue em cima, valor por baixo)
+  // e "lado" (rótulo à esquerda, valor à direita — as mesmas regras de
+  // "linha", mais as de ".lado", que mudam o arranjo).
+  if (disposicao === 'linha' || disposicao === 'lado') {
     return (
-      <div className={`${estilos.campo} ${estilos.linha}`}>
+      <div
+        className={`${estilos.campo} ${estilos.linha} ${disposicao === 'lado' ? estilos.lado : ''}`}
+      >
         {rotulo}
         {controlo}
       </div>

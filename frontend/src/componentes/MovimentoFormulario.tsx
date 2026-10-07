@@ -287,7 +287,7 @@ export function MovimentoFormulario({
     return (
       <div className={estilos.semContas}>
         <p className={estilos.semContasTitulo}>Precisas de uma conta primeiro.</p>
-        <p>Os movimentos pertencem sempre a uma conta — cria a tua primeira conta.</p>
+        <p>Os movimentos pertencem sempre a uma conta. Cria a tua primeira conta.</p>
         <LinkBotao para="/contas/nova">Criar conta</LinkBotao>
       </div>
     )

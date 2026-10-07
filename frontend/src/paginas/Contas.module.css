@@ -26,14 +26,147 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    transform var(--movimento-aparecer) var(--curva-aparecer);
 }
 
 .procuraEscondida {
   opacity: 0;
   transform: translateY(-6px);
   pointer-events: none;
+}
+
+/* --- Modo de pesquisa (ver a nota MODO DE PESQUISA em Contas.tsx) --- */
+
+/* O invólucro do campo é um contentor flex (o "‹" de sair à esquerda, o
+   campo a ocupar o resto). Um contentor flex "segura" as margens dos
+   filhos — por isso tira-se a margem de cima ao campo (ver
+   ".procuraCampo > *"): sem isso, somava-se à margem do título por cima
+   (antes as duas fundiam-se numa só) e o campo descia 8px. */
+.procura {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+}
+
+.procuraCampo {
+  flex: 1;
+  min-width: 0;
+}
+
+.procuraCampo > * {
+  margin-top: 0;
+}
+
+/* No topo do ecrã: fixo, a ocupar o lugar da barra de topo (que saiu de
+   cena), com a mesma altura dela — a margem da barra de estado do iPhone
+   ("safe-area") mais 8px acima e abaixo do campo de 44px. Fundo opaco,
+   para a lista não transparecer ao rolar por baixo. O "transform" é o que
+   desliza (ver o FLIP em Contas.tsx); a transição aqui é a do "Play". */
+.procuraFixa {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  padding: calc(env(safe-area-inset-top, 0px) + var(--espaco-2)) var(--espaco-4) 0;
+  background: var(--cor-fundo);
+  transition: transform var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.procuraFixa .procuraCampo > * {
+  margin-bottom: var(--espaco-2);
+}
+
+/* O espaço que o campo deixou na página quando passou a fixo — encolhe
+   até zero a par com o título, para a lista subir suavemente. A altura é
+   posta e tirada em Contas.tsx (ver o efeito do FLIP). */
+.procuraEspaco {
+  height: 0;
+  transition: height var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+/* Ao sair da pesquisa, a lista inteira volta a desvanecer, em vez de as
+   contas escondidas surgirem de golpe enquanto o resto ainda desliza. */
+.listaAReaparecer {
+  animation: lista-reaparecer var(--movimento-deslocar) var(--curva-aparecer);
+}
+
+@keyframes lista-reaparecer {
+  from {
+    opacity: 0;
+  }
+}
+
+/* O "‹" de sair: o mesmo círculo dos outros botões da barra de topo.
+   Entra a crescer de largura zero (o campo encolhe a par, em vez de
+   saltar) e, na volta, faz o caminho inverso. */
+.procuraSair {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  margin-bottom: var(--espaco-2);
+  border: none;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--cor-fundo);
+  box-shadow: var(--sombra-flutuante);
+  color: var(--cor-texto);
+  overflow: hidden;
+  animation: procura-sair-entrar var(--movimento-deslocar) var(--curva-deslocar);
+  transition:
+    width var(--movimento-deslocar) var(--curva-deslocar),
+    margin-right var(--movimento-deslocar) var(--curva-deslocar),
+    opacity var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.procuraSair:active {
+  background: var(--cor-superficie);
+}
+
+.procuraSairASair {
+  width: 0;
+  margin-right: calc(-1 * var(--espaco-3));
+  opacity: 0;
+}
+
+@keyframes procura-sair-entrar {
+  from {
+    width: 0;
+    margin-right: calc(-1 * var(--espaco-3));
+    opacity: 0;
+  }
+}
+
+/* O invólucro do título: uma grelha de uma linha cuja altura passa de
+   "1fr" (a do conteúdo) a "0fr" (zero) — a forma de animar uma altura
+   "automática" em CSS, que não sabe animar "height: auto". Desvanece ao
+   mesmo tempo. */
+.cabecalhoRecolhivel {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows var(--movimento-deslocar) var(--curva-deslocar),
+    opacity var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.cabecalhoRecolhido {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.cabecalhoRecolhivelInterior {
+  min-height: 0;
+}
+
+/* Só durante a pesquisa: corta o que sai da linha enquanto ela encolhe.
+   Fora dela não se corta nada — em ecrã largo, o cabeçalho tem botões com
+   sombra que um "overflow: hidden" permanente cortaria. */
+.cabecalhoRecortado {
+  overflow: hidden;
 }
 
 /* --- "⋯" na barra de topo (abre o menu ordenar/agrupar) --- */
@@ -68,6 +201,42 @@
   color: var(--cor-texto-2);
 }
 
+/* Uma vista do painel do menu ⋯ (raiz, "Ordenar por", "Agrupar por") —
+   ao trocar de vista, a nova entra a desvanecer e a deslizar 12px do lado
+   para onde se navega: da direita ao entrar num submenu, da esquerda ao
+   recuar para a raiz (".menuVistaRecua") — o mesmo sentido do "‹" e do
+   "›". Coluna, como o painel, para os itens ficarem empilhados. */
+.menuVista {
+  display: flex;
+  flex-direction: column;
+  animation: menu-vista-avancar var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.menuVistaRecua {
+  animation-name: menu-vista-recuar;
+}
+
+/* A vista-raiz ao ABRIR o menu: sem animação própria (o painel inteiro
+   já entra), mas com a mesma disposição em coluna. */
+.menuVistaFixa {
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes menu-vista-avancar {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+
+@keyframes menu-vista-recuar {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+}
+
 /* O campo de pesquisa é o componente partilhado CampoPesquisa (lupa +
    campo + "✕" para limpar) — os seus estilos vivem em
    CampoPesquisa.module.css. */
@@ -90,9 +259,10 @@
   margin-bottom: 0;
 }
 
-/* Cabeçalho de grupo, à maneira das listas do iOS: nome do grupo em
-   maiúsculas pequenas à esquerda, contagem de contas à direita, ambos
-   esbatidos. Nunca um subtotal — esta página não agrega saldos. */
+/* Cabeçalho de grupo, à maneira das listas do iOS: só o nome do grupo,
+   em maiúsculas pequenas, esbatido. Sem contagem nem subtotal à direita
+   (os dois chegaram a existir e foram retirados — a coluna da direita é
+   dos saldos). */
 .grupoCabecalho {
   position: relative;
   display: flex;
@@ -129,12 +299,6 @@
   white-space: nowrap;
 }
 
-.grupoContagem {
-  flex-shrink: 0;
-  font-size: var(--texto-sm);
-  color: var(--cor-texto-3);
-}
-
 /* --- Lista de contas: sem cartão, linhas directas na página --- */
 
 /* Estende-se até às margens do ecrã (anula o padding lateral da página),
@@ -155,7 +319,7 @@
   color: var(--cor-texto);
   /* O realce do toque aparece de imediato e esbate-se depressa ao levantar
      o dedo — só a assinalar "passaste por aqui", sem ficar "preso". */
-  transition: background-color 120ms ease-out;
+  transition: background-color var(--movimento-toque) var(--curva-toque);
 }
 
 /* No telemóvel só existe ":active" — dura o tempo do toque e limpa-se ao
@@ -182,6 +346,71 @@
   left: calc(var(--espaco-4) + 40px + var(--espaco-3));
   right: var(--espaco-4);
   border-top: 1px solid var(--cor-borda-leve);
+}
+
+/* --- Estado da ligação ao banco (ver SeloLigacao, em Contas.tsx) --- */
+
+/* Invólucro do monograma — é o ponto de referência ("position: relative")
+   para o ícone do estado, colado ao canto inferior direito. */
+.marca {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+/* O ícone do estado: um círculo de 18px a sair ligeiramente do monograma
+   (−3px), com um contorno da cor do fundo da página — é o contorno que o
+   separa do monograma, sem precisar de sombra. Símbolo a branco. */
+.selo {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--cor-fundo);
+  box-sizing: border-box;
+  color: #ffffff;
+}
+
+/* As três cores do estado — as mesmas que o cartão da ligação usa na
+   página da conta, para se aprenderem num sítio e reconhecerem no outro. */
+.seloLigada {
+  background: var(--cor-texto);
+  /* Em modo escuro, "--cor-texto" é claro — o símbolo passa a escuro,
+     para continuar visível. */
+  color: var(--cor-fundo);
+}
+
+.seloAExpirar {
+  background: var(--cor-aviso);
+}
+
+.seloExpirada {
+  background: var(--cor-negativo);
+}
+
+.seloExclamacao {
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+/* Texto só para leitores de ecrã: invisível e sem ocupar espaço, mas
+   lido como parte do link (a técnica habitual "visually hidden" — não
+   "display: none", que o esconderia também dos leitores de ecrã). */
+.apenasLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* Envolve o nome (+ a moeda, com conversão) — ocupa o meio da linha e
@@ -275,28 +504,129 @@
   height: 0.9rem;
 }
 
-/* --- Sem resultados de pesquisa --- */
+/* --- Estados com mensagem: erro, sem contas, procura sem resultados ---
+   (ver EstadoMensagem, em Contas.tsx). A mesma forma nos três: ícone num
+   círculo, título, texto e botões — para nenhum ter um aspecto próprio. */
 
-.semResultados {
-  padding: var(--espaco-5) var(--espaco-4);
-  text-align: center;
-  color: var(--cor-texto-2);
-}
-
-/* --- Estado vazio --- */
-
-.vazio {
+.estado {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--espaco-3);
-  padding: var(--espaco-8) var(--espaco-4);
-  color: var(--cor-texto-2);
+  gap: var(--espaco-2);
+  padding: var(--espaco-8) var(--espaco-4) var(--espaco-5);
   text-align: center;
 }
 
-.vazioTitulo {
-  font-size: var(--texto-lg);
+/* Sempre um círculo de 56px no cinzento de superfície, com o ícone a
+   cinzento-escuro — nunca um quadrado arredondado, nunca outra cor. */
+.estadoIcone {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--espaco-2);
+  border-radius: 50%;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-2);
+}
+
+.estadoTitulo {
+  margin: 0;
+  font-size: var(--texto-md);
   font-weight: 600;
   color: var(--cor-texto);
+}
+
+.estadoTexto {
+  margin: 0;
+  max-width: 18rem;
+  font-size: var(--texto-ui);
+  line-height: 1.4;
+  color: var(--cor-texto-2);
+}
+
+/* Botões empilhados e da mesma largura (até 280px) — os da aplicação
+   (Botao/LinkBotao), com o mesmo raio em todos os estados. */
+.estadoAcoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  width: 100%;
+  max-width: 17.5rem;
+  margin-top: var(--espaco-3);
+}
+
+/* --- Aviso de "Sincronizar agora" ---
+   A mesma pílula escura do aviso de chegada na página de uma conta
+   (ContaDetalhe.module.css), no mesmo sítio, para os avisos da app terem
+   todos o mesmo aspecto. Desaparece sozinho (animação); enquanto a
+   sincronização decorre (".avisoADecorrer") fica visível, sem animação. */
+.aviso {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: var(--espaco-2) var(--espaco-4);
+  border-radius: 999px;
+  background: var(--cor-acento);
+  color: var(--cor-acento-texto);
+  font-size: var(--texto-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: var(--sombra-menu);
+  pointer-events: none;
+  animation: aviso-mostrar 2.8s ease forwards;
+}
+
+.avisoADecorrer {
+  animation: none;
+  transform: translateX(-50%);
+}
+
+/* A roda de progresso dentro do aviso, enquanto sincroniza. */
+.avisoRoda {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--cor-acento-texto) 35%, transparent);
+  border-top-color: var(--cor-acento-texto);
+  box-sizing: border-box;
+  animation: rodar 0.8s linear infinite;
+}
+
+@keyframes rodar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes aviso-mostrar {
+  0% { opacity: 0; transform: translate(-50%, -8px); }
+  10% { opacity: 1; transform: translate(-50%, 0); }
+  80% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, -8px); }
+}
+
+/* Movimento reduzido: o aviso só aparece e desvanece, sem deslizar. */
+@media (prefers-reduced-motion: reduce) {
+  .aviso {
+    animation: aviso-mostrar-sem-movimento 2.8s ease forwards;
+    /* A regra global de index.css encurta TODAS as animações para quase
+       zero neste modo (com !important). Aqui isso deixaria o aviso a
+       saltar logo para o fim da animação, invisível, e o utilizador nunca
+       o leria. Este aviso só aparece e desvanece (sem deslizar), por isso
+       mantém a sua duração: o !important numa classe ganha ao do "*",
+       por ser um seletor mais específico. */
+    animation-duration: 2.8s !important;
+  }
+  .avisoADecorrer {
+    animation: none;
+  }
+  @keyframes aviso-mostrar-sem-movimento {
+    0%, 80% { opacity: 1; transform: translateX(-50%); }
+    100% { opacity: 0; transform: translateX(-50%); }
+  }
 }

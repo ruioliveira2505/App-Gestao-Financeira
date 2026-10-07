@@ -60,8 +60,8 @@
   opacity: 1;
   transform: translateY(0);
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    transform var(--movimento-aparecer) var(--curva-aparecer);
 }
 
 .tituloGrande h1 {

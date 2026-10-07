@@ -9,15 +9,27 @@
  * confirmar que está ligada.
  */
 
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { QueryClientProvider } from '@tanstack/react-query'
 
 import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { MovimentoNovo } from './MovimentoNovo'
+import { ComConsultas } from '../test/consultas'
+import { CHAVES, criarClienteConsultas } from '../lib/consultas'
+
+// Todas as montagens deste ficheiro levam a cache dos dados do servidor à
+// volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova).
+// A página usa a cache para avisar que os saldos das contas mudaram;
+// "wrapper" é a opção do Testing Library para envolver o que se monta num
+// componente.
+function render(ui: Parameters<typeof renderBase>[0]) {
+  return renderBase(ui, { wrapper: ComConsultas })
+}
 
 const CONTA = {
   id: 'c1',
@@ -89,6 +101,39 @@ describe('Página Novo movimento', () => {
       descricao: 'Supermercado',
       valor: '-49.90',
     })
+  })
+
+  it('criar um movimento marca as contas como desatualizadas (o saldo mudou)', async () => {
+    // Uma cache própria, já com a lista de contas lá dentro, para se poder
+    // ver o que lhe acontece: depois de criar, a chave ['contas'] tem de
+    // ficar "invalidada" (as páginas de contas voltam a pedir os saldos).
+    const cliente = criarClienteConsultas({ testes: true })
+    cliente.setQueryData(CHAVES.contas, [CONTA])
+    servidorMsw.use(
+      http.get('/api/contas', () => HttpResponse.json([CONTA])),
+      http.get('/api/categorias/arvore', () => HttpResponse.json(ARVORE)),
+      http.post('/api/movimentos', () => HttpResponse.json({ id: 'm1' }, { status: 201 })),
+    )
+    renderBase(
+      <QueryClientProvider client={cliente}>
+        <MemoryRouter initialEntries={['/movimentos/novo']}>
+          <Routes>
+            <Route path="/movimentos" element={<p>lista de movimentos</p>} />
+            <Route path="/movimentos/novo" element={<MovimentoNovo />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+
+    await userEvent.click(await screen.findByText('Escolher conta'))
+    await userEvent.click(screen.getByText('Conta à ordem'))
+    await userEvent.type(screen.getByLabelText('Descrição'), 'Supermercado')
+    await userEvent.type(screen.getByLabelText(/Valor/), '49,90')
+    expect(cliente.getQueryState(CHAVES.contas)?.isInvalidated).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Criar movimento' }))
+
+    expect(await screen.findByText('lista de movimentos')).toBeInTheDocument()
+    expect(cliente.getQueryState(CHAVES.contas)?.isInvalidated).toBe(true)
   })
 
   it('escolher "Entrada" dá um valor positivo', async () => {

@@ -1,0 +1,46 @@
+/*
+ * ESTILOS DA PilhaDePaginas
+ * =========================
+ *
+ * O RECUO da página de baixo enquanto outra página entra por cima dela
+ * (ver PilhaDePaginas.tsx): desliza 30% para a esquerda, com a duração e a
+ * curva de "deslocar" (src/index.css) — o mesmo ritmo da página que entra
+ * — e volta ao sítio quando esta sai.
+ *
+ * PORQUÊ "translate" E NÃO "transform": a página de cima entra e sai com
+ * uma ANIMAÇÃO de "transform" (PaginaDeslizante.module.css). Se o recuo
+ * também usasse "transform", quando a página de baixo é ela própria uma
+ * camada (ver abaixo) as duas coisas competiam pela mesma propriedade e
+ * uma anulava a outra. "translate" é uma propriedade à parte, que o
+ * browser SOMA ao "transform" — cada uma faz o seu trabalho.
+ *
+ * PORQUÊ DOIS CASOS:
+ *   - a página de baixo é uma página PRINCIPAL (a lista de contas, o
+ *     Início…): recua o invólucro inteiro (".fundoRecuado");
+ *   - a página de baixo é ela própria uma CAMADA (a lista de categorias do
+ *     Início, quando se abre uma categoria por cima dela): recua a CAMADA
+ *     ("[data-camada]"), e não o invólucro. Um "translate" no invólucro
+ *     tornava-o a referência de posição dos elementos "position: fixed"
+ *     lá dentro — e a camada, que é "fixed", deixava de estar presa ao
+ *     ecrã e saltava para dentro da página.
+ *   O seletor ":has()" ("um elemento que CONTÉM…") distingue os dois: o
+ *   invólucro só recua se não contiver nenhuma camada.
+ *
+ * Em ecrã largo não há recuo nenhum: a página de baixo esconde-se.
+ */
+
+.fundo {
+  transition: translate var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.fundoRecuado:not(:has([data-camada])) {
+  translate: -30% 0;
+}
+
+.fundo [data-camada] {
+  transition: translate var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.fundoRecuado [data-camada] {
+  translate: -30% 0;
+}

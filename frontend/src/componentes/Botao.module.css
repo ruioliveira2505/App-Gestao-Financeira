@@ -27,7 +27,9 @@
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background var(--movimento-toque) var(--curva-toque),
+    border-color var(--movimento-toque) var(--curva-toque);
 }
 
 .botao:disabled {

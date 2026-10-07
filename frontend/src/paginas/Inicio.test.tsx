@@ -387,13 +387,20 @@ describe('Início', () => {
 
     it('escolher uma conta pede de novo o resumo com "contas" no URL, e mostra o esqueleto entretanto', async () => {
       let ultimoPedidoContas: string | null = null
+      // A segunda resposta (já com "contas") fica SEGURA até o próprio
+      // teste a libertar, depois de confirmar que o esqueleto apareceu.
+      // Antes, segurava-se só 20ms — uma corrida contra o relógio, que
+      // falhava de vez em quando se o esqueleto já tivesse desaparecido
+      // quando o teste o ia procurar.
+      let libertarResposta: () => void = () => {}
+      const respostaLibertada = new Promise<void>((resolver) => {
+        libertarResposta = resolver
+      })
       servidorMsw.use(
         http.get('/api/resumo', async ({ request }) => {
           const url = new URL(request.url)
           ultimoPedidoContas = url.searchParams.get('contas')
-          // Um pequeno atraso na segunda chamada dá tempo de observar o
-          // esqueleto a reaparecer antes dos novos números.
-          if (ultimoPedidoContas) await delay(20)
+          if (ultimoPedidoContas) await respostaLibertada
           return HttpResponse.json(RESUMO)
         }),
       )
@@ -404,6 +411,7 @@ describe('Início', () => {
       await userEvent.click(await screen.findByRole('button', { name: 'Conta A' }))
 
       expect(await screen.findByRole('status', { name: 'A carregar o resumo' })).toBeInTheDocument()
+      libertarResposta()
       await screen.findByRole('button', { name: 'Contas: Conta A' })
       expect(ultimoPedidoContas).toBe('c1')
     })

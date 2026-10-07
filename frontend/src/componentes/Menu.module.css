@@ -57,7 +57,21 @@
   /* Entrada suave: aparece com um leve deslize + fade. Em
      "prefers-reduced-motion: reduce", a regra global em index.css anula
      esta animação. */
-  animation: menu-entrar 0.15s ease;
+  animation: menu-entrar var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+/* A fechar: o caminho inverso da entrada, e sem aceitar toques enquanto
+   desvanece (ver FECHAR COM ANIMAÇÃO, em Menu.tsx). */
+.painelAFechar {
+  animation: menu-sair var(--movimento-aparecer) var(--curva-aparecer) forwards;
+  pointer-events: none;
+}
+
+@keyframes menu-sair {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 
 @keyframes menu-entrar {
@@ -142,8 +156,58 @@
   font-size: var(--texto-ui);
 }
 
-.item:hover {
+/* Realce do item. No telemóvel só existe ":active" — dura o tempo do
+   toque e limpa-se ao soltar. O ":hover" fica atrás de
+   "@media (hover: hover)" (só dispositivos com rato): num ecrã táctil, o
+   browser simula um "hover" depois de um toque e deixa-o ACTIVO até se
+   tocar noutro sítio — era isso que deixava um sombreado "preso" num item
+   depois de um toque leve. */
+.item:active {
   background: var(--cor-superficie-2);
+}
+
+@media (hover: hover) {
+  .item:hover {
+    background: var(--cor-superficie-2);
+  }
+}
+
+/* Item indisponível (ver "desativado" em MenuItem): rótulo e ícone
+   esbatidos, sem realce nenhum ao toque nem ao passar o rato. */
+.itemDesativado {
+  color: var(--cor-texto-3);
+  cursor: default;
+}
+
+.itemDesativado:active {
+  background: none;
+}
+
+@media (hover: hover) {
+  .itemDesativado:hover {
+    background: none;
+  }
+}
+
+/* Ícone à esquerda do rótulo (ver "icone" em MenuItem) — largura fixa,
+   para os rótulos de itens com ícones de larguras diferentes alinharem. */
+.itemIcone {
+  display: flex;
+  flex-shrink: 0;
+  justify-content: center;
+  width: 1.25rem;
+}
+
+/* Rótulo + descrição, empilhados (ver "descricao" em MenuItem). */
+.itemTextos {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemDescricao {
+  font-size: var(--texto-sm);
+  color: var(--cor-texto-3);
 }
 
 /* Item de acção destrutiva ("Remover") — rótulo na cor negativa. */

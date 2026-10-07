@@ -21,7 +21,7 @@
   padding-bottom: calc(var(--espaco-3) + env(safe-area-inset-bottom, 0px));
   gap: var(--espaco-2);
   background: rgba(0, 0, 0, 0.3);
-  animation: fundo-entrar 0.2s ease;
+  animation: fundo-entrar var(--movimento-deslocar) var(--curva-aparecer);
 }
 
 @keyframes fundo-entrar {
@@ -38,11 +38,35 @@
   width: 100%;
   max-width: 30rem;
   margin: 0 auto;
-  animation: grupo-subir 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: grupo-subir var(--movimento-deslocar) var(--curva-deslocar);
 }
 
 @keyframes grupo-subir {
   from {
+    transform: translateY(110%);
+  }
+}
+
+/* A sair (ver FECHAR COM ANIMAÇÃO, em Confirmacao.tsx): o caminho
+   inverso da entrada — o fundo desvanece, o conjunto desce — e sem
+   aceitar toques entretanto. */
+.fundoASair {
+  animation: fundo-sair var(--movimento-deslocar) var(--curva-aparecer) forwards;
+  pointer-events: none;
+}
+
+@keyframes fundo-sair {
+  to {
+    opacity: 0;
+  }
+}
+
+.grupoASair {
+  animation: grupo-descer var(--movimento-deslocar) var(--curva-deslocar) forwards;
+}
+
+@keyframes grupo-descer {
+  to {
     transform: translateY(110%);
   }
 }
@@ -133,7 +157,19 @@
 
   .grupo {
     max-width: 22rem;
-    animation: grupo-fade 0.15s ease-out;
+    animation: grupo-fade var(--movimento-aparecer) var(--curva-aparecer);
+  }
+
+  /* Em ecrã largo, o cartão sai como entrou: a desvanecer. */
+  .grupoASair {
+    animation: grupo-fade-sair var(--movimento-aparecer) var(--curva-aparecer) forwards;
+  }
+}
+
+@keyframes grupo-fade-sair {
+  to {
+    opacity: 0;
+    transform: scale(0.97);
   }
 }
 

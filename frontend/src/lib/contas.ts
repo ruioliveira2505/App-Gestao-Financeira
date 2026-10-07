@@ -29,7 +29,9 @@ import { pedido } from './http'
  *   - ligacao é "null" para uma conta manual (ou uma que já foi
  *     desvinculada — ver src/lib/openBanking.ts); quando presente, dá o
  *     necessário para "Sincronizar agora"/"Desvincular" no detalhe da
- *     conta (conta_ligada_id) e o nome do banco a mostrar (aspsp_nome).
+ *     conta (conta_ligada_id), o nome do banco a mostrar (aspsp_nome) e a
+ *     validade do consentimento dado ao banco (valido_ate, data e hora
+ *     ISO) — de onde sai o estado da ligação (ver estadoLigacao, abaixo).
  */
 export type Conta = {
   id: string
@@ -41,9 +43,53 @@ export type Conta = {
   saldo_ancora: string
   saldo: string
   saldo_convertido: string | null
-  ligacao: { conta_ligada_id: string; aspsp_nome: string } | null
+  ligacao: { conta_ligada_id: string; aspsp_nome: string; valido_ate: string } | null
   created_at: string
   updated_at: string
+}
+
+// --- Estado da ligação ao banco ---
+//
+// Uma conta ligada recebe movimentos do banco através de um consentimento
+// dado pelo utilizador, que dura o máximo que o banco aceita: até 180
+// dias pela regra europeia (90 se o banco não o indicar). Passada a validade, o banco deixa de responder e os movimentos
+// param de entrar sem aviso nenhum — por isso a interface mostra, ANTES
+// disso, que a ligação está prestes a expirar.
+
+/** Os três estados possíveis da ligação de uma conta ao banco. */
+export type EstadoLigacao = 'ligada' | 'a-expirar' | 'expirada'
+
+/** Quantos dias antes do fim da validade a ligação passa a "a-expirar". */
+export const DIAS_AVISO_EXPIRACAO = 7
+
+/**
+ * O estado da ligação a partir da validade do consentimento ("valido_ate",
+ * data e hora ISO). "agora" é um parâmetro (e não lido aqui dentro) para
+ * os testes poderem fixar o momento — sem isso, o resultado dependeria do
+ * dia em que os testes correm.
+ */
+export function estadoLigacao(validoAte: string, agora: Date = new Date()): EstadoLigacao {
+  const fim = new Date(validoAte).getTime()
+  if (fim <= agora.getTime()) return 'expirada'
+  const msPorDia = 24 * 60 * 60 * 1000
+  return fim - agora.getTime() <= DIAS_AVISO_EXPIRACAO * msPorDia ? 'a-expirar' : 'ligada'
+}
+
+// --- Valores na moeda principal ---
+//
+// Para comparar contas em moedas diferentes usa-se sempre
+// "saldo_convertido" — o saldo na moeda principal definida pelo
+// utilizador em Perfil › Preferências. Ordenar pelo "saldo" de cada
+// conta misturaria unidades (640 dólares não são mais do que 600
+// euros só porque 640 > 600).
+
+/**
+ * O valor de uma conta para ordenar por saldo: o saldo convertido para a
+ * moeda principal, como número. "null" quando não há taxa de câmbio para
+ * converter — quem ordena decide onde pôr essas contas (ver Contas.tsx).
+ */
+export function valorParaComparar(conta: Conta): number | null {
+  return conta.saldo_convertido === null ? null : Number(conta.saldo_convertido)
 }
 
 /** Campos aceites ao criar uma conta (schema ContaCriar). */
@@ -86,29 +132,18 @@ export function apagarConta(id: string): Promise<void> {
 
 // --- Opções para os seletores dos campos "banco" e "tipo" ---
 //
-// São campos ABERTOS: o utilizador pode sempre escrever um valor à mão
-// (linha "Outro banco" / "Outro tipo" no seletor). A lista mostrada é só
-// uma ajuda para reutilizar valores.
-//
-//   - Banco: começa VAZIA e cresce só com os bancos que o utilizador já
-//     usou nas suas contas (não há lista curada — evita dar a entender
-//     que a app "abençoa" certos bancos, e não há nada de manutenção).
-//   - Tipo: uma lista-semente curta e quase universal, que aparece sempre,
-//     mais os tipos que o utilizador já usou.
-
-// Tipos semeados, por ordem alfabética.
-export const TIPOS_COMUNS = [
-  'Caixa',
-  'Conta à ordem',
-  'Conta de investimento',
-  'Conta poupança',
-]
+// São campos ABERTOS: o utilizador pode sempre escrever um valor novo (o
+// modo "procurar ou adicionar" do seletor — ver ListaDeOpcoes.tsx). A
+// lista mostrada tem só os valores que o utilizador já usou nas suas
+// contas — sem listas pré-feitas: uma lista de bancos prendia a app a um
+// país, e uma de tipos influenciava a escolha (decisões de desenho).
 
 /**
- * Junta uma lista de partida com os valores que o utilizador já usou nas
- * suas contas, sem duplicados, por ordem alfabética. Alimenta os
- * seletores dos campos "banco" (partida vazia) e "tipo" (partida =
- * TIPOS_COMUNS).
+ * Junta "partida" com os valores de "jaUsados" (ignorando os vazios), sem
+ * duplicados, por ordem alfabética. Os seletores de banco e tipo usam-na
+ * duas vezes: primeiro com os valores já usados nas contas, e depois para
+ * acrescentar o valor escolhido no momento (passado em "jaUsados"), se
+ * ainda não estiver na lista.
  */
 export function sugestoes(partida: string[], jaUsados: (string | null)[]): string[] {
   const conjunto = new Set(partida)

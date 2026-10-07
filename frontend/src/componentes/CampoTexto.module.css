@@ -109,3 +109,26 @@
 .iconeDecorativo {
   pointer-events: none;
 }
+
+/* --- disposicao="lado": rótulo à esquerda, valor à direita ---
+   Junta-se a ".linha" (que já tira o contorno ao campo) e muda só o
+   arranjo: uma grelha de duas colunas — o rótulo com a largura que
+   precisa, o campo com o resto. A altura mínima é a da linha de um
+   interruptor (Interruptor.module.css), para todas as linhas de uma ficha
+   terem a mesma altura. */
+.lado {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: var(--espaco-3);
+  min-height: 3.25rem;
+}
+
+.lado .etiqueta {
+  font-size: var(--texto-base);
+  color: var(--cor-texto);
+}
+
+.lado input {
+  text-align: right;
+}

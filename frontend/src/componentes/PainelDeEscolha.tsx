@@ -54,6 +54,9 @@ type Props = {
   rotuloAdicionar?: string
   // Ver a nota "DUAS DIREÇÕES" no topo do ficheiro.
   direcao?: 'direita' | 'baixo'
+  // Modo "procurar ou adicionar" da lista — ver ListaDeOpcoes.tsx.
+  procura?: string
+  textoVazio?: string
 }
 
 export function PainelDeEscolha({
@@ -65,6 +68,8 @@ export function PainelDeEscolha({
   aoAdicionar,
   rotuloAdicionar,
   direcao = 'direita',
+  procura,
+  textoVazio,
 }: Props) {
   return (
     <Folha
@@ -98,6 +103,8 @@ export function PainelDeEscolha({
               : undefined
           }
           rotuloAdicionar={rotuloAdicionar}
+          procura={procura}
+          textoVazio={textoVazio}
         />
       )}
     </Folha>

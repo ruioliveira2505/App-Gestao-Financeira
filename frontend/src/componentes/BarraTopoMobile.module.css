@@ -42,6 +42,32 @@
   /* Mesma cor da página, sem borda — a barra "desaparece" no fundo. Opaca
      (não transparente) para o conteúdo não transparecer ao rolar por baixo. */
   background: var(--cor-fundo);
+
+  transition:
+    transform var(--movimento-deslocar) var(--curva-deslocar),
+    opacity var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+/* As três zonas (esquerda, título, direita) desvanecem ao aparecer —
+   corre sempre que a barra muda de dona (ver "chaveZonas" em
+   BarraTopoMobile.tsx), em vez de o ☰ dar lugar ao "‹" de golpe. */
+.zona {
+  animation: zona-aparecer var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+@keyframes zona-aparecer {
+  from {
+    opacity: 0;
+  }
+}
+
+/* A barra sai de cena — sobe e desvanece — quando a página pede o topo do
+   ecrã para si (ver "escondida" em cabecalhoContexto.ts; ex.: o modo de
+   pesquisa de Contas, em que a barra de procura ocupa este lugar). */
+.barraEscondida {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Zonas laterais: largura mínima igual, para o título de uma página de
@@ -148,8 +174,8 @@
   opacity: 0;
   transform: translateY(4px);
   transition:
-    opacity 200ms ease-out,
-    transform 200ms ease-out;
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    transform var(--movimento-aparecer) var(--curva-aparecer);
   pointer-events: none;
 }
 

@@ -22,19 +22,21 @@
  * isso o deslocamento de 100% não faz aparecer barra de scroll horizontal.
  */
 
+/* Duração e curva de "deslocar" (src/index.css), iguais nos dois
+   sentidos — a saída usava "ease-in" (arranque lento, fim brusco), que
+   fazia o recuo parecer outro gesto, mais pesado, do que a entrada. */
 .envolucro {
-  animation-duration: 0.28s;
+  animation-duration: var(--movimento-deslocar);
+  animation-timing-function: var(--curva-deslocar);
   animation-fill-mode: both;
 }
 
 .aEntrar {
   animation-name: entrar-da-direita;
-  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .aSair {
   animation-name: sair-para-a-direita;
-  animation-timing-function: ease-in;
 }
 
 @keyframes entrar-da-direita {
@@ -47,4 +49,27 @@
   to {
     transform: translateX(100%);
   }
+}
+
+/* Dentro de uma pilha (ver PilhaDePaginas.tsx): a página é uma CAMADA
+   fixa sobre o ecrã inteiro, opaca, com scroll próprio, por cima da página
+   de baixo (que continua montada) e por baixo da barra de topo (z-index
+   40). O "padding" repete o do conteúdo normal em telemóvel
+   (LayoutApp.module.css, ".pagina"): a altura da barra de topo e as
+   margens das barras do iPhone ("safe-area").
+   "overscroll-behavior: contain": ao chegar ao fim do scroll da camada, o
+   gesto não passa para a página de baixo.
+   A sombra no bordo esquerdo só se vê enquanto a camada desliza — dá a
+   sensação de uma folha a passar POR CIMA da outra. */
+.camada {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow-y: auto;
+  overflow-x: clip;
+  overscroll-behavior: contain;
+  background: var(--cor-fundo);
+  padding: calc(var(--altura-barra-topo) + env(safe-area-inset-top, 0px) + var(--espaco-3))
+    var(--espaco-4) calc(env(safe-area-inset-bottom, 0px) + var(--espaco-5));
+  box-shadow: -12px 0 32px rgba(0, 0, 0, 0.08);
 }

@@ -44,6 +44,11 @@ export type Cabecalho = {
   // modo de seleção), e um título centrado saltaria de posição sempre
   // que essa zona mudasse de tamanho (ver a nota em BarraTopoMobile.tsx).
   tituloCompacto?: boolean
+  // "true" esconde a barra de topo inteira (desliza para cima e
+  // desvanece) — usado quando a página precisa do topo do ecrã só para si,
+  // como no modo de pesquisa de Contas (a barra de procura sobe e ocupa o
+  // lugar da barra de topo, à maneira do WhatsApp e das apps do iOS).
+  escondida?: boolean
 }
 
 export type DefinirCabecalho = (cabecalho: Cabecalho | null) => void
