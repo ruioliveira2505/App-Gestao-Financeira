@@ -12,6 +12,11 @@ para pôr a API no ar.
 # a aplicação web como um todo.
 from fastapi import FastAPI
 
+# registar_tradutor ensina a aplicação a transformar os erros de domínio
+# (os erros que a lógica de negócio lança, como "conta não encontrada")
+# em respostas HTTP, num único sítio.
+from app.core.erros import registar_tradutor
+
 # app.routers é o pacote onde vivem os ficheiros de rotas. Importa-se cada
 # módulo inteiro, e não directamente o "router" lá definido, só por
 # preferência de estilo — ambas as formas funcionariam.
@@ -21,6 +26,11 @@ from app.routers import auth, categorias, contas, movimentos, open_banking, resu
 # gerada automaticamente pelo FastAPI (acessível, quando o servidor está a
 # correr, em /docs).
 app = FastAPI(title="Gestão Financeira")
+
+# Os serviços (a lógica de negócio) lançam erros de domínio, que não sabem
+# nada de HTTP; é aqui, à saída, que cada um ganha o seu código HTTP e a
+# resposta {"detail": mensagem}.
+registar_tradutor(app)
 
 # include_router regista todas as rotas definidas em cada router dentro
 # desta aplicação. Sem estas linhas, essas rotas existiriam no código mas

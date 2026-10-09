@@ -23,7 +23,7 @@ A partir da pasta backend/:
     uv run python -m scripts.limpar_sessoes
 
 Correr mais do que uma vez, ou com a tabela já limpa, não faz mal —
-simplesmente não apaga nada, e o script diz "0 sessões apagadas".
+simplesmente não apaga nada, e o script diz "0 sessão(ões) expirada(s) apagada(s).".
 
 QUANDO CORRER
 -------------
@@ -46,6 +46,9 @@ async def _principal() -> None:
     # própria sessão, tal como get_db faz por baixo, e fecha-a no fim.
     async with async_session() as db:
         apagadas = await apagar_sessoes_expiradas(db)
+        # O serviço só prepara a remoção; é o script, que conduz a
+        # operação, que a torna definitiva.
+        await db.commit()
         print(f"{apagadas} sessão(ões) expirada(s) apagada(s).")
 
 

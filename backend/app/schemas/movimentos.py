@@ -15,8 +15,8 @@ para um valor com sinal faz-se no próprio formulário, antes do pedido
 chegar aqui.
 
 CATEGORIA OBRIGATÓRIA: categoria_id é um campo próprio, não opcional — ver
-a nota CATEGORIA OBRIGATÓRIA em app/models/movimento.py. A rota
-(app/routers/movimentos.py) confirma que a categoria indicada pertence ao
+a nota CATEGORIA OBRIGATÓRIA em app/models/movimento.py. O serviço de
+movimentos (app/services/movimentos.py) confirma que a categoria indicada pertence ao
 utilizador e que a sua direcao (entrada/saida) é coerente com o sinal do
 valor — tal como para conta_id, este schema só valida a FORMA dos dados.
 
@@ -49,15 +49,15 @@ class _CamposMovimento(BaseModel):
     """Os campos de um movimento, comuns à criação e à edição."""
 
     # A conta a que este movimento pertence. Tem de pertencer ao
-    # utilizador autenticado — verificado na rota (app/routers/
-    # movimentos.py), não aqui: este schema só sabe validar a FORMA dos
+    # utilizador autenticado — verificado no serviço de movimentos
+    # (app/services/movimentos.py), não aqui: este schema só sabe validar a FORMA dos
     # dados, não se um determinado id existe ou é deste utilizador.
     conta_id: uuid.UUID
 
     # A categoria atribuída a este movimento. Tem de pertencer ao
     # utilizador autenticado, e a sua direcao tem de corresponder ao sinal
     # de "valor" (uma categoria de entrada não serve para uma saída) —
-    # verificado na rota, pela mesma razão de conta_id: este schema só
+    # verificado no serviço, pela mesma razão de conta_id: este schema só
     # valida a forma dos dados, não se um determinado id existe, é deste
     # utilizador, ou é coerente com o resto do pedido.
     categoria_id: uuid.UUID
@@ -132,6 +132,6 @@ class MovimentosRecategorizarEmLote(BaseModel):
 
     # A categoria de destino — tem de pertencer ao utilizador autenticado
     # e a sua direcao tem de ser coerente com o valor de CADA movimento do
-    # lote (verificado na rota, não aqui — tal como categoria_id em
+    # lote (verificado no serviço, não aqui — tal como categoria_id em
     # _CamposMovimento).
     categoria_id: uuid.UUID

@@ -91,23 +91,24 @@ class ContaEditar(_CamposDescritivos):
     """
 
 
-class LigacaoOpenBankingOut(BaseModel):
+class VinculoOut(BaseModel):
     """
-    A ligação ao Open Banking de uma Conta, quando existe — ver
-    ContaOut.ligacao, abaixo. "conta_ligada_id" é o que o frontend precisa
-    para "Desvincular" (DELETE /open-banking/contas-ligadas/{id}) — ver
-    app/routers/open_banking.py.
+    O VÍNCULO de uma Conta, quando existe: a conta bancária real que a
+    alimenta através do Open Banking (ver ContaOut.vinculo, abaixo).
+    "conta_bancaria_id" é o que o frontend precisa para sincronizar e para
+    desvincular.
     """
 
-    conta_ligada_id: uuid.UUID
-    aspsp_nome: str
-    # Até quando vale o consentimento dado pelo utilizador ao banco
-    # (LigacaoBancaria.valido_ate — ver app/models/ligacao_bancaria.py):
-    # o máximo que o banco aceita, até 180 dias depois da autenticação pela
-    # regra europeia (90 se o banco não o indicar). Passada esta data, o
-    # banco deixa de responder e a conta deixa de receber movimentos novos
-    # até o utilizador voltar a autorizar o banco. O frontend usa-a para mostrar, na lista de contas,
-    # se a ligação está ativa, prestes a expirar ou já expirada.
+    conta_bancaria_id: uuid.UUID
+    # O nome do banco da autorização que trouxe a conta bancária.
+    banco: str
+    # Até quando vale a AUTORIZAÇÃO (o consentimento dado pelo utilizador
+    # ao banco): o máximo que o banco aceita, até 180 dias depois da
+    # autenticação pela regra europeia (90 se o banco não o indicar).
+    # Passada esta data, o banco deixa de responder e a Conta deixa de
+    # receber movimentos novos até o utilizador voltar a autorizar. O
+    # frontend usa-a para mostrar, na lista de contas, se a autorização
+    # está ativa, prestes a terminar ou já terminada.
     valido_ate: datetime
 
 
@@ -139,13 +140,10 @@ class ContaOut(BaseModel):
     # converter() devolve o mesmo valor sem precisar de taxa nenhuma.
     saldo_convertido: str | None
 
-    # "None" para uma conta manual, ou uma conta ligada que foi
-    # desvinculada (ver desvincular_conta, em app/services/
-    # ligacoes_bancarias.py) — nesses casos, esta conta comporta-se em
-    # tudo como uma conta manual normal (ver a nota CONTA LIGADA em
-    # app/models/conta_ligada.py e as regras em editar_conta/
-    # app/routers/movimentos.py, mais abaixo).
-    ligacao: LigacaoOpenBankingOut | None = None
+    # "None" numa Conta sem vínculo (uma Conta manual, que nunca teve
+    # vínculo ou foi desvinculada): comporta-se em tudo como uma conta
+    # manual normal.
+    vinculo: VinculoOut | None = None
 
     created_at: datetime
     updated_at: datetime

@@ -91,21 +91,28 @@ nunca colidem com "/movimentos/{movimento_id}", mesmo que esse tivesse o
 mesmo método (não tem: aquele é GET/PATCH/DELETE, estes são POST).
 Atómicos: confirma-se sempre que o LOTE INTEIRO é válido antes de mudar
 alguma coisa — nunca uma eliminação ou recategorização parcial.
+
+AS REGRAS DE NEGÓCIO NÃO VIVEM AQUI, mas no serviço de movimentos
+(app/services/movimentos.py): a data nunca antes da data inicial da
+conta, a categoria coerente com o sinal do valor, e nada se cria, move ou
+elimina numa conta vinculada ao banco (só a categoria muda). Cada rota que
+altera dados chama o serviço e torna as alterações definitivas (commit),
+uma vez, no fim. Se uma regra for violada, o serviço lança um erro de
+domínio, que a API traduz no código HTTP certo.
 """
 
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 
-from sqlalchemy import delete, func, or_, select, tuple_, update
+from sqlalchemy import func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
 from app.core.params import uuids_de_csv
 from app.db.session import get_db
-from app.models.categoria import Categoria
 from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
@@ -117,73 +124,10 @@ from app.schemas.movimentos import (
     MovimentosEliminarEmLote,
     MovimentosRecategorizarEmLote,
 )
-from app.services.categorias import obter_categoria_do_utilizador
+from app.services import movimentos as servico
 from app.services.contas import obter_conta_do_utilizador
-from app.services.ligacoes_bancarias import conta_esta_ligada
 
 router = APIRouter(prefix="/movimentos", tags=["movimentos"])
-
-# Usado para arredondar/normalizar os valores monetários a 2 casas
-# decimais, coerente com a coluna Numeric(14, 2) — a mesma constante que
-# app/routers/contas.py define para o mesmo fim.
-_DUAS_CASAS = Decimal("0.01")
-
-
-async def _obter_movimento_do_utilizador(
-    db: AsyncSession, utilizador: User, movimento_id: uuid.UUID
-) -> Movimento:
-    """
-    Devolve o movimento com este id, se a sua conta pertencer ao
-    utilizador. 404 nos dois casos que se juntam num só (não existe, ou
-    não é do utilizador) — pela mesma razão de
-    app/services/contas.py:obter_conta_do_utilizador: a resposta não deve
-    revelar qual dos dois motivos se aplica.
-
-    Um único JOIN (Movimento → Conta), em vez de duas consultas
-    separadas (uma ao movimento, outra à conta), porque é a mesma
-    informação — "este movimento é meu?" — numa só pergunta à base de
-    dados.
-    """
-    resultado = await db.execute(
-        select(Movimento)
-        .join(Conta, Movimento.conta_id == Conta.id)
-        .where(Movimento.id == movimento_id, Conta.user_id == utilizador.id)
-    )
-    movimento = resultado.scalar_one_or_none()
-    if movimento is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Movimento não encontrado."
-        )
-    return movimento
-
-
-async def _obter_movimentos_do_utilizador(
-    db: AsyncSession, utilizador: User, ids: list[uuid.UUID]
-) -> list[Movimento]:
-    """
-    A versão em lote de _obter_movimento_do_utilizador, usada pelos dois
-    endpoints "em lote": devolve os movimentos com estes ids, e só se
-    TODOS pertencerem ao utilizador — um único JOIN, tal como o singular.
-
-    Se faltar algum (não existe, ou não é do utilizador), 404 sem dizer
-    qual — nem sequer quantos —, pela mesma razão de não revelar o motivo
-    exacto em _obter_movimento_do_utilizador. Chamada sempre ANTES de
-    qualquer eliminação/actualização: um lote só começa a mexer nalguma
-    linha depois de se confirmar que é válido por inteiro.
-    """
-    resultado = await db.execute(
-        select(Movimento)
-        .join(Conta, Movimento.conta_id == Conta.id)
-        .where(Movimento.id.in_(ids), Conta.user_id == utilizador.id)
-    )
-    movimentos = list(resultado.scalars().all())
-    if len(movimentos) != len(set(ids)):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Um ou mais movimentos não foram encontrados.",
-        )
-    return movimentos
-
 
 def _escapar_curinga_ilike(termo: str) -> str:
     """
@@ -197,57 +141,12 @@ def _escapar_curinga_ilike(termo: str) -> str:
     return termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _validar_data(data_movimento: date, conta: Conta) -> None:
-    """
-    A data de um movimento nunca pode ser anterior à data-âncora da sua
-    conta (app/models/conta.py): a âncora é o ponto a partir do qual a
-    aplicação começa a acompanhar essa conta — um movimento mais antigo
-    não tem onde entrar no cálculo do saldo.
-    """
-    if data_movimento < conta.data_ancora:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A data do movimento não pode ser anterior à data de início da conta.",
-        )
-
-
-async def _recusar_se_conta_ligada(db: AsyncSession, conta_id: uuid.UUID, mensagem: str) -> None:
-    """
-    Levanta 400 se "conta_id" pertencer a uma conta ligada ao Open Banking
-    (ver conta_esta_ligada, em app/services/ligacoes_bancarias.py) — usada
-    em criar_movimento, editar_movimento e apagar_movimento, mais abaixo,
-    para aplicar a regra decidida para movimentos de contas ligadas: só a
-    categoria pode ser alterada, nada pode ser criado directamente nem
-    eliminado à mão (a única forma de o fazer é desvincular a conta
-    primeiro — ver app/routers/open_banking.py — ou eliminá-la por
-    inteiro).
-    """
-    if await conta_esta_ligada(db, conta_id):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=mensagem)
-
-
-def _validar_direcao(valor: Decimal, categoria: Categoria) -> None:
-    """
-    A direcao da categoria (ver app/models/categoria.py) tem de
-    corresponder ao sinal do valor: uma categoria de "entrada" (ex.:
-    "Salário") não faz sentido num movimento negativo, e vice-versa. Sem
-    esta verificação, nada impediria uma incoerência que passaria
-    despercebida em qualquer soma ou gráfico organizado por categoria.
-    """
-    direcao_esperada = "entrada" if valor > 0 else "saida"
-    if categoria.direcao != direcao_esperada:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A categoria escolhida não corresponde ao tipo do movimento (entrada/saída).",
-        )
-
-
 def _para_saida(movimento: Movimento, saldo_apos: Decimal | None = None) -> MovimentoOut:
     """
     Converte uma linha da tabela "movimentos" na forma devolvida pela API.
 
     "saldo_apos" só é passado por listar_movimentos (ver a nota SALDO
-    REMANESCENTE, mais abaixo) — nos restantes endpoints fica None, porque
+    REMANESCENTE, no topo do ficheiro) — nos restantes endpoints fica None, porque
     nada os usa para o mostrar.
     """
     return MovimentoOut(
@@ -309,39 +208,20 @@ async def criar_movimento(
     db: AsyncSession = Depends(get_db),
 ) -> MovimentoOut:
     """
-    Cria um movimento numa conta do utilizador autenticado.
-
-    O corpo do pedido já chega validado pelo schema MovimentoCriar
-    (descrição não vazia, valor diferente de 0). Fica a cargo desta rota
-    confirmar que a conta e a categoria são do utilizador (404 caso
-    contrário) e as regras de negócio próprias: a data não pode ser
-    anterior à âncora da conta (ver _validar_data), a direcao da
-    categoria tem de ser coerente com o sinal do valor (ver
-    _validar_direcao), e a conta não pode estar ligada ao Open Banking
-    (ver _recusar_se_conta_ligada) — um movimento manual novo ali
-    desalinharia o saldo calculado do saldo real do banco, exactamente
-    pela mesma razão que editar o valor de um movimento importado
-    desalinharia.
+    Cria um movimento manual numa conta do utilizador autenticado. O corpo
+    já chega validado pelo schema MovimentoCriar (descrição não vazia,
+    valor diferente de 0); as regras de negócio aplica-as o serviço.
     """
-    conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
-    await _recusar_se_conta_ligada(
-        db, conta.id, "Não é possível criar movimentos manuais numa conta ligada ao Open Banking."
-    )
-    _validar_data(dados.data, conta)
-    categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
-    _validar_direcao(dados.valor, categoria)
-
-    movimento = Movimento(
-        conta_id=conta.id,
-        categoria_id=categoria.id,
+    movimento = await servico.criar_movimento(
+        db,
+        utilizador,
+        conta_id=dados.conta_id,
+        categoria_id=dados.categoria_id,
         data=dados.data,
         descricao=dados.descricao,
-        valor=dados.valor.quantize(_DUAS_CASAS),
+        valor=dados.valor,
     )
-    db.add(movimento)
     await db.commit()
-    await db.refresh(movimento)
-
     return _para_saida(movimento)
 
 
@@ -457,7 +337,7 @@ async def obter_movimento(
     db: AsyncSession = Depends(get_db),
 ) -> MovimentoOut:
     """Devolve um movimento do utilizador autenticado. 404 se não for seu ou não existir."""
-    movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
+    movimento = await servico.obter_movimento_do_utilizador(db, utilizador, movimento_id)
     return _para_saida(movimento)
 
 
@@ -469,51 +349,23 @@ async def editar_movimento(
     db: AsyncSession = Depends(get_db),
 ) -> MovimentoOut:
     """
-    Actualiza um movimento por completo — incluindo, se for o caso, a
-    conta a que pertence ("mover" o movimento para outra conta) ou a
-    categoria (recategorizá-lo). A conta e a categoria de destino têm
-    também de pertencer ao utilizador.
-
-    MOVIMENTO DE UMA CONTA LIGADA AO OPEN BANKING (a conta ACTUAL do
-    movimento, ou a conta de DESTINO indicada — ver a nota abaixo): só a
-    categoria pode mudar. Qualquer diferença noutro campo é recusada (400)
-    ANTES de qualquer alteração ser aplicada — nunca uma actualização
-    parcial e silenciosa do que era pedido.
+    Atualiza um movimento por completo — incluindo, se for o caso, a conta
+    ("mover" o movimento) ou a categoria. Numa conta vinculada ao banco
+    (a atual ou a de destino), só a categoria pode mudar; a regra vive no
+    serviço.
     """
-    movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
-    conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
-
-    # Verifica-se a conta ACTUAL do movimento e a conta de DESTINO (podem
-    # ser diferentes, se o pedido tentar "mover" o movimento) — ligar
-    # qualquer uma delas ao Open Banking bloqueia a alteração: mover um
-    # movimento PARA uma conta ligada desalinhá-la tal como criá-lo lá
-    # directamente (ver _recusar_se_conta_ligada em criar_movimento).
-    if await conta_esta_ligada(db, movimento.conta_id) or await conta_esta_ligada(db, conta.id):
-        mudou_algo_alem_da_categoria = (
-            dados.conta_id != movimento.conta_id
-            or dados.data != movimento.data
-            or dados.descricao != movimento.descricao
-            or dados.valor.quantize(_DUAS_CASAS) != movimento.valor
-        )
-        if mudou_algo_alem_da_categoria:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Um movimento de uma conta ligada ao Open Banking só permite alterar a categoria.",
-            )
-
-    _validar_data(dados.data, conta)
-    categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
-    _validar_direcao(dados.valor, categoria)
-
-    movimento.conta_id = conta.id
-    movimento.categoria_id = categoria.id
-    movimento.data = dados.data
-    movimento.descricao = dados.descricao
-    movimento.valor = dados.valor.quantize(_DUAS_CASAS)
-
+    movimento = await servico.obter_movimento_do_utilizador(db, utilizador, movimento_id)
+    movimento = await servico.editar_movimento(
+        db,
+        utilizador,
+        movimento,
+        conta_id=dados.conta_id,
+        categoria_id=dados.categoria_id,
+        data=dados.data,
+        descricao=dados.descricao,
+        valor=dados.valor,
+    )
     await db.commit()
-    await db.refresh(movimento)
-
     return _para_saida(movimento)
 
 
@@ -524,22 +376,12 @@ async def apagar_movimento(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Elimina um movimento do utilizador autenticado. Directa, sem
-    confirmação — um único registo.
-
-    Recusado (400) se a conta pertencer ao Open Banking — ver a nota em
-    _recusar_se_conta_ligada: a única forma de remover um movimento
-    importado é desvincular a conta (app/routers/open_banking.py, o que
-    liberta TODOS os seus movimentos para edição/eliminação normal) ou
-    eliminar a conta por inteiro.
+    Elimina um movimento do utilizador autenticado. Direta, sem
+    confirmação — um único registo. Recusado (400) numa conta vinculada ao
+    banco: aí, um movimento só sai desvinculando a conta ou eliminando-a.
     """
-    movimento = await _obter_movimento_do_utilizador(db, utilizador, movimento_id)
-    await _recusar_se_conta_ligada(
-        db,
-        movimento.conta_id,
-        "Não é possível eliminar movimentos de uma conta ligada ao Open Banking.",
-    )
-    await db.delete(movimento)
+    movimento = await servico.obter_movimento_do_utilizador(db, utilizador, movimento_id)
+    await servico.apagar_movimento(db, movimento)
     await db.commit()
 
 
@@ -550,30 +392,12 @@ async def eliminar_movimentos_em_lote(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Elimina vários movimentos de uma vez — o "eliminar" do modo de
-    seleção múltipla da lista de Movimentos. Confirma primeiro que todos
-    os ids são do utilizador (_obter_movimentos_do_utilizador, 404 se
-    algum faltar) e só depois apaga, num único DELETE.
-
-    Ao contrário de eliminar uma categoria, eliminar um movimento nunca
-    tem consequências em cascata — nada na aplicação aponta para um
-    Movimento como chave estrangeira —, por isso não há aqui o passo de
-    confirmação/migração que app/routers/categorias.py:eliminar_categoria
-    exige.
-
-    Recusado (400) se ALGUM dos movimentos pertencer a uma conta ligada ao
-    Open Banking — verificado por inteiro antes de eliminar seja o que
-    for, tal como o resto deste endpoint (ver o docstring do módulo,
-    secção EM LOTE): nunca uma eliminação parcial.
+    Elimina vários movimentos de uma vez — o "eliminar" do modo de seleção
+    múltipla da lista de Movimentos. Tudo ou nada: se algum id não for do
+    utilizador (404) ou algum movimento for de uma conta vinculada ao
+    banco (400), nada é eliminado.
     """
-    movimentos = await _obter_movimentos_do_utilizador(db, utilizador, dados.ids)
-    for conta_id in {m.conta_id for m in movimentos}:
-        await _recusar_se_conta_ligada(
-            db,
-            conta_id,
-            "Não é possível eliminar movimentos de uma conta ligada ao Open Banking.",
-        )
-    await db.execute(delete(Movimento).where(Movimento.id.in_([m.id for m in movimentos])))
+    await servico.eliminar_em_lote(db, utilizador, dados.ids)
     await db.commit()
 
 
@@ -584,21 +408,10 @@ async def recategorizar_movimentos_em_lote(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """
-    Recategoriza vários movimentos de uma vez — o "categorizar" do modo
-    de seleção múltipla. A categoria de destino tem de ser do utilizador,
-    e a sua direcao tem de ser coerente com o valor de CADA movimento do
-    lote (_validar_direcao, um a um) — se um só falhar, todo o lote é
-    recusado (400) ANTES de qualquer actualização, nunca uma
-    recategorização parcial.
+    Recategoriza vários movimentos de uma vez — o "categorizar" do modo de
+    seleção múltipla. Tudo ou nada: a categoria tem de ser do utilizador e
+    coerente com o valor de CADA movimento; se um só falhar, todo o lote é
+    recusado (400) antes de qualquer alteração.
     """
-    movimentos = await _obter_movimentos_do_utilizador(db, utilizador, dados.ids)
-    categoria = await obter_categoria_do_utilizador(db, utilizador, dados.categoria_id)
-    for movimento in movimentos:
-        _validar_direcao(movimento.valor, categoria)
-
-    await db.execute(
-        update(Movimento)
-        .where(Movimento.id.in_([m.id for m in movimentos]))
-        .values(categoria_id=categoria.id)
-    )
+    await servico.recategorizar_em_lote(db, utilizador, dados.ids, dados.categoria_id)
     await db.commit()

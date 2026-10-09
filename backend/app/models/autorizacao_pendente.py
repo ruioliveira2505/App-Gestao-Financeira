@@ -15,7 +15,7 @@ si só já é motivo para não confiar em cookies chegarem intactos). Sem
 cookie, não há forma de saber, só a partir do pedido em si, QUEM iniciou
 aquele pedido de autorização.
 
-A SOLUÇÃO: quando "/ligar" (a rota que INICIA o pedido de autorização, essa
+A SOLUÇÃO: quando "/autorizar" (a rota que INICIA o pedido de autorização, essa
 sim com o cookie de sessão normal, porque é chamada a partir da própria
 aplicação) começa o processo, grava aqui uma linha (state → user_id) antes
 de reencaminhar o utilizador para o banco. A Enable Banking devolve esse

@@ -39,8 +39,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.models.categoria import Categoria
-from app.models.conta_ligada import ContaLigada
-from app.models.ligacao_bancaria import LigacaoBancaria
+from app.models.conta_bancaria import ContaBancaria
+from app.models.autorizacao import Autorizacao
 from app.models.movimento import Movimento
 from app.models.user import User
 
@@ -103,28 +103,27 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
     return str(categoria.id)
 
 
-async def _ligar_conta(db_session, conta_id: str) -> None:
+async def _vincular_conta(db_session, conta_id: str) -> None:
     """
-    Cria uma LigacaoBancaria e uma ContaLigada mínimas, já associadas a
-    "conta_id" — simula uma conta ligada ao Open Banking sem chamar a
-    Enable Banking a sério (essa parte é testada manualmente, contra a
-    API real — ver o caderno). A mesma função de tests/test_contas.py,
+    Cria uma Autorizacao e uma ContaBancaria mínimas, já vinculadas a
+    "conta_id" — simula uma conta vinculada sem chamar a Enable Banking
+    (o intermediário de Open Banking). A mesma função de tests/test_contas.py,
     duplicada aqui de propósito (cada ficheiro de teste é autónomo, tal
     como o resto do código desta aplicação).
     """
     utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
-    ligacao = LigacaoBancaria(
+    autorizacao = Autorizacao(
         user_id=utilizador.id,
         session_id=str(uuid.uuid4()),
-        aspsp_nome="Banco Teste",
-        aspsp_pais="PT",
+        banco="Banco Teste",
+        pais="PT",
         valido_ate=datetime.now(timezone.utc),
     )
-    db_session.add(ligacao)
+    db_session.add(autorizacao)
     await db_session.flush()
     db_session.add(
-        ContaLigada(
-            ligacao_id=ligacao.id,
+        ContaBancaria(
+            autorizacao_id=autorizacao.id,
             uid=str(uuid.uuid4()),
             moeda="EUR",
             conta_id=uuid.UUID(conta_id),
@@ -1106,21 +1105,21 @@ async def test_recategorizar_movimentos_em_lote_com_movimento_de_outro_utilizado
     assert resposta.status_code == 404
 
 
-# --- Movimentos de uma conta ligada ao Open Banking ---
+# --- Movimentos de uma conta vinculada ---
 #
-# Ver a nota CONTA LIGADA AO OPEN BANKING em editar_movimento, e
-# _recusar_se_conta_ligada, ambos em app/routers/movimentos.py: só a
+# Ver a nota CONTA VINCULADA em editar_movimento, e
+# _recusar_se_conta_vinculada, ambos em app/services/movimentos.py: só a
 # categoria pode ser alterada; nada pode ser criado directamente nem
 # eliminado à mão. Os movimentos usados nestes testes são criados PELA
-# API, normalmente, ANTES de a conta ser ligada (_ligar_conta) — simula o
+# API, normalmente, ANTES de a conta ter vínculo (_vincular_conta) — simula o
 # estado real depois de uma importação (o movimento já existe; a conta
-# está ligada), sem precisar de chamar a Enable Banking a sério.
+# tem vínculo), sem precisar de chamar a Enable Banking a sério.
 
 
 @pytest.mark.asyncio
-async def test_criar_movimento_em_conta_ligada_e_recusado(cliente_autenticado, db_session):
+async def test_criar_movimento_em_conta_vinculada_e_recusado(cliente_autenticado, db_session):
     conta_id = await _criar_conta(cliente_autenticado)
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
 
     resposta = await cliente_autenticado.post(
@@ -1131,7 +1130,7 @@ async def test_criar_movimento_em_conta_ligada_e_recusado(cliente_autenticado, d
 
 
 @pytest.mark.asyncio
-async def test_editar_movimento_de_conta_ligada_so_permite_mudar_categoria(
+async def test_editar_movimento_de_conta_vinculada_so_permite_mudar_categoria(
     cliente_autenticado, db_session
 ):
     conta_id = await _criar_conta(cliente_autenticado)
@@ -1141,7 +1140,7 @@ async def test_editar_movimento_de_conta_ligada_so_permite_mudar_categoria(
             "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
         )
     ).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
     outra_categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
 
     resposta = await cliente_autenticado.patch(
@@ -1154,11 +1153,11 @@ async def test_editar_movimento_de_conta_ligada_so_permite_mudar_categoria(
 
 
 @pytest.mark.asyncio
-async def test_editar_movimento_recusa_mover_para_conta_ligada(cliente_autenticado, db_session):
-    """Mover um movimento DE uma conta livre PARA uma ligada desalinharia a ligada."""
+async def test_editar_movimento_recusa_mover_para_conta_vinculada(cliente_autenticado, db_session):
+    """Mover um movimento DE uma conta livre PARA uma vinculada desalinharia a vinculada."""
     conta_origem = await _criar_conta(cliente_autenticado, nome="Origem")
     conta_destino = await _criar_conta(cliente_autenticado, nome="Destino")
-    await _ligar_conta(db_session, conta_destino)
+    await _vincular_conta(db_session, conta_destino)
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     movimento_id = (
         await cliente_autenticado.post(
@@ -1175,8 +1174,8 @@ async def test_editar_movimento_recusa_mover_para_conta_ligada(cliente_autentica
 
 
 @pytest.mark.asyncio
-async def test_editar_movimento_recusa_mover_de_conta_ligada(cliente_autenticado, db_session):
-    """Mover um movimento DE uma conta ligada PARA uma livre desalinharia a ligada."""
+async def test_editar_movimento_recusa_mover_de_conta_vinculada(cliente_autenticado, db_session):
+    """Mover um movimento DE uma conta vinculada PARA uma livre desalinharia a vinculada."""
     conta_origem = await _criar_conta(cliente_autenticado, nome="Origem")
     conta_destino = await _criar_conta(cliente_autenticado, nome="Destino")
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
@@ -1185,7 +1184,7 @@ async def test_editar_movimento_recusa_mover_de_conta_ligada(cliente_autenticado
             "/movimentos", json=_movimento_valido(conta_origem, categoria_id=categoria_id)
         )
     ).json()["id"]
-    await _ligar_conta(db_session, conta_origem)
+    await _vincular_conta(db_session, conta_origem)
 
     resposta = await cliente_autenticado.patch(
         f"/movimentos/{movimento_id}",
@@ -1196,7 +1195,7 @@ async def test_editar_movimento_recusa_mover_de_conta_ligada(cliente_autenticado
 
 
 @pytest.mark.asyncio
-async def test_editar_movimento_de_conta_ligada_recusa_mudar_valor(cliente_autenticado, db_session):
+async def test_editar_movimento_de_conta_vinculada_recusa_mudar_valor(cliente_autenticado, db_session):
     conta_id = await _criar_conta(cliente_autenticado)
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     movimento_id = (
@@ -1204,7 +1203,7 @@ async def test_editar_movimento_de_conta_ligada_recusa_mudar_valor(cliente_auten
             "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
         )
     ).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.patch(
         f"/movimentos/{movimento_id}",
@@ -1215,7 +1214,7 @@ async def test_editar_movimento_de_conta_ligada_recusa_mudar_valor(cliente_auten
 
 
 @pytest.mark.asyncio
-async def test_apagar_movimento_de_conta_ligada_e_recusado(cliente_autenticado, db_session):
+async def test_apagar_movimento_de_conta_vinculada_e_recusado(cliente_autenticado, db_session):
     conta_id = await _criar_conta(cliente_autenticado)
     categoria_id = await _categoria_id(db_session, "teste@example.com", "saida")
     movimento_id = (
@@ -1223,7 +1222,7 @@ async def test_apagar_movimento_de_conta_ligada_e_recusado(cliente_autenticado, 
             "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
         )
     ).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.delete(f"/movimentos/{movimento_id}")
 
@@ -1231,7 +1230,7 @@ async def test_apagar_movimento_de_conta_ligada_e_recusado(cliente_autenticado, 
 
 
 @pytest.mark.asyncio
-async def test_eliminar_em_lote_com_movimento_de_conta_ligada_e_recusado(
+async def test_eliminar_em_lote_com_movimento_de_conta_vinculada_e_recusado(
     cliente_autenticado, db_session
 ):
     conta_id = await _criar_conta(cliente_autenticado)
@@ -1241,7 +1240,7 @@ async def test_eliminar_em_lote_com_movimento_de_conta_ligada_e_recusado(
             "/movimentos", json=_movimento_valido(conta_id, categoria_id=categoria_id)
         )
     ).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.post(
         "/movimentos/eliminar-em-lote", json={"ids": [movimento_id]}
@@ -1254,8 +1253,7 @@ async def test_eliminar_em_lote_com_movimento_de_conta_ligada_e_recusado(
 #
 # Ver a nota junto de id_transacao_externa, em app/models/movimento.py:
 # impede duas linhas com o mesmo identificador externo NA MESMA conta —
-# a garantia de que uma futura sincronização repetida (fatia ainda por
-# construir, ver caderno/decisoes.md) nunca duplicará o mesmo movimento
+# a garantia de que uma sincronização repetida nunca duplicará o mesmo movimento
 # importado, mesmo que a verificação em Python falhe por alguma razão.
 # Testado directamente com db_session (cria as tabelas via
 # Base.metadata.create_all — ver conftest.py — por isso é o índice do

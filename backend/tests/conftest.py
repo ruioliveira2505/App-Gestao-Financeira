@@ -15,9 +15,18 @@ disponível nesse preciso momento — se a importação acontecesse primeiro,
 o engine ficaria ligado à base de dados errada.
 """
 
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv(".env.test", override=True)
+# Caminho ABSOLUTO, calculado a partir da localização deste ficheiro
+# (tests/conftest.py → a pasta backend/ é a pasta-mãe de tests/). Um
+# caminho relativo, ".env.test", seria procurado na pasta de onde o pytest
+# foi lançado: lançado da raiz do repositório ou de um editor, o ficheiro
+# não seria encontrado, load_dotenv não avisa, e os testes ligar-se-iam à
+# base de dados que estivesse no ambiente — possivelmente a de
+# desenvolvimento, que a preparação abaixo apagaria.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env.test", override=True)
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -39,12 +48,39 @@ async def preparar_base_de_dados():
     autouse=True faz esta fixture correr automaticamente, sem que nenhum
     teste precise de a pedir explicitamente como argumento.
     """
+    # SALVAGUARDA: a preparação apaga todas as tabelas. Só corre contra uma
+    # base de dados cujo nome termine em "_test"; contra qualquer outra
+    # (por exemplo, a de desenvolvimento, por um engano de configuração),
+    # os testes param aqui, antes de apagar o que quer que seja.
+    nome_da_base = engine.url.database or ""
+    if not nome_da_base.endswith("_test"):
+        raise RuntimeError(
+            f"Recusado: os testes só correm numa base de dados de teste "
+            f"(nome terminado em _test), e esta chama-se {nome_da_base!r}."
+        )
+
     async with engine.begin() as conn:
-        # drop_all antes de create_all garante um estado limpo mesmo que a
-        # execução anterior dos testes tenha terminado de forma anormal
-        # (ex.: interrompida a meio), deixando tabelas de uma versão
-        # anterior dos modelos.
-        await conn.run_sync(Base.metadata.drop_all)
+        # Apagar TODAS as tabelas antes de create_all garante um estado
+        # limpo, mesmo que a execução anterior dos testes tenha terminado
+        # de forma anormal (ex.: interrompida a meio).
+        #
+        # PORQUÊ TODAS, E NÃO SÓ AS DOS MODELOS (Base.metadata.drop_all):
+        # drop_all só apaga as tabelas que os modelos ATUAIS conhecem.
+        # Quando uma tabela muda de nome, a tabela com o nome antigo fica
+        # esquecida na base de dados de teste e, se tiver uma chave
+        # estrangeira para outra tabela, impede essa outra de ser apagada
+        # (o PostgreSQL recusa apagar uma tabela de que outras dependem).
+        # Por isso pergunta-se ao próprio PostgreSQL que tabelas existem
+        # (o catálogo pg_tables, no esquema "public") e apagam-se todas.
+        # CASCADE apaga também as restrições que dependem de cada uma.
+        # Isto só corre contra a base de dados de TESTE (.env.test).
+        tabelas = (
+            await conn.exec_driver_sql(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
+            )
+        ).scalars().all()
+        for tabela in tabelas:
+            await conn.exec_driver_sql(f'DROP TABLE IF EXISTS "{tabela}" CASCADE')
         await conn.run_sync(Base.metadata.create_all)
     yield
 

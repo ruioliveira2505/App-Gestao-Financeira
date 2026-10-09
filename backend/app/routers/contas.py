@@ -5,38 +5,43 @@ ROTAS DE CONTAS
 Endpoints para gerir as contas do utilizador autenticado. Cada rota exige
 autenticação (via obter_utilizador_atual, app/core/deps.py) e trabalha
 sempre no âmbito do utilizador do pedido — uma conta de outro utilizador
-é, para todos os efeitos, inexistente (ver
-app/services/contas.py:obter_conta_do_utilizador).
+é, para todos os efeitos, inexistente.
+
+AS REGRAS DE NEGÓCIO NÃO VIVEM AQUI, mas no serviço de contas
+(app/services/contas.py). Cada rota recebe o pedido já validado no
+formato, chama o serviço, torna as alterações definitivas (commit, uma vez
+por pedido) e devolve a resposta. Se uma regra for violada, o serviço
+lança um erro de domínio, que a API traduz no código HTTP certo.
 """
 
 import uuid
-from datetime import date
 from decimal import Decimal
 
-# APIRouter agrupa rotas relacionadas; Depends injecta dependências
-# (utilizador autenticado, sessão de base de dados); HTTPException
-# interrompe um pedido com um erro HTTP; status fornece os códigos como
-# constantes com nome.
-from fastapi import APIRouter, Depends, HTTPException, status
+# APIRouter agrupa rotas relacionadas; Depends injeta dependências
+# (utilizador autenticado, sessão de base de dados); status fornece os
+# códigos HTTP como constantes com nome.
+from fastapi import APIRouter, Depends, status
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
+from app.core.tempo import hoje
 from app.db.session import get_db
 from app.models.conta import Conta
-from app.models.movimento import Movimento
 from app.models.user import User
-from app.models.ligacao_bancaria import LigacaoBancaria
-from app.schemas.contas import ContaCriar, ContaEditar, ContaOut, LigacaoOpenBankingOut
+from app.models.autorizacao import Autorizacao
+from app.schemas.contas import ContaCriar, ContaEditar, ContaOut, VinculoOut
 from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import (
-    garantir_nome_livre,
+    apagar_conta as apagar_conta_servico,
+    criar_conta as criar_conta_servico,
+    editar_conta as editar_conta_servico,
     obter_conta_do_utilizador,
     soma_movimentos,
     somas_de_movimentos,
 )
-from app.services.ligacoes_bancarias import conta_esta_ligada, obter_ligacao_de_conta
+from app.services.contas_bancarias import obter_conta_bancaria_de_conta
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -45,19 +50,6 @@ router = APIRouter(prefix="/contas", tags=["contas"])
 # Usado para arredondar/normalizar os valores monetários a 2 casas
 # decimais, coerente com a coluna Numeric(14, 2).
 _DUAS_CASAS = Decimal("0.01")
-
-
-async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
-    """
-    True se a conta tiver pelo menos um movimento. Não é o mesmo que "a
-    soma dos movimentos é diferente de 0" — uma conta pode ter movimentos
-    cujo total dá exactamente 0 (ex.: +50 e -50) e ainda assim ter
-    movimentos. limit(1): só interessa saber se existe algum, não quantos.
-    """
-    resultado = await db.execute(
-        select(Movimento.id).where(Movimento.conta_id == conta_id).limit(1)
-    )
-    return resultado.first() is not None
 
 
 async def _para_saida(
@@ -90,24 +82,23 @@ async def _para_saida(
 
     try:
         saldo_convertido = await converter(
-            db, saldo_atual, conta.moeda, moeda_principal, date.today()
+            db, saldo_atual, conta.moeda, moeda_principal, hoje()
         )
         saldo_convertido_texto: str | None = str(saldo_convertido.quantize(_DUAS_CASAS))
     except SemTaxaCambio:
         saldo_convertido_texto = None
 
-    # Se esta conta estiver ligada ao Open Banking (ver a nota CONTA
-    # LIGADA em app/models/conta_ligada.py), o frontend precisa do id da
-    # ContaLigada (para "Sincronizar agora"/"Desvincular" —
-    # app/routers/open_banking.py) e do nome do banco (para o mostrar).
-    ligacao_out = None
-    conta_ligada = await obter_ligacao_de_conta(db, conta.id)
-    if conta_ligada is not None:
-        ligacao_bancaria = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
-        ligacao_out = LigacaoOpenBankingOut(
-            conta_ligada_id=conta_ligada.id,
-            aspsp_nome=ligacao_bancaria.aspsp_nome,
-            valido_ate=ligacao_bancaria.valido_ate,
+    # Se uma conta bancária alimentar esta Conta (se tiver VÍNCULO), o
+    # frontend precisa do id da conta bancária (para sincronizar e
+    # desvincular), do nome do banco e do prazo da autorização.
+    vinculo_out = None
+    conta_bancaria = await obter_conta_bancaria_de_conta(db, conta.id)
+    if conta_bancaria is not None:
+        autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
+        vinculo_out = VinculoOut(
+            conta_bancaria_id=conta_bancaria.id,
+            banco=autorizacao.banco,
+            valido_ate=autorizacao.valido_ate,
         )
 
     return ContaOut(
@@ -120,7 +111,7 @@ async def _para_saida(
         saldo_ancora=saldo_ancora_texto,
         saldo=saldo_texto,
         saldo_convertido=saldo_convertido_texto,
-        ligacao=ligacao_out,
+        vinculo=vinculo_out,
         created_at=conta.created_at,
         updated_at=conta.updated_at,
     )
@@ -133,36 +124,22 @@ async def criar_conta(
     db: AsyncSession = Depends(get_db),
 ) -> ContaOut:
     """
-    Cria uma conta para o utilizador autenticado.
-
-    O corpo do pedido já chega validado pelo schema ContaCriar (nome não
-    vazio, moeda suportada, comprimentos máximos). Ficam a cargo desta rota
-    as regras de negócio: a data de início não pode ser no futuro, e o
-    nome não pode repetir o de outra conta do utilizador (409 — ver
-    garantir_nome_livre, em app/services/contas.py).
+    Cria uma conta manual para o utilizador autenticado. O corpo do pedido
+    já chega validado pelo schema ContaCriar (nome não vazio, moeda
+    suportada, comprimentos máximos); as regras de negócio (data inicial
+    nunca no futuro, nome único) aplica-as o serviço.
     """
-    if dados.data_ancora > date.today():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="A data de início não pode ser no futuro.",
-        )
-    await garantir_nome_livre(db, utilizador.id, dados.nome)
-
-    conta = Conta(
-        user_id=utilizador.id,
+    conta = await criar_conta_servico(
+        db,
+        utilizador,
         nome=dados.nome,
         banco=dados.banco,
         tipo=dados.tipo,
         moeda=dados.moeda,
         data_ancora=dados.data_ancora,
-        # quantize garante exactamente 2 casas decimais antes de gravar.
-        saldo_ancora=dados.saldo_ancora.quantize(_DUAS_CASAS),
+        saldo_ancora=dados.saldo_ancora,
     )
-    db.add(conta)
     await db.commit()
-    # Volta a ler a linha da base de dados para preencher os campos que só
-    # ela sabe (created_at, updated_at).
-    await db.refresh(conta)
 
     # Uma conta recém-criada nunca tem movimentos ainda — soma 0, sem
     # precisar de consultar a tabela de movimentos.
@@ -206,44 +183,16 @@ async def editar_conta(
     db: AsyncSession = Depends(get_db),
 ) -> ContaOut:
     """
-    Actualiza os campos descritivos de uma conta (nome, banco, tipo,
-    moeda). Nunca toca na âncora.
-
-    Mudar a moeda é recusado se a conta já tiver movimentos: estes foram
-    lançados a pensar na moeda antiga, e mudar a moeda por baixo deles
-    mudaria silenciosamente o que os seus valores significam.
-
-    CONTA LIGADA AO OPEN BANKING (ver app/models/conta_ligada.py):
-    "banco" e "moeda" ficam bloqueados por completo, mesmo sem nenhum
-    movimento ainda — vêm sempre da ligação, e uma sincronização
-    continuaria a trazer dados nessa moeda/banco original, desalinhados
-    de qualquer alteração manual. "nome" e "tipo" continuam livremente
-    editáveis, tal como numa conta manual.
+    Atualiza os campos descritivos de uma conta (nome, banco, tipo,
+    moeda). As regras (nome único; numa conta vinculada ao banco, banco e
+    moeda bloqueados; numa manual, a moeda só muda sem movimentos)
+    aplica-as o serviço.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
-
-    # Outro nome já usado noutra conta: 409 (a própria conta não conta).
-    await garantir_nome_livre(db, utilizador.id, dados.nome, ignorar_conta_id=conta.id)
-
-    if await conta_esta_ligada(db, conta.id):
-        if dados.banco != conta.banco or dados.moeda != conta.moeda:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Banco e moeda não podem ser alterados numa conta ligada ao Open Banking.",
-            )
-    elif dados.moeda != conta.moeda and await _tem_movimentos(db, conta.id):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Não é possível mudar a moeda de uma conta com movimentos.",
-        )
-
-    conta.nome = dados.nome
-    conta.banco = dados.banco
-    conta.tipo = dados.tipo
-    conta.moeda = dados.moeda
-
+    conta = await editar_conta_servico(
+        db, conta, nome=dados.nome, banco=dados.banco, tipo=dados.tipo, moeda=dados.moeda
+    )
     await db.commit()
-    await db.refresh(conta)
 
     soma = await soma_movimentos(db, conta.id)
     return await _para_saida(db, conta, soma, utilizador.moeda_principal)
@@ -262,12 +211,11 @@ async def apagar_conta(
     parâmetro "forçar": a interface já pede confirmação antes de chamar
     este endpoint, e já avisa que os movimentos são apagados com a conta.
 
-    Se a conta estiver ligada ao Open Banking, a ContaLigada correspondente
-    é removida da mesma forma (ver ondelete="CASCADE" em
-    app/models/conta_ligada.py) — sem precisar de "desvincular" primeiro;
-    ao contrário de "desvincular" (app/routers/open_banking.py), que
-    mantém a Conta e os Movimento, eliminar apaga tudo, ligação incluída.
+    Se a Conta tiver vínculo, a conta bancária que a alimenta é removida
+    da mesma forma (ondelete="CASCADE"), sem precisar de desvincular
+    primeiro. Ao contrário de desvincular, que mantém a Conta e os
+    movimentos, eliminar apaga tudo, vínculo incluído.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
-    await db.delete(conta)
+    await apagar_conta_servico(db, conta)
     await db.commit()

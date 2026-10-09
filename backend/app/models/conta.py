@@ -100,19 +100,20 @@ class Conta(Base):
     # monetários. Corresponde ao tipo Decimal do Python.
     saldo_ancora: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
 
-    # A identificação estável da conta bancária real que alimenta (ou já
-    # alimentou) esta Conta pelo Open Banking — o "identification_hash"
-    # da Enable Banking ou, na falta dele, "iban:" seguido do IBAN e da
-    # moeda (ver identificacao_bancaria, em
-    # app/services/ligacoes_bancarias.py). Única por utilizador (ver o
-    # índice em __table_args__, acima).
-    # Vazio numa conta manual.
+    # A MEMÓRIA: a identificação estável da conta bancária real que
+    # alimenta (ou alimentou por último) esta Conta através do Open
+    # Banking. É o "identification_hash" da Enable Banking (um código igual
+    # em todas as autorizações da mesma conta real) ou, na falta dele,
+    # "iban:" seguido do IBAN e da moeda. Vazia numa Conta que nunca teve
+    # vínculo. Única por utilizador (ver o índice em __table_args__,
+    # acima): duas Contas do mesmo utilizador nunca se lembram da mesma
+    # conta bancária.
     #
-    # PORQUÊ AQUI, E NÃO SÓ NA ContaLigada: desvincular uma conta apaga a
-    # ContaLigada (a ponte), e com ela este identificador. Guardado na
-    # própria Conta, sobrevive ao desvincular — é o que permite, ao ligar
-    # outra vez o mesmo banco, reconhecer "esta conta bancária já foi a tua
-    # conta X" (ver gravar_ligacao, em app/services/ligacoes_bancarias.py).
+    # PORQUÊ NA CONTA, E NÃO NA CONTA BANCÁRIA: a linha da conta bancária
+    # desaparece quando se desvincula ou quando a autorização é esquecida.
+    # Guardada na Conta, a memória sobrevive a isso, e é o que permite, ao
+    # autorizar outra vez o mesmo banco, reconhecer "esta conta bancária
+    # já foi a tua Conta X". Serve só para sugerir; nunca bloqueia nada.
     identificacao_bancaria: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Momento de criação da linha, preenchido pela própria base de dados.

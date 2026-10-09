@@ -28,11 +28,11 @@ secundário (só lê uma lista pública de bancos suportados), para confirmar
 que a assinatura estava correcta e era aceite, ANTES de avançar para o
 pedido que desencadeia uma autenticação bancária real. Esse pedido
 (POST /auth) já está implementado, mais abaixo — ver iniciar_autorizacao
-— e usado a sério por app/routers/open_banking.py; listar_bancos continua
-a servir também para listar bancos a um utilizador real (só falta a
-interface no frontend, não a função em si).
+— e usado a sério por app/routers/open_banking.py; listar_bancos alimenta
+a lista de bancos que o utilizador vê na aplicação.
 """
 
+import logging
 import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -46,9 +46,21 @@ import httpx
 # dicionário de dados (o "payload") e uma chave privada. Só é usada aqui,
 # não é uma dependência do resto da aplicação.
 import jwt
-from fastapi import HTTPException
 
 from app.core.config import settings
+from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento
+
+# O registo (log) deste ficheiro: mensagens para quem opera o servidor, não
+# para o utilizador. logging.getLogger(__name__) cria um registo com o nome
+# deste módulo ("app.services.enable_banking"), o que permite filtrar as
+# mensagens por origem.
+_registo = logging.getLogger(__name__)
+
+# Os códigos de erro da Enable Banking (campo "error" do corpo de uma
+# resposta de erro) que querem dizer "esta autorização já não é válida".
+# EXPIRED_SESSION foi visto ao vivo: chega quando a sessão expirou ou foi
+# revogada no banco antes do prazo previsto.
+_ERROS_AUTORIZACAO_TERMINADA = {"EXPIRED_SESSION", "REVOKED_SESSION", "CLOSED_SESSION"}
 
 # URL base da API da Enable Banking em produção (existe também um
 # "api.tilisy.com", mas está marcado como obsoleto na documentação
@@ -75,29 +87,26 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
     o que garante que todas têm o mesmo tempo limite, a mesma autenticação
     e o mesmo tratamento de erros.
 
-    Assina um JWT novo (ver _gerar_jwt, acima) e envia-o no cabeçalho
+    Assina um JWT novo (ver _gerar_jwt, abaixo) e envia-o no cabeçalho
     "Authorization". "opcoes" são passadas tal e qual ao httpx (ex.:
     "params" para a query string, "json" para o corpo do pedido).
 
-    TRATAMENTO DE ERROS — três casos, todos convertidos numa HTTPException
-    (a excepção do FastAPI que se transforma directamente numa resposta
-    HTTP com esse código e mensagem), para que quem usa a aplicação veja
-    sempre uma razão concreta, nunca um "500 Internal Server Error"
-    genérico:
-    - O banco demora demasiado (httpx.TimeoutException) → 504 "Gateway
-      Timeout", o código HTTP próprio para "um serviço de que dependo não
-      respondeu a tempo".
-    - Outra falha de rede (httpx.HTTPError — ligação recusada, DNS, etc.)
-      → 502 "Bad Gateway", o código para "um serviço de que dependo
-      falhou".
-    - A Enable Banking responde, mas com um erro (código >= 400) →
-      devolve-se esse mesmo código, com o corpo da resposta tal como veio
-      — é normalmente uma mensagem específica (ex.: "assinatura inválida",
-      "sessão expirada"), muito mais útil para diagnosticar do que uma
-      excepção genérica.
+    TRATAMENTO DE ERROS — cada falha vira um erro de domínio (os erros da
+    lógica de negócio da aplicação, com uma mensagem pronta para o
+    utilizador, que a API traduz no código HTTP certo), para quem usa a
+    aplicação ver sempre uma razão concreta, nunca um "500 Internal Server
+    Error" genérico:
+    - O banco demora demasiado (httpx.TimeoutException) → BancoLento
+      (504 "Gateway Timeout": um serviço de que dependemos não respondeu a
+      tempo).
+    - Outra falha de rede (httpx.HTTPError: ligação recusada, nome do
+      servidor desconhecido…) → BancoIndisponivel (502 "Bad Gateway": um
+      serviço de que dependemos falhou).
+    - A Enable Banking responde com um erro (código >= 400) → ver
+      _erro_da_resposta, abaixo.
 
     Repetir o pedido automaticamente, em caso de falha, foi deliberadamente
-    evitado: o PSD2 limita o número de acessos que uma aplicação faz a uma
+    evitado: a PSD2 limita o número de acessos que uma aplicação faz a uma
     conta sem o utilizador presente (4 por dia, no caso da CGD), e
     repetições silenciosas gastariam essa quota. Quem decide repetir é o
     utilizador, a partir do ecrã de erro.
@@ -115,20 +124,81 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
     # A ordem importa: TimeoutException é um caso particular de HTTPError,
     # por isso tem de ser apanhada primeiro — senão nunca chegava aqui.
     except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="O banco demorou demasiado a responder. Tente outra vez.",
-        )
+        raise BancoLento("O banco demorou demasiado a responder. Tenta outra vez.")
     except httpx.HTTPError:
-        raise HTTPException(
-            status_code=502,
-            detail="Não foi possível contactar o serviço de Open Banking. Tente outra vez.",
+        raise BancoIndisponivel(
+            "Não foi possível contactar o serviço de Open Banking. Tenta outra vez."
         )
 
     if resposta.status_code >= 400:
-        raise HTTPException(status_code=resposta.status_code, detail=resposta.text)
+        raise _erro_da_resposta(resposta)
 
     return resposta
+
+
+def _erro_da_resposta(resposta: httpx.Response) -> AutorizacaoTerminadaNoBanco | BancoIndisponivel:
+    """
+    O erro de domínio que corresponde a uma resposta de erro da Enable
+    Banking.
+
+    NUNCA SE PASSA AO UTILIZADOR O CÓDIGO NEM O TEXTO DO BANCO. O código
+    HTTP da Enable Banking não é o desta aplicação: um 401 vindo de lá quer
+    dizer "esta sessão bancária não é válida", e se chegasse ao frontend
+    tal e qual pareceria que a SESSÃO DA APLICAÇÃO tinha terminado. O
+    texto do banco também não é para o utilizador: vem em inglês, com
+    detalhes internos do fornecedor.
+
+    Por isso o erro é CLASSIFICADO:
+      - um código de "autorização terminada" (ver
+        _ERROS_AUTORIZACAO_TERMINADA, no topo) → AutorizacaoTerminadaNoBanco
+        (409): a autorização já não é válida e é preciso autorizar outra vez;
+      - o código HTTP 429 ("Too Many Requests", demasiados pedidos) → o
+        limite diário de acessos que a PSD2 permite a uma conta foi
+        atingido. É dito ao utilizador, para não tentar repetidamente e
+        gastar ainda mais acessos;
+      - qualquer outro → BancoIndisponivel (502): o banco recusou ou falhou.
+
+    O CORPO DA RESPOSTA PODE TER QUALQUER FORMA: um objeto JSON com o campo
+    "error", mas também uma lista, um "error" que não é texto, um corpo
+    vazio, ou uma página HTML de um servidor intermédio. Só um "error" de
+    texto conta como código; tudo o resto fica sem código, e a resposta
+    nunca rebenta com um erro inesperado.
+
+    O REGISTO do servidor (para quem o opera diagnosticar) guarda só o
+    código HTTP, o código de erro e a mensagem do banco, curta e numa só
+    linha. Não guarda o corpo inteiro: uma resposta de erro pode repetir
+    parâmetros do pedido (por exemplo, o código de uma autenticação), e
+    uma quebra de linha no meio permitiria forjar linhas falsas no registo.
+    """
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        # O corpo não é JSON (ex.: uma página de erro de um servidor
+        # intermédio), ou está vazio: fica sem código de erro.
+        corpo = None
+    if not isinstance(corpo, dict):
+        corpo = {}
+    codigo = corpo.get("error")
+    if not isinstance(codigo, str):
+        codigo = None
+    mensagem = corpo.get("message")
+    mensagem = mensagem if isinstance(mensagem, str) else ""
+    # Só caracteres que se veem: as quebras de linha passam a espaços.
+    mensagem = " ".join(mensagem.split())[:200]
+
+    _registo.warning(
+        "Enable Banking respondeu %s (%s): %s", resposta.status_code, codigo, mensagem
+    )
+
+    if codigo in _ERROS_AUTORIZACAO_TERMINADA:
+        return AutorizacaoTerminadaNoBanco(
+            "A autorização deste banco já terminou. É preciso autorizá-lo outra vez."
+        )
+    if resposta.status_code == 429:
+        return BancoIndisponivel(
+            "Atingiste o limite de acessos que o banco permite por dia. Tenta outra vez amanhã."
+        )
+    return BancoIndisponivel("O banco não aceitou o pedido. Tenta outra vez mais tarde.")
 
 
 def _gerar_jwt() -> str:
@@ -230,9 +300,9 @@ async def listar_bancos(pais: str) -> list[dict]:
     """
     Devolve a lista de bancos (ASPSPs) suportados pela Enable Banking num
     dado país (código ISO 3166 de duas letras, ex.: "PT"). Sem qualquer
-    efeito secundário (só lê uma lista pública) — usada tanto pela rota de
-    depuração "/open-banking/bancos" (app/routers/open_banking.py) como,
-    no futuro, por um selector de bancos no frontend.
+    efeito secundário (só lê uma lista pública) — usada pela rota
+    "/open-banking/bancos" (app/routers/open_banking.py), que alimenta a
+    lista de bancos e o ecrã de permissões no frontend.
     """
     # Autenticação, tempo limite e erros são tratados em _pedido (acima).
     resposta = await _pedido("GET", "/aspsps", params={"country": pais})
@@ -244,7 +314,7 @@ async def listar_bancos(pais: str) -> list[dict]:
     return resposta.json()["aspsps"]
 
 
-async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: str, state: str) -> str:
+async def iniciar_autorizacao(banco: str, pais: str, redirect_url: str, state: str) -> str:
     """
     Inicia, junto de um banco (ASPSP) concreto, um pedido de autorização
     real (POST /auth), e devolve o URL para onde o browser do utilizador
@@ -259,9 +329,9 @@ async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: st
     associado ao utilizador que iniciou o pedido (ver
     app/models/autorizacao_pendente.py) — sem isso, o callback final, que
     chega sem qualquer cookie de sessão, não teria forma de saber a quem
-    atribuir a ligação bancária resultante.
+    atribuir a autorização resultante.
 
-    aspsp_nome tem de corresponder EXACTAMENTE ao campo "name" devolvido
+    "banco" tem de corresponder EXATAMENTE ao campo "name" devolvido
     por listar_bancos (ex.: "BPI", "Millennium BCP") — é assim,
     literalmente pelo nome, que a Enable Banking identifica o banco
     aqui, sem um código à parte.
@@ -271,13 +341,13 @@ async def iniciar_autorizacao(aspsp_nome: str, aspsp_pais: str, redirect_url: st
     # este banco aceita, até 180 dias (ver validade_do_consentimento,
     # acima). O máximo de cada banco vem na lista de bancos — pede-se aqui
     # outra vez, em vez de confiar num valor enviado pelo browser.
-    bancos = await listar_bancos(aspsp_pais)
-    banco = next((b for b in bancos if b.get("name") == aspsp_nome), {})
-    valido_ate = datetime.now(timezone.utc) + validade_do_consentimento(banco)
+    bancos = await listar_bancos(pais)
+    dados_banco = next((b for b in bancos if b.get("name") == banco), {})
+    valido_ate = datetime.now(timezone.utc) + validade_do_consentimento(dados_banco)
 
     corpo = {
         "access": {"valid_until": valido_ate.isoformat()},
-        "aspsp": {"name": aspsp_nome, "country": aspsp_pais},
+        "aspsp": {"name": banco, "country": pais},
         "state": state,
         "redirect_url": redirect_url,
         "psu_type": "personal",
@@ -294,7 +364,7 @@ async def trocar_codigo_por_sessao(code: str) -> dict:
     Troca um "code" recebido no callback (depois de o utilizador
     autenticar junto do banco — ver iniciar_autorizacao, acima) por uma
     sessão junto da Enable Banking, através de POST /sessions. A resposta
-    inclui um "session_id" (identifica esta ligação para pedidos futuros,
+    inclui um "session_id" (identifica esta autorização para pedidos futuros,
     como consultar saldos e movimentos — ver obter_saldos e
     obter_movimentos, abaixo) e a lista de contas ("accounts") que o
     utilizador autorizou.
@@ -302,7 +372,7 @@ async def trocar_codigo_por_sessao(code: str) -> dict:
     Ao contrário de iniciar_autorizacao, este "code" só pode ser usado UMA
     VEZ — se este pedido falhar por o código já ter sido consumido ou ter
     expirado, a única forma de continuar é repetir o fluxo desde
-    "/ligar" (em app/routers/open_banking.py), para obter um "code" novo.
+    "/autorizar" (em app/routers/open_banking.py), para obter um "code" novo.
     """
     # Autenticação, tempo limite e erros são tratados em _pedido (acima).
     resposta = await _pedido("POST", "/sessions", json={"code": code})
@@ -312,10 +382,10 @@ async def trocar_codigo_por_sessao(code: str) -> dict:
 
 async def obter_saldos(uid: str) -> dict:
     """
-    Consulta os saldos de uma conta já ligada — GET /accounts/{uid}/balances.
+    Consulta os saldos de uma conta bancária — GET /accounts/{uid}/balances.
 
     "uid" é o identificador que a Enable Banking atribuiu a esta conta em
-    concreto (ver ContaLigada.uid, em app/models/conta_ligada.py) — não é
+    concreto (ver ContaBancaria.uid, em app/models/conta_bancaria.py) — não é
     o IBAN nem o id interno desta aplicação.
 
     Devolve TODOS os saldos tal como a Enable Banking os der — um banco
@@ -337,7 +407,7 @@ async def obter_movimentos(
     estrategia: str | None = None,
 ) -> dict:
     """
-    Consulta UMA PÁGINA das transacções de uma conta já ligada — GET
+    Consulta UMA PÁGINA das transacções de uma conta bancária — GET
     /accounts/{uid}/transactions. Devolve sempre a resposta tal como a
     Enable Banking a der: {"transactions": [...], "continuation_key":
     <opcional>}. Esta função nunca segue esse "continuation_key" sozinha —
@@ -358,7 +428,7 @@ async def obter_movimentos(
     os últimos ~90 dias. Com "longest", a API procura a transacção mais
     antiga disponível e traz tudo daí em diante ("date_from" passa a ser só
     o limite inferior sugerido), e nunca devolve o erro
-    WRONG_TRANSACTIONS_PERIOD. PORQUÊ ISTO IMPORTA: pelo PSD2, o histórico
+    WRONG_TRANSACTIONS_PERIOD. PORQUÊ ISTO IMPORTA: pela PSD2, o histórico
     com mais de ~90 dias só está disponível durante um curto período depois
     de o utilizador se autenticar no banco — "cerca de uma hora", segundo a
     FAQ da Enable Banking (enablebanking.com/docs/faq) — e "longest" é a

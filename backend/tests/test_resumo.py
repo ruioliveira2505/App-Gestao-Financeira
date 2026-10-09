@@ -50,11 +50,15 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from app.core.tempo import hoje
 from app.models.categoria import Categoria
 from app.models.taxa_cambio import TaxaCambio
 from app.models.user import User
 
-_HOJE = date.today()
+# hoje() (a data civil em Lisboa), e não date.today() (a do relógio da
+# máquina): é a mesma que a aplicação usa, por isso o teste não falha
+# numa máquina noutro fuso horário perto da meia-noite.
+_HOJE = hoje()
 _INICIO_MES = _HOJE.replace(day=1)
 # O último dia do mês anterior — sempre fora do período do resumo (que só
 # começa em _INICIO_MES). fromordinal(...- 1) evita ter de tratar à mão a

@@ -13,8 +13,8 @@ se parent_id vem vazio ou preenchido, e se direcao é indicada:
   - Um grupo novo TEM de indicar a direcao (entrada ou saida) — não há
     onde a herdar.
   - Uma subcategoria nova NUNCA indica direcao — herda-a sempre do grupo
-    apontado por parent_id (a rota, em app/routers/categorias.py, é quem
-    resolve esse valor; este schema só garante que não chega ambíguo).
+    apontado por parent_id (o serviço, em app/services/categorias.py, é
+    quem resolve esse valor; este schema só garante que não chega ambíguo).
 
 Isto é validado aqui (na FORMA do pedido), não na rota: um pedido com as
 duas coisas erradas ao mesmo tempo (ou nenhuma) nunca chega a executar
@@ -35,8 +35,8 @@ class CategoriaCriar(BaseModel):
     nome: str = Field(min_length=1, max_length=80)
 
     # NULO cria um grupo; preenchido (com o id de um grupo do próprio
-    # utilizador) cria uma subcategoria desse grupo — verificado na rota,
-    # não aqui, porque exige uma consulta à base de dados.
+    # utilizador) cria uma subcategoria desse grupo — verificado no serviço
+    # de categorias (app/services/categorias.py), não aqui, porque exige uma consulta à base de dados.
     parent_id: uuid.UUID | None = None
 
     # Só faz sentido (e é obrigatória) quando parent_id é NULO — ver

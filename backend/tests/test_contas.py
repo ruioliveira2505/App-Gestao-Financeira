@@ -8,15 +8,16 @@ utilizador (um utilizador nunca vê contas de outro).
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 
+from app.core.tempo import hoje
 from app.models.categoria import Categoria
-from app.models.conta_ligada import ContaLigada
-from app.models.ligacao_bancaria import LigacaoBancaria
+from app.models.conta_bancaria import ContaBancaria
+from app.models.autorizacao import Autorizacao
 from app.models.taxa_cambio import TaxaCambio
 from app.models.user import User
 
@@ -51,31 +52,30 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
     return str(categoria.id)
 
 
-async def _ligar_conta(db_session, conta_id: str, valido_ate: datetime | None = None) -> None:
+async def _vincular_conta(db_session, conta_id: str, valido_ate: datetime | None = None) -> None:
     """
-    Cria uma LigacaoBancaria e uma ContaLigada mínimas, já associadas a
-    "conta_id" — simula uma conta ligada ao Open Banking sem chamar a
-    Enable Banking a sério (essa parte é testada manualmente, contra a
-    API real — ver o caderno). Serve para testar as REGRAS de negócio que
-    dependem de "esta conta está ligada" (conta_esta_ligada, em
-    app/services/ligacoes_bancarias.py), não a integração em si.
+    Cria uma Autorizacao e uma ContaBancaria mínimas, já vinculadas a
+    "conta_id" — simula uma conta vinculada sem chamar a Enable Banking
+    (o intermediário de Open Banking). Serve para testar as REGRAS de negócio que
+    dependem de "esta conta tem vínculo" (conta_tem_vinculo, em
+    app/services/contas_bancarias.py), não a integração em si.
 
     "valido_ate" é a validade do consentimento; sem ela, usa-se o momento
     actual (o valor exacto não importa aos testes que não a verificam).
     """
     utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
-    ligacao = LigacaoBancaria(
+    autorizacao = Autorizacao(
         user_id=utilizador.id,
         session_id=str(uuid.uuid4()),
-        aspsp_nome="Banco Teste",
-        aspsp_pais="PT",
+        banco="Banco Teste",
+        pais="PT",
         valido_ate=valido_ate or datetime.now(timezone.utc),
     )
-    db_session.add(ligacao)
+    db_session.add(autorizacao)
     await db_session.flush()
     db_session.add(
-        ContaLigada(
-            ligacao_id=ligacao.id,
+        ContaBancaria(
+            autorizacao_id=autorizacao.id,
             uid=str(uuid.uuid4()),
             moeda="EUR",
             conta_id=uuid.UUID(conta_id),
@@ -579,7 +579,7 @@ async def test_listar_contas_converte_o_saldo_para_a_moeda_principal(
     cliente_autenticado, db_session
 ):
     # 1 EUR = 1.10 USD, hoje.
-    db_session.add(TaxaCambio(data=date.today(), moeda="USD", por_1_eur=Decimal("1.10")))
+    db_session.add(TaxaCambio(data=hoje(), moeda="USD", por_1_eur=Decimal("1.10")))
     await db_session.commit()
     await cliente_autenticado.patch("/auth/me", json={"moeda_principal": "USD"})
 
@@ -611,9 +611,9 @@ async def test_obter_conta_sem_taxa_de_cambio_disponivel_devolve_saldo_convertid
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_ligada_recusa_mudar_banco_ou_moeda(cliente_autenticado, db_session):
+async def test_editar_conta_vinculada_recusa_mudar_banco_ou_moeda(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.patch(
         f"/contas/{conta_id}",
@@ -624,10 +624,10 @@ async def test_editar_conta_ligada_recusa_mudar_banco_ou_moeda(cliente_autentica
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_ligada_recusa_mudar_so_o_banco(cliente_autenticado, db_session):
+async def test_editar_conta_vinculada_recusa_mudar_so_o_banco(cliente_autenticado, db_session):
     """Isola um dos dois ramos do "OR": só o banco muda, a moeda mantém-se igual."""
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.patch(
         f"/contas/{conta_id}",
@@ -638,10 +638,10 @@ async def test_editar_conta_ligada_recusa_mudar_so_o_banco(cliente_autenticado, 
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_ligada_recusa_mudar_so_a_moeda(cliente_autenticado, db_session):
+async def test_editar_conta_vinculada_recusa_mudar_so_a_moeda(cliente_autenticado, db_session):
     """Isola o outro ramo do "OR": só a moeda muda, o banco mantém-se igual."""
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.patch(
         f"/contas/{conta_id}",
@@ -652,9 +652,9 @@ async def test_editar_conta_ligada_recusa_mudar_so_a_moeda(cliente_autenticado, 
 
 
 @pytest.mark.asyncio
-async def test_editar_conta_ligada_permite_mudar_nome_e_tipo(cliente_autenticado, db_session):
+async def test_editar_conta_vinculada_permite_mudar_nome_e_tipo(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
-    await _ligar_conta(db_session, conta_id)
+    await _vincular_conta(db_session, conta_id)
 
     resposta = await cliente_autenticado.patch(
         f"/contas/{conta_id}",
@@ -667,28 +667,28 @@ async def test_editar_conta_ligada_permite_mudar_nome_e_tipo(cliente_autenticado
 
 
 @pytest.mark.asyncio
-async def test_obter_conta_ligada_devolve_a_ligacao(cliente_autenticado, db_session):
+async def test_obter_conta_vinculada_devolve_o_vinculo(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
     validade = datetime(2026, 12, 30, 10, 0, tzinfo=timezone.utc)
-    await _ligar_conta(db_session, conta_id, valido_ate=validade)
+    await _vincular_conta(db_session, conta_id, valido_ate=validade)
 
     resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
 
     assert resposta.status_code == 200
-    ligacao = resposta.json()["ligacao"]
-    assert ligacao is not None
-    assert ligacao["aspsp_nome"] == "Banco Teste"
-    assert uuid.UUID(ligacao["conta_ligada_id"])
-    # A validade do consentimento segue tal e qual — é dela que o frontend
-    # tira o estado da ligação (ativa, a expirar, expirada).
-    assert datetime.fromisoformat(ligacao["valido_ate"]) == validade
+    vinculo = resposta.json()["vinculo"]
+    assert vinculo is not None
+    assert vinculo["banco"] == "Banco Teste"
+    assert uuid.UUID(vinculo["conta_bancaria_id"])
+    # O prazo da autorização segue tal e qual — é dele que o frontend tira
+    # o estado da autorização (ativa, a expirar, expirada).
+    assert datetime.fromisoformat(vinculo["valido_ate"]) == validade
 
 
 @pytest.mark.asyncio
-async def test_obter_conta_manual_tem_ligacao_none(cliente_autenticado):
+async def test_obter_conta_manual_tem_vinculo_none(cliente_autenticado):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
 
     resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
 
     assert resposta.status_code == 200
-    assert resposta.json()["ligacao"] is None
+    assert resposta.json()["vinculo"] is None

@@ -118,6 +118,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.deps import obter_utilizador_atual
+from app.core.tempo import hoje
 from app.core.params import uuids_de_csv
 from app.db.session import get_db
 from app.models.categoria import Categoria
@@ -168,7 +169,7 @@ async def _saldo_total(
         saldo_atual = conta.saldo_ancora + somas.get(conta.id, Decimal(0))
         try:
             total += await converter(
-                db, saldo_atual, conta.moeda, utilizador.moeda_principal, date.today()
+                db, saldo_atual, conta.moeda, utilizador.moeda_principal, hoje()
             )
         except SemTaxaCambio:
             continue
@@ -354,8 +355,8 @@ def _periodo(de: date | None, ate: date | None) -> tuple[date, date]:
     só lado não corresponde a nenhuma escolha que a interface ofereça.
     """
     if de is None and ate is None:
-        hoje = date.today()
-        return hoje.replace(day=1), hoje
+        dia_de_hoje = hoje()
+        return dia_de_hoje.replace(day=1), dia_de_hoje
     if de is None or ate is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,

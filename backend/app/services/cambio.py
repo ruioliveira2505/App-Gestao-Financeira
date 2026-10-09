@@ -36,14 +36,13 @@ class SemTaxaCambio(Exception):
     nova, acabada de acrescentar a app/core/moedas.py, ou uma data
     anterior ao dia em que se começou a guardar taxas).
 
-    Não é um HTTPException, ao contrário dos outros serviços desta
-    aplicação (ex.: obter_conta_do_utilizador, em app/services/contas.py):
-    aqueles representam sempre "isto não pertence a este utilizador" — um
-    erro do PEDIDO de um utilizador concreto, sempre 404. Esta excepção
-    representa antes uma lacuna nos dados de referência, partilhados por
-    todos os utilizadores — o estado HTTP e a mensagem certos só fazem
-    sentido decidir no endpoint que a vier a apanhar, por isso fica como
-    uma excepção comum.
+    Não é um ERRO DE DOMÍNIO (os erros da lógica de negócio que levam uma
+    mensagem para o utilizador e um código HTTP, como NaoEncontrado): esses
+    descrevem um problema do PEDIDO de um utilizador concreto. Esta
+    exceção representa antes uma lacuna nos dados de referência,
+    partilhados por todos os utilizadores, e quem a apanha decide o que
+    fazer (por exemplo, mostrar o saldo sem a conversão), por isso fica
+    como uma exceção comum.
     """
 
     def __init__(self, moeda: str, data_pedida: date):
@@ -298,7 +297,7 @@ async def data_inicio_do_historico(db: AsyncSession) -> date | None:
     utilizadores — "None" se ainda não existir nenhuma conta.
 
     Nenhum movimento pode ter uma data anterior à âncora da sua conta
-    (essa regra é imposta em _validar_data, em app/routers/movimentos.py,
+    (essa regra é imposta em _validar_data, em app/services/movimentos.py,
     ao criar ou editar um movimento) — por isso esta é, precisamente, a
     data mais antiga que algum dia vai ser preciso converter. Usada por
     proxima_data_a_pedir (mais abaixo) para decidir até onde recuar.

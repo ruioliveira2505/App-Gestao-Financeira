@@ -18,8 +18,8 @@ parent_id aponta para a própria tabela categorias, não para outra tabela.
 A aplicação só permite dois níveis (um grupo nunca é subcategoria de outra
 subcategoria); essa regra não está escrita aqui na base de dados — o tipo
 da coluna não impede, por si só, uma cadeia mais longa — e é antes
-verificada no código dos endpoints (app/routers/categorias.py, em
-"criar_categoria" e "editar_categoria") sempre que uma categoria é criada
+verificada no código do serviço de categorias (app/services/categorias.py,
+em "criar_categoria" e "editar_categoria") sempre que uma categoria é criada
 ou movida.
 
 DIRECÇÃO (entrada ou saída): cada GRUPO tem de indicar se pertence às

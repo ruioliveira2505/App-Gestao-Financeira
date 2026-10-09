@@ -1,45 +1,53 @@
 """
-SERVIÇO DE CONTAS — POSSE, NOME ÚNICO E SOMA DE MOVIMENTOS
-=================================================================
+SERVIÇO DE CONTAS
+====================
 
-Cinco funções partilhadas por mais do que um ficheiro:
+As regras de negócio das CONTAS (as contas que o utilizador acompanha na
+aplicação) e as consultas que mais do que um ficheiro precisa:
 
-- obter_conta_do_utilizador — por app/routers/contas.py e
-  app/routers/movimentos.py: as duas rotas precisam de confirmar que uma
-  conta pertence ao utilizador autenticado antes de a mostrar, editar ou
-  apagar (contas), ou de lhe associar um movimento (movimentos).
+- obter_conta_do_utilizador: confirma que uma conta pertence ao
+  utilizador autenticado antes de a mostrar, editar, apagar, ou de lhe
+  associar um movimento.
 
-- soma_movimentos / somas_de_movimentos — por app/routers/contas.py (o
-  saldo actual de cada conta) e app/routers/resumo.py (_saldo_total, o
-  saldo total somado entre todas as contas do utilizador). Viviam antes
-  só em contas.py, privadas (nome com "_" à frente); mudaram-se para
-  aqui, e perderam o "_", quando uma SEGUNDA rota passou a precisar
-  exactamente do mesmo cálculo — estar num sítio só evita duas cópias da
-  mesma query a divergirem com o tempo, o mesmo raciocínio já aplicado a
-  obter_conta_do_utilizador.
+- criar_conta, editar_conta, apagar_conta: as três operações sobre uma
+  conta, com as suas regras (a data inicial nunca no futuro, o nome único,
+  o que pode mudar numa conta com movimentos ou com vínculo ao banco).
 
-- garantir_nome_livre — por app/routers/contas.py (criar e editar) e
-  app/services/importacao_movimentos.py (criar a partir do Open Banking):
-  o nome de uma conta é único por utilizador (ver a função).
+- garantir_nome_livre: o nome de uma conta é único por utilizador,
+  comparado sem acentos nem maiúsculas.
 
-- normalizar_nome — por garantir_nome_livre (acima) e por nome_sugerido,
-  em app/services/ligacoes_bancarias.py: a forma de um nome usada para
-  comparar (sem espaços nas pontas, sem acentos, sem distinção entre
-  maiúsculas e minúsculas), para "Poupança" e "poupanca " contarem como o
-  mesmo nome.
+- soma_movimentos / somas_de_movimentos: a soma dos movimentos de uma ou
+  de várias contas, base do saldo atual.
+
+AS ROTAS NÃO TÊM REGRAS. Uma rota (o código que responde a um pedido
+HTTP) recebe os dados já validados no formato, chama uma destas funções e
+devolve o resultado. As regras ficam aqui, num só sítio, para valerem da
+mesma forma seja quem for que as chame (uma rota, um script, um teste).
+Quando uma regra é violada, estas funções lançam um ERRO DE DOMÍNIO (um
+erro da lógica de negócio, com uma mensagem para o utilizador), que a API
+traduz no código HTTP certo.
+
+TRANSAÇÕES: QUEM GRAVA É QUEM CHAMA. Uma transação é um conjunto de
+alterações à base de dados que ficam todas definitivas juntas (commit) ou
+são todas desfeitas. Estas funções nunca fazem commit: enviam as
+alterações com flush() (visíveis dentro da transação, ainda não
+definitivas) e deixam o commit para quem as chamou, uma vez, no fim.
 """
 
-import unicodedata
 import uuid
+from datetime import date
 from decimal import Decimal
 
-from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.erros import Conflito, NaoEncontrado, RegraViolada
+from app.core.tempo import hoje
 from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
+from app.services.contas_bancarias import conta_tem_vinculo
+from app.services.nomes import normalizar_nome
 
 
 async def obter_conta_do_utilizador(
@@ -47,8 +55,8 @@ async def obter_conta_do_utilizador(
 ) -> Conta:
     """
     Devolve a conta com este id, se pertencer ao utilizador. Caso
-    contrário — não existe, ou é de outro utilizador — levanta 404, nunca
-    403: para este utilizador, uma conta que não é sua é, para todos os
+    contrário — não existe, ou é de outro utilizador — lança NaoEncontrado
+    (que a API traduz em 404), nunca uma recusa de acesso (403): para este utilizador, uma conta que não é sua é, para todos os
     efeitos, inexistente, e a resposta não deve sequer revelar que o id
     corresponde a alguma conta (de outra pessoa).
     """
@@ -57,31 +65,8 @@ async def obter_conta_do_utilizador(
     )
     conta = resultado.scalar_one_or_none()
     if conta is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Conta não encontrada."
-        )
+        raise NaoEncontrado("Conta não encontrada.")
     return conta
-
-
-def normalizar_nome(nome: str) -> str:
-    """
-    O nome reduzido à forma usada para comparar: sem espaços nas pontas,
-    sem acentos e sem distinção entre maiúsculas e minúsculas — "Poupança"
-    e "poupanca " contam como o mesmo nome.
-
-    Tirar os acentos: a decomposição "NFD" separa cada letra acentuada na
-    letra base mais o acento, como dois caracteres ("ç" → "c" + cedilha);
-    depois descartam-se os acentos (a categoria Unicode "Mn", "marca
-    combinatória"). "casefold" é a versão mais completa de "lower" para
-    comparações (trata casos como o "ß" alemão).
-
-    Pública (sem "_" no nome) porque também é usada fora deste ficheiro:
-    nome_sugerido, em app/services/ligacoes_bancarias.py, compara a
-    sugestão com os nomes que o utilizador já tem pela mesma regra.
-    """
-    decomposto = unicodedata.normalize("NFD", nome.strip())
-    sem_acentos = "".join(c for c in decomposto if unicodedata.category(c) != "Mn")
-    return sem_acentos.casefold()
 
 
 async def garantir_nome_livre(
@@ -91,8 +76,9 @@ async def garantir_nome_livre(
     ignorar_conta_id: uuid.UUID | None = None,
 ) -> None:
     """
-    Levanta 409 ("conflito") se o utilizador já tiver outra conta com este
-    nome — comparado sem acentos nem maiúsculas (ver normalizar_nome).
+    Lança Conflito (que a API traduz em 409) se o utilizador já tiver outra conta com este
+    nome — comparado sem acentos nem maiúsculas (ver normalizar_nome, em
+    app/services/nomes.py).
 
     PORQUÊ: o nome é a única coisa que distingue as contas em todo o lado
     — na lista, no seletor de conta de um movimento, nos filtros. Duas
@@ -116,10 +102,7 @@ async def garantir_nome_livre(
     alvo = normalizar_nome(nome)
     for conta_id, nome_existente in resultado:
         if conta_id != ignorar_conta_id and normalizar_nome(nome_existente) == alvo:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Já tens uma conta chamada «{nome_existente}».",
-            )
+            raise Conflito(f"Já tens uma conta chamada «{nome_existente}».")
 
 
 async def soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
@@ -129,9 +112,7 @@ async def soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
 
     SEM filtro por data aqui, mesmo sabendo que um movimento nunca pode
     ser anterior à data-âncora da conta (ver app/models/conta.py): essa
-    regra já é imposta noutro sítio — _validar_data, em
-    app/routers/movimentos.py, chamada tanto ao criar como ao editar um
-    movimento, incluindo ao "mover" um movimento de uma conta para outra.
+    regra já é imposta ao criar e ao editar um movimento, incluindo ao "mover" um movimento de uma conta para outra.
     Como nenhum movimento anterior à âncora chega a existir na base de
     dados, somar sem filtro de data dá exactamente o mesmo resultado que
     somar só os posteriores à âncora — mas sem repetir aqui uma
@@ -161,3 +142,124 @@ async def somas_de_movimentos(
         .group_by(Movimento.conta_id)
     )
     return dict(resultado.all())
+
+
+# Usado para normalizar os valores monetários a 2 casas decimais, coerente
+# com a coluna Numeric(14, 2).
+_DUAS_CASAS = Decimal("0.01")
+
+
+async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
+    """
+    True se a conta tiver pelo menos um movimento. Não é o mesmo que "a
+    soma dos movimentos é diferente de 0": uma conta pode ter movimentos
+    cujo total dá exatamente 0 (ex.: +50 e -50). limit(1): só interessa
+    saber se existe algum, não quantos.
+    """
+    resultado = await db.execute(
+        select(Movimento.id).where(Movimento.conta_id == conta_id).limit(1)
+    )
+    return resultado.first() is not None
+
+
+async def criar_conta(
+    db: AsyncSession,
+    utilizador: User,
+    *,
+    nome: str,
+    banco: str | None,
+    tipo: str | None,
+    moeda: str,
+    data_ancora: date,
+    saldo_ancora: Decimal,
+) -> Conta:
+    """
+    Cria uma conta manual para o utilizador. Os dados já chegam validados
+    no formato (nome não vazio, moeda suportada, comprimentos máximos);
+    aqui aplicam-se as regras de negócio:
+      - a data inicial (a "âncora", o dia a partir do qual a aplicação
+        acompanha a conta) não pode ser no futuro — "hoje" é a data em
+        Lisboa, não a do relógio do servidor;
+      - o nome não pode repetir o de outra conta do utilizador.
+
+    O "*" na lista de parâmetros obriga a passar os dados pelo nome
+    (nome=..., moeda=...), para nunca se trocarem dois valores do mesmo
+    tipo por engano.
+    """
+    if data_ancora > hoje():
+        raise RegraViolada("A data de início não pode ser no futuro.")
+    await garantir_nome_livre(db, utilizador.id, nome)
+
+    conta = Conta(
+        user_id=utilizador.id,
+        nome=nome,
+        banco=banco,
+        tipo=tipo,
+        moeda=moeda,
+        data_ancora=data_ancora,
+        # quantize garante exatamente 2 casas decimais antes de gravar.
+        saldo_ancora=saldo_ancora.quantize(_DUAS_CASAS),
+    )
+    db.add(conta)
+    await db.flush()
+    # Volta a ler a linha para preencher os campos que só a base de dados
+    # sabe (created_at, updated_at).
+    await db.refresh(conta)
+    return conta
+
+
+async def editar_conta(
+    db: AsyncSession,
+    conta: Conta,
+    *,
+    nome: str,
+    banco: str | None,
+    tipo: str | None,
+    moeda: str,
+) -> Conta:
+    """
+    Atualiza os campos descritivos de uma conta (nome, banco, tipo,
+    moeda). Nunca toca na âncora.
+
+    Regras:
+      - o nome não pode repetir o de OUTRA conta do utilizador (a própria
+        não conta, para guardar sem mudar o nome continuar a funcionar);
+      - CONTA VINCULADA (alimentada por uma conta bancária através do Open
+        Banking): banco e moeda ficam bloqueados, mesmo sem movimentos —
+        vêm sempre do banco, e uma sincronização continuaria a trazer
+        dados nessa moeda e desse banco. Nome e tipo continuam livres;
+      - CONTA MANUAL: a moeda só muda se a conta não tiver movimentos —
+        foram lançados a pensar na moeda antiga, e mudá-la por baixo deles
+        mudaria em silêncio o que os seus valores significam.
+    """
+    await garantir_nome_livre(db, conta.user_id, nome, ignorar_conta_id=conta.id)
+
+    if await conta_tem_vinculo(db, conta.id):
+        if banco != conta.banco or moeda != conta.moeda:
+            raise RegraViolada(
+                "Banco e moeda não podem ser alterados numa conta vinculada ao banco."
+            )
+    elif moeda != conta.moeda and await _tem_movimentos(db, conta.id):
+        raise RegraViolada("Não é possível mudar a moeda de uma conta com movimentos.")
+
+    conta.nome = nome
+    conta.banco = banco
+    conta.tipo = tipo
+    conta.moeda = moeda
+    await db.flush()
+    await db.refresh(conta)
+    return conta
+
+
+async def apagar_conta(db: AsyncSession, conta: Conta) -> None:
+    """
+    Elimina uma conta e, com ela, todos os seus movimentos: a própria base
+    de dados apaga-os (a chave estrangeira dos movimentos para a conta tem
+    "ON DELETE CASCADE", apagar em cascata). A interface pede confirmação
+    antes e avisa que os movimentos vão com a conta.
+
+    Se a conta tiver vínculo, a conta bancária que a alimenta é apagada da
+    mesma forma, sem precisar de desvincular primeiro.
+    """
+    await db.delete(conta)
+    await db.flush()

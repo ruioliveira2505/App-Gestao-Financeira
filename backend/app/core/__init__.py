@@ -15,4 +15,11 @@ categorias, movimentos):
     particular obter_utilizador_atual ("quem é o utilizador autenticado
     neste pedido?").
   - moedas.py — a lista de moedas suportadas pela aplicação.
+  - params.py — a leitura de parâmetros de pedido com vários ids
+    separados por vírgulas ("id1,id2").
+  - erros.py — os erros de domínio (os erros da lógica de negócio, com
+    uma mensagem para o utilizador) e o tradutor que os transforma em
+    respostas HTTP.
+  - tempo.py — hoje(): a data civil em Lisboa, e não a do relógio do
+    servidor.
 """

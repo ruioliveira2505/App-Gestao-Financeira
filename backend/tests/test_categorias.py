@@ -532,3 +532,28 @@ async def test_eliminar_categoria_com_migrar_para_id_de_outro_utilizador_e_recus
     )
 
     assert resposta.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_grupos_com_o_mesmo_nome_em_direcoes_diferentes_nao_colidem(cliente_autenticado):
+    """
+    A árvore por omissão tem dois grupos "Transferências", um de entrada e
+    outro de saída. O nome de um grupo é único dentro da sua DIREÇÃO, por
+    isso guardar um deles sem mudar o nome tem de funcionar — antes, a
+    comparação ignorava a direção e respondia 409 (nome repetido). Criar um
+    terceiro "Transferências" na mesma direção continua a ser recusado.
+    """
+    arvore = (await cliente_autenticado.get("/categorias/arvore")).json()
+    transferencias = [g for g in arvore if g["nome"] == "Transferências"]
+    assert {g["direcao"] for g in transferencias} == {"entrada", "saida"}
+
+    for grupo in transferencias:
+        resposta = await cliente_autenticado.patch(
+            f"/categorias/{grupo['id']}", json={"nome": "Transferências"}
+        )
+        assert resposta.status_code == 200
+
+    repetido = await cliente_autenticado.post(
+        "/categorias", json={"nome": "Transferências", "direcao": "saida"}
+    )
+    assert repetido.status_code == 409

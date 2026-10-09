@@ -41,5 +41,7 @@ async def apagar_sessoes_expiradas(db: AsyncSession) -> int:
     resultado = await db.execute(
         delete(UserSession).where(UserSession.expires_at < datetime.now(timezone.utc))
     )
-    await db.commit()
+    # Sem commit: quem chama (scripts/limpar_sessoes.py) é que o faz, no
+    # fim. Um serviço nunca torna as alterações definitivas sozinho, para
+    # poder ser combinado com outras operações na mesma transação.
     return resultado.rowcount

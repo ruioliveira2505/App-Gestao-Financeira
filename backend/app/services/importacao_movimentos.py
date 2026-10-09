@@ -9,29 +9,41 @@ transacções — ver app/services/enable_banking.py) em `Conta` e
 app/models/movimento.py), sem alterar esses dois modelos além do campo
 `id_transacao_externa` já acrescentado a Movimento.
 
-DUAS FUNÇÕES PRINCIPAIS:
-- criar_conta_a_partir_de_ligacao: a PRIMEIRA importação, quando uma
-  conta NASCE já ligada ao Open Banking, sem histórico manual anterior —
+AS FUNÇÕES PRINCIPAIS:
+- criar_conta_a_partir_de_conta_bancaria: a PRIMEIRA importação, quando uma
+  Conta NASCE já vinculada a uma conta bancária, sem histórico manual —
   calcula a âncora a partir do saldo actual e das transacções trazidas
   nesse momento.
-- sincronizar_movimentos: importa os movimentos NOVOS de uma conta JÁ
-  ligada e já associada — chamada manualmente, pelo botão "Sincronizar
-  agora" (na página de uma conta, ou no menu da lista de contas, para
-  todas de uma vez). Não há sincronização periódica automática.
+- sincronizar_conta_bancaria: o ponto de entrada da sincronização —
+  confirma que há vínculo e que a Conta é do utilizador, e chama
+  sincronizar_movimentos, que importa os movimentos NOVOS. Chamada só
+  quando o utilizador pede (o botão "Sincronizar" na página de uma conta,
+  ou no menu da lista de contas, para todas de uma vez). Não há
+  sincronização periódica automática.
 
-AINDA NÃO IMPLEMENTADO: religar uma conta bancária a uma Conta que já
+AINDA NÃO IMPLEMENTADO: vincular uma conta bancária a uma Conta que já
 existe, seja desvinculada ou manual (com movimentos registados à mão).
 Precisa de uma reconciliação de saldo para o período sem movimentos (o
 saldo calculado pela aplicação e o do banco podem não bater certo), que
 a aplicação ainda não tem.
 
-O reconhecimento da mesma conta real numa ligação nova já existe: a
+O reconhecimento da mesma conta real numa autorização nova já existe: a
 identificação estável da conta bancária fica guardada na própria Conta
-(Conta.identificacao_bancaria). Uma Conta ainda ligada renova-se
-sozinha; uma desvinculada é só indicada ao utilizador («Já foi a «X»»).
+(Conta.identificacao_bancaria, a memória). Uma Conta ainda vinculada
+renova o vínculo sozinha; uma desvinculada é só indicada ao utilizador
+(«Já foi a "X"»).
 Ao criar uma Conta nova a partir de uma conta bancária, recusa-se (409)
 se essa conta bancária ainda alimenta outra Conta, e a identificação
 passa para a nova se a anterior estava desvinculada.
+
+TRANSAÇÕES: QUEM GRAVA É QUEM CHAMA. Uma transação é um conjunto de
+alterações à base de dados que ficam todas definitivas juntas (commit) ou
+são todas desfeitas (rollback). As funções deste ficheiro nunca fazem
+commit: enviam as alterações com flush() (ficam visíveis dentro da
+transação, mas ainda não são definitivas) e deixam o commit para a rota
+que as chamou, uma vez, no fim do pedido. Assim, uma operação composta
+(por exemplo, criar a Conta, o vínculo e os movimentos importados) grava tudo ou
+nada: se um passo falhar a meio, nenhum dos anteriores fica gravado.
 
 SALDO-ÂNCORA CALCULADO PARA BATER CERTO, NÃO ADIVINHADO (só na primeira
 importação): em vez de tentar obter o saldo exacto num dia qualquer do
@@ -61,21 +73,23 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
-from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.erros import BancoIndisponivel, Conflito, DadosInvalidos
+from app.core.tempo import hoje
+from app.models.autorizacao import Autorizacao
 from app.models.categoria import Categoria
 from app.models.conta import Conta
-from app.models.conta_ligada import ContaLigada
-from app.models.ligacao_bancaria import LigacaoBancaria
+from app.models.conta_bancaria import ContaBancaria
 from app.models.movimento import Movimento
-from app.services.contas import garantir_nome_livre
+from app.models.user import User
+from app.services.contas import garantir_nome_livre, obter_conta_do_utilizador
 from app.services.enable_banking import obter_movimentos, obter_saldos
-from app.services.ligacoes_bancarias import (
+from app.services.contas_bancarias import (
     conta_com_identificacao,
     identificacao_bancaria,
-    obter_ligacao_de_conta,
+    obter_conta_bancaria_de_conta,
 )
 
 # Número máximo de páginas seguidas antes de desistir com um erro claro
@@ -87,7 +101,7 @@ from app.services.ligacoes_bancarias import (
 _LIMITE_PAGINAS = 50
 
 # Margem de segurança, em dias, para trás da última data já importada,
-# ao sincronizar uma conta já ligada (ver sincronizar_movimentos, abaixo)
+# ao sincronizar uma Conta já vinculada (ver sincronizar_movimentos, abaixo)
 # — booking_date pode aparecer alguns dias depois de a transacção ter
 # realmente acontecido (confirmado em testes reais com um banco), por
 # isso cortar exactamente "no dia seguinte ao último movimento" arriscava
@@ -119,12 +133,9 @@ async def _obter_todas_transacoes(
         if not continuation_key:
             return transacoes
 
-    raise HTTPException(
-        status_code=status.HTTP_502_BAD_GATEWAY,
-        detail=(
-            f"O banco continua a devolver mais páginas de movimentos para lá de "
-            f"{_LIMITE_PAGINAS} pedidos seguidos — a importar foi interrompida por segurança."
-        ),
+    raise BancoIndisponivel(
+        f"O banco continua a devolver mais páginas de movimentos depois de "
+        f"{_LIMITE_PAGINAS} pedidos seguidos. A importação foi interrompida por segurança."
     )
 
 
@@ -157,7 +168,7 @@ def _esta_confirmada(transacao: dict) -> bool:
     True só para uma transacção já CONFIRMADA pelo banco ("status":
     "BOOK", confirmado em testes reais com a CGD) — nunca uma pendente ou
     ainda por autorizar. Filtro aplicado ANTES de somar ou gravar
-    qualquer transacção (ver criar_conta_a_partir_de_ligacao e
+    qualquer transacção (ver criar_conta_a_partir_de_conta_bancaria e
     sincronizar_movimentos, abaixo).
 
     PORQUÊ ISTO IMPORTA: uma transacção pendente pode desaparecer,
@@ -205,24 +216,24 @@ async def _categoria_refugio(db: AsyncSession, user_id: uuid.UUID, direcao: str)
     return resultado.scalar_one()
 
 
-async def criar_conta_a_partir_de_ligacao(
+async def criar_conta_a_partir_de_conta_bancaria(
     db: AsyncSession,
     user_id: uuid.UUID,
-    conta_ligada: ContaLigada,
+    conta_bancaria: ContaBancaria,
     nome: str,
     data_de: date | None = None,
     tipo: str | None = None,
 ) -> Conta:
     """
-    Cria uma Conta nova a partir de uma ContaLigada ainda por associar,
-    associa-a (conta_ligada.conta_id), e importa de imediato as
+    Cria uma Conta nova a partir de uma ContaBancaria ainda sem vínculo,
+    vincula-as (conta_bancaria.conta_id), e importa de imediato as
     transacções disponíveis como Movimento — ver as notas SALDO-ÂNCORA e
     PAGINAÇÃO COMPLETA, no topo do ficheiro, para o desenho exacto desse
     cálculo.
 
     "nome" é escolhido por quem chama esta função (o utilizador, através
     do endpoint em app/routers/open_banking.py) — banco e moeda vêm
-    automaticamente da ligação e da conta externa, mas o nome da Conta é
+    automaticamente da autorização e da conta bancária, mas o nome da Conta é
     sempre uma escolha do utilizador, tal como ao criar uma conta manual.
 
     "data_de", quando indicada, limita a importação a partir dessa data —
@@ -236,42 +247,53 @@ async def criar_conta_a_partir_de_ligacao(
     "tipo" (ex.: "Conta à ordem") é escolhido pelo utilizador, tal como
     no formulário manual — o frontend já o propõe a partir do código de
     tipo de conta que o banco envia (ver tipo_sugerido, em
-    app/services/ligacoes_bancarias.py), mas a escolha final é dele. Um
+    app/services/contas_bancarias.py), mas a escolha final é dele. Um
     texto vazio ou só com espaços fica como "sem tipo" (None), a mesma
     regra do formulário manual.
 
-    O nome não pode repetir o de outra conta do utilizador (409 — ver
-    garantir_nome_livre, em app/services/contas.py). Verifica-se ANTES de
-    qualquer pedido ao banco: um nome repetido não deve gastar acessos à
-    conta (o PSD2 limita-os) nem esperar pela importação para falhar.
+    REGRAS, todas verificadas ANTES de qualquer pedido ao banco (um pedido
+    que vai falhar não deve gastar acessos à conta, que a PSD2 limita, nem
+    esperar pela importação para falhar):
+      - o nome conta sem os espaços nas pontas, e não pode ficar vazio
+        (DadosInvalidos, 422);
+      - a conta bancária não pode já ter vínculo (Conflito, 409);
+      - o nome não pode repetir o de outra conta do utilizador (Conflito,
+        409 — ver garantir_nome_livre, em app/services/contas.py).
+
+    Devolve a Conta criada; quem chama faz o commit.
     """
+    # Os espaços nas pontas não contam (como no formulário manual): um nome
+    # só com espaços é um nome vazio.
+    nome = nome.strip()
+    if not nome:
+        raise DadosInvalidos("O nome não pode ser vazio.")
+    if conta_bancaria.conta_id is not None:
+        raise Conflito("Esta conta bancária já está vinculada.")
     await garantir_nome_livre(db, user_id, nome)
 
     # A identificação estável da conta bancária (ver identificacao_bancaria,
-    # em app/services/ligacoes_bancarias.py) fica guardada na Conta nova: é
-    # por ela que a próxima ligação ao mesmo banco reconhece esta conta
-    # (renova a ligação, ou diz «Já foi a «X»»).
+    # em app/services/contas_bancarias.py) fica guardada na Conta nova: é
+    # por ela que a próxima autorização no mesmo banco reconhece esta conta
+    # (renova o vínculo, ou diz «Já foi a "X"»).
     identificacao = identificacao_bancaria(
-        conta_ligada.identification_hash, conta_ligada.iban, conta_ligada.moeda
+        conta_bancaria.identification_hash, conta_bancaria.iban, conta_bancaria.moeda
     )
 
     # Uma conta bancária alimenta no máximo UMA Conta. Se a identificação
-    # pertence a uma Conta ainda LIGADA (por outra ligação), criar uma
+    # pertence a uma Conta ainda VINCULADA (por outra autorização), criar uma
     # Conta nova a partir desta poria a mesma conta bancária a alimentar
     # duas Contas, com os movimentos duplicados. Acontece, por exemplo, ao
-    # voltar (pelo histórico do browser) a uma ligação antiga, abandonada
-    # antes de a mesma conta ter sido associada noutra ligação. Recusa-se
-    # ANTES de qualquer pedido ao banco, que o PSD2 limita.
+    # voltar (pelo histórico do browser) a uma autorização antiga,
+    # abandonada antes de a mesma conta ter sido vinculada noutra
+    # autorização. Recusa-se ANTES de qualquer pedido ao banco, que a PSD2
+    # limita.
     dona = await conta_com_identificacao(db, user_id, identificacao)
-    if dona is not None and await obter_ligacao_de_conta(db, dona.id) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Esta conta bancária já está vinculada à conta «{dona.nome}».",
-        )
+    if dona is not None and await obter_conta_bancaria_de_conta(db, dona.id) is not None:
+        raise Conflito(f"Esta conta bancária já está vinculada à conta «{dona.nome}».")
 
-    ligacao = await db.get(LigacaoBancaria, conta_ligada.ligacao_id)
+    autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
 
-    saldos = await obter_saldos(conta_ligada.uid)
+    saldos = await obter_saldos(conta_bancaria.uid)
     saldo_actual = next(
         (
             Decimal(saldo["balance_amount"]["amount"])
@@ -281,13 +303,10 @@ async def criar_conta_a_partir_de_ligacao(
         None,
     )
     if saldo_actual is None:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="O banco não devolveu um saldo contabilístico (CLBD) para esta conta.",
-        )
+        raise BancoIndisponivel("O banco não devolveu o saldo contabilístico desta conta.")
 
     # "longest": a primeira importação acontece logo a seguir à autenticação
-    # no banco — o único período (cerca de uma hora, pelo PSD2) em que o
+    # no banco — o único período (cerca de uma hora, pela PSD2) em que o
     # histórico com mais de ~90 dias está disponível. Sem esta estratégia, a
     # Enable Banking devolvia só o intervalo por omissão do banco, e "Todo o
     # histórico" trazia na prática só os últimos meses (confirmado ao vivo).
@@ -295,7 +314,7 @@ async def criar_conta_a_partir_de_ligacao(
     #
     # Só transacções já confirmadas ("BOOK") entram no cálculo do saldo e
     # são gravadas — ver a nota em _esta_confirmada, acima.
-    todas = await _obter_todas_transacoes(conta_ligada.uid, data_de, estrategia="longest")
+    todas = await _obter_todas_transacoes(conta_bancaria.uid, data_de, estrategia="longest")
     transacoes = [t for t in todas if _esta_confirmada(t)]
 
     if transacoes:
@@ -305,13 +324,14 @@ async def criar_conta_a_partir_de_ligacao(
     else:
         # Sem transacções disponíveis: a âncora é hoje, com o saldo actual
         # — não há histórico nenhum para trazer.
-        data_ancora = date.today()
+        data_ancora = hoje()
         saldo_ancora = saldo_actual
 
     # Se esta conta bancária já alimentou uma Conta antiga, entretanto
     # desvinculada, e o utilizador escolheu criar uma conta nova em vez de
-    # religar (religar ainda não existe — precisa de reconciliações), a
-    # identificação passa para a conta nova: duas Conta com a mesma
+    # a vincular à antiga (isso ainda não existe — precisa de
+    # reconciliações), a identificação passa para a conta nova: duas Contas
+    # com a mesma
     # identificação tornariam o reconhecimento ambíguo. A conta antiga
     # fica como conta manual, com todo o seu histórico.
     if identificacao is not None:
@@ -324,9 +344,9 @@ async def criar_conta_a_partir_de_ligacao(
     conta = Conta(
         user_id=user_id,
         nome=nome,
-        banco=ligacao.aspsp_nome,
+        banco=autorizacao.banco,
         tipo=(tipo or "").strip() or None,
-        moeda=conta_ligada.moeda,
+        moeda=conta_bancaria.moeda,
         data_ancora=data_ancora,
         saldo_ancora=saldo_ancora,
         identificacao_bancaria=identificacao,
@@ -334,7 +354,7 @@ async def criar_conta_a_partir_de_ligacao(
     db.add(conta)
     await db.flush()
 
-    conta_ligada.conta_id = conta.id
+    conta_bancaria.conta_id = conta.id
 
     # Uma categoria-refúgio por direcção, obtida uma única vez antes do
     # ciclo — não há razão para repetir a mesma consulta por transacção.
@@ -356,19 +376,24 @@ async def criar_conta_a_partir_de_ligacao(
             )
         )
 
-    await db.commit()
+    # flush() envia as alterações à base de dados, dentro da transação em
+    # curso, mas NÃO as torna definitivas: isso é o commit(), que só a rota
+    # (ou o script) que chamou este serviço faz, uma vez, no fim. Assim,
+    # várias operações chamadas pelo mesmo pedido gravam-se todas juntas
+    # ou nenhuma (ver a nota no topo do ficheiro).
+    await db.flush()
     await db.refresh(conta)
     return conta
 
 
-async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: ContaLigada) -> int:
+async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_bancaria: ContaBancaria) -> int:
     """
-    Importa os movimentos NOVOS de uma conta JÁ ligada e já associada
-    (ao contrário de criar_conta_a_partir_de_ligacao, que trata da
+    Importa os movimentos NOVOS de uma Conta JÁ vinculada
+    (ao contrário de criar_conta_a_partir_de_conta_bancaria, que trata da
     PRIMEIRA importação) — chamada pelo botão "Sincronizar agora"
-    (POST /open-banking/contas-ligadas/{id}/sincronizar,
-    app/routers/open_banking.py) ou, quando activada em Perfil,
-    periodicamente. Devolve quantos movimentos novos foram gravados.
+    (POST /open-banking/contas-bancarias/{id}/sincronizar,
+    app/routers/open_banking.py), através de sincronizar_conta_bancaria.
+    Devolve quantos movimentos novos foram gravados.
 
     NUNCA MEXE EM saldo_ancora: a âncora já foi fixada na primeira
     importação (ver a nota SALDO-ÂNCORA, no topo do ficheiro) — uma
@@ -378,7 +403,7 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: C
     nada a recalcular aqui.
 
     DESDE QUANDO IMPORTAR (nunca uma escolha do utilizador, ao contrário
-    da primeira importação — ver a nota em criar_conta_a_partir_de_ligacao):
+    da primeira importação — ver a nota em criar_conta_a_partir_de_conta_bancaria):
     a data do movimento mais recente já gravado para esta conta, recuada
     _MARGEM_SEGURANCA_DIAS dias (ver a nota no topo do ficheiro) — ou
     conta.data_ancora, se a conta ainda não tiver nenhum movimento (nunca
@@ -412,7 +437,7 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: C
         # interessam os dias mais recentes, desde a última importação — e
         # fora da hora a seguir à autenticação, o banco nem teria histórico
         # antigo para dar.
-        t for t in await _obter_todas_transacoes(conta_ligada.uid, data_de) if _esta_confirmada(t)
+        t for t in await _obter_todas_transacoes(conta_bancaria.uid, data_de) if _esta_confirmada(t)
     ]
     transacoes = [t for t in transacoes if date.fromisoformat(t["booking_date"]) >= conta.data_ancora]
 
@@ -449,5 +474,26 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_ligada: C
             )
         )
 
-    await db.commit()
+    # flush() envia as alterações à base de dados, dentro da transação em
+    # curso, mas NÃO as torna definitivas: isso é o commit(), que só a rota
+    # (ou o script) que chamou este serviço faz, uma vez, no fim. Assim,
+    # várias operações chamadas pelo mesmo pedido gravam-se todas juntas
+    # ou nenhuma (ver a nota no topo do ficheiro).
+    await db.flush()
     return len(transacoes_novas)
+
+
+async def sincronizar_conta_bancaria(
+    db: AsyncSession, utilizador: User, conta_bancaria: ContaBancaria
+) -> int:
+    """
+    Sincroniza a Conta que esta conta bancária alimenta: confirma primeiro
+    que há vínculo (Conflito, 409, se não houver: não há para onde
+    sincronizar) e que a Conta é do utilizador, e depois importa os
+    movimentos novos (ver sincronizar_movimentos, acima). Devolve quantos
+    movimentos novos entraram; quem chama faz o commit.
+    """
+    if conta_bancaria.conta_id is None:
+        raise Conflito("Esta conta bancária ainda não está vinculada a nenhuma conta.")
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_bancaria.conta_id)
+    return await sincronizar_movimentos(db, conta, conta_bancaria)

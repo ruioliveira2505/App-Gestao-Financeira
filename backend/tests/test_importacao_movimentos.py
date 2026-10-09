@@ -7,10 +7,9 @@ _id_externo, _esta_confirmada) — sem base de dados, sem rede: recebem um
 dicionário Python (a forma de uma transacção devolvida pela Enable
 Banking, já confirmada em testes reais com a CGD) e devolvem um valor.
 
-A função que faz chamadas de rede reais (criar_conta_a_partir_de_ligacao)
-NÃO é testada aqui — precisaria de substituir obter_saldos/obter_movimentos
-e a base de dados em conjunto, um esforço maior deixado para uma iteração
-futura (ver caderno/decisoes.md). Estes testes cobrem, ainda assim, o
+As funções que fazem chamadas ao banco (criar_conta_a_partir_de_conta_bancaria,
+sincronizar_conta_bancaria) não são testadas aqui, mas em
+tests/test_open_banking_fluxo.py, com o banco simulado. Estes testes cobrem o
 essencial: as regras de mapeamento e filtragem que decidem o que entra ou
 não numa Conta/Movimento real, e — no fim do ficheiro — a paginação de
 _obter_todas_transacoes, com só obter_movimentos substituída por uma versão

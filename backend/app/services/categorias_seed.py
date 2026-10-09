@@ -71,7 +71,7 @@ ARVORE_PADRAO: list[tuple[str, str, list[str | tuple[str, bool]]]] = [
     # outra de saída (mais abaixo): o mesmo nome, mas direcoes diferentes.
     # Não é um erro nem colide: um grupo é identificado por nome+direcao,
     # não só pelo nome (ver a nota "_nome_duplicado" em
-    # app/routers/categorias.py, que já antecipa este caso exacto).
+    # app/services/categorias.py, que já antecipa este caso exacto).
     ("Transferências", "entrada", ["Entre Contas Bancárias", "Depósito em Numerário", "Outros"]),
     ("Outras Entradas", "entrada", ["Reembolsos", "Presentes", "Donativos", "Heranças", ("Outros", True)]),
     # --- Saídas: a maioria dos grupos é uma ÁREA DE VIDA ---
