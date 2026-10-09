@@ -13,11 +13,15 @@ aplicação) e as consultas que mais do que um ficheiro precisa:
   conta, com as suas regras (a data inicial nunca no futuro, o nome único,
   o que pode mudar numa conta com movimentos ou com vínculo ao banco).
 
-- garantir_nome_livre: o nome de uma conta é único por utilizador,
-  comparado sem acentos nem maiúsculas.
+- garantir_nome_livre e gravar_conta: o nome de uma conta é único por
+  utilizador, comparado sem acentos nem maiúsculas (verificado no código,
+  para a mensagem certa, e garantido pela base de dados).
 
 - soma_movimentos / somas_de_movimentos: a soma dos movimentos de uma ou
   de várias contas, base do saldo atual.
+
+- editar_ancora e simular_ancora: mudar a data e o saldo iniciais de uma
+  conta manual (a "âncora"), e ver o efeito antes de gravar.
 
 AS ROTAS NÃO TÊM REGRAS. Uma rota (o código que responde a um pedido
 HTTP) recebe os dados já validados no formato, chama uma destas funções e
@@ -39,15 +43,19 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.erros import Conflito, NaoEncontrado, RegraViolada
 from app.core.tempo import hoje
 from app.models.conta import Conta
 from app.models.movimento import Movimento
+from app.models.reconciliacao import Reconciliacao
 from app.models.user import User
+from app.services.bloqueios import bloquear_conta
 from app.services.contas_bancarias import conta_tem_vinculo
 from app.services.nomes import normalizar_nome
+from app.services.reconciliacoes import recalcular_acertos
 
 
 async def obter_conta_do_utilizador(
@@ -76,33 +84,56 @@ async def garantir_nome_livre(
     ignorar_conta_id: uuid.UUID | None = None,
 ) -> None:
     """
-    Lança Conflito (que a API traduz em 409) se o utilizador já tiver outra conta com este
-    nome — comparado sem acentos nem maiúsculas (ver normalizar_nome, em
-    app/services/nomes.py).
+    Lança Conflito (que a API traduz em 409) se o utilizador já tiver
+    outra conta com este nome — comparado sem acentos nem maiúsculas (ver
+    normalizar_nome, em app/services/nomes.py).
 
     PORQUÊ: o nome é a única coisa que distingue as contas em todo o lado
     — na lista, no seletor de conta de um movimento, nos filtros. Duas
     contas chamadas "Carteira" seriam indistinguíveis em todos esses
-    sítios. (A app não tenta adivinhar se duas contas MANUAIS são a mesma
-    conta real — não há IBAN nem identificador do banco para isso; só
-    garante que se distinguem.)
+    sítios.
 
     "ignorar_conta_id": ao EDITAR, a própria conta não conta como conflito
     (guardar sem mudar o nome tem de continuar a funcionar).
 
-    A comparação faz-se em Python, sobre os nomes das contas do
-    utilizador, e não com uma restrição na base de dados: uma restrição
-    "UNIQUE" compararia o texto exacto, e "Poupança"/"poupanca" passariam
-    como diferentes. Um utilizador tem poucas contas — ler os nomes todos
-    é imediato.
+    Compara pela coluna nome_normalizado (o nome já reduzido à forma de
+    comparar). Esta verificação dá a mensagem certa ("Já tens uma conta
+    chamada «X»") no caso comum; a GARANTIA é o índice único sobre
+    (utilizador, nome_normalizado) na base de dados, que apanha também dois
+    pedidos ao mesmo tempo (ver gravar_conta, abaixo).
     """
-    resultado = await db.execute(
-        select(Conta.id, Conta.nome).where(Conta.user_id == user_id)
+    consulta = select(Conta.nome).where(
+        Conta.user_id == user_id, Conta.nome_normalizado == normalizar_nome(nome)
     )
-    alvo = normalizar_nome(nome)
-    for conta_id, nome_existente in resultado:
-        if conta_id != ignorar_conta_id and normalizar_nome(nome_existente) == alvo:
-            raise Conflito(f"Já tens uma conta chamada «{nome_existente}».")
+    if ignorar_conta_id is not None:
+        consulta = consulta.where(Conta.id != ignorar_conta_id)
+    nome_existente = (await db.execute(consulta.limit(1))).scalar_one_or_none()
+    if nome_existente is not None:
+        raise Conflito(f"Já tens uma conta chamada «{nome_existente}».")
+
+
+async def gravar_conta(db: AsyncSession) -> None:
+    """
+    Envia as alterações a uma conta para a base de dados (flush), e
+    traduz a recusa do índice único do nome num Conflito (409).
+
+    PORQUÊ É PRECISO, SE garantir_nome_livre JÁ VERIFICOU: entre verificar
+    e gravar há um intervalo. Dois pedidos ao mesmo tempo (por exemplo, um
+    duplo clique em "Guardar") podem verificar os dois antes de qualquer
+    um gravar, e passar os dois. O índice único sobre (utilizador,
+    nome_normalizado) recusa o segundo, com um IntegrityError (o erro do
+    SQLAlchemy para uma restrição da base de dados violada). Sem esta
+    tradução, o utilizador veria um erro genérico "500"; com ela, vê a
+    mesma mensagem de nome repetido. Qualquer outra violação continua a
+    ser lançada tal como é: seria um erro de programação, não do
+    utilizador.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as erro:
+        if "ux_contas_user_id_nome_normalizado" in str(erro.orig):
+            raise Conflito("Já tens uma conta com este nome.") from erro
+        raise
 
 
 async def soma_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> Decimal:
@@ -162,6 +193,13 @@ async def _tem_movimentos(db: AsyncSession, conta_id: uuid.UUID) -> bool:
     return resultado.first() is not None
 
 
+async def _tem_reconciliacoes(db: AsyncSession, conta_id: uuid.UUID) -> bool:
+    """True se a conta tiver pelo menos uma reconciliação."""
+    return (
+        await db.scalar(select(Reconciliacao.id).where(Reconciliacao.conta_id == conta_id).limit(1))
+    ) is not None
+
+
 async def criar_conta(
     db: AsyncSession,
     utilizador: User,
@@ -201,7 +239,7 @@ async def criar_conta(
         saldo_ancora=saldo_ancora.quantize(_DUAS_CASAS),
     )
     db.add(conta)
-    await db.flush()
+    await gravar_conta(db)
     # Volta a ler a linha para preencher os campos que só a base de dados
     # sabe (created_at, updated_at).
     await db.refresh(conta)
@@ -228,9 +266,10 @@ async def editar_conta(
         Banking): banco e moeda ficam bloqueados, mesmo sem movimentos —
         vêm sempre do banco, e uma sincronização continuaria a trazer
         dados nessa moeda e desse banco. Nome e tipo continuam livres;
-      - CONTA MANUAL: a moeda só muda se a conta não tiver movimentos —
-        foram lançados a pensar na moeda antiga, e mudá-la por baixo deles
-        mudaria em silêncio o que os seus valores significam.
+      - CONTA MANUAL: a moeda só muda se a conta não tiver movimentos nem
+        reconciliações — foram lançados a pensar na moeda antiga, e mudá-la
+        por baixo deles mudaria em silêncio o que os seus valores
+        significam.
     """
     await garantir_nome_livre(db, conta.user_id, nome, ignorar_conta_id=conta.id)
 
@@ -241,12 +280,14 @@ async def editar_conta(
             )
     elif moeda != conta.moeda and await _tem_movimentos(db, conta.id):
         raise RegraViolada("Não é possível mudar a moeda de uma conta com movimentos.")
+    elif moeda != conta.moeda and await _tem_reconciliacoes(db, conta.id):
+        raise RegraViolada("Não é possível mudar a moeda de uma conta com reconciliações.")
 
     conta.nome = nome
     conta.banco = banco
     conta.tipo = tipo
     conta.moeda = moeda
-    await db.flush()
+    await gravar_conta(db)
     await db.refresh(conta)
     return conta
 
@@ -260,6 +301,98 @@ async def apagar_conta(db: AsyncSession, conta: Conta) -> None:
 
     Se a conta tiver vínculo, a conta bancária que a alimenta é apagada da
     mesma forma, sem precisar de desvincular primeiro.
+
+    A conta fica bloqueada durante a operação (uma de cada vez por conta):
+    apagá-la a meio de uma sincronização deixaria essa sincronização a
+    gravar movimentos numa conta que já não existe.
     """
+    await bloquear_conta(db, conta.id)
     await db.delete(conta)
     await db.flush()
+
+
+async def _limites_da_ancora(db: AsyncSession, conta_id: uuid.UUID) -> tuple[date | None, date | None]:
+    """A data do primeiro movimento e a da primeira reconciliação da conta (None se não houver)."""
+    primeiro_movimento = await db.scalar(
+        select(func.min(Movimento.data)).where(Movimento.conta_id == conta_id)
+    )
+    primeira_reconciliacao = await db.scalar(
+        select(func.min(Reconciliacao.data)).where(Reconciliacao.conta_id == conta_id)
+    )
+    return primeiro_movimento, primeira_reconciliacao
+
+
+async def _validar_ancora(db: AsyncSession, conta: Conta, data_ancora: date) -> None:
+    """
+    As regras da âncora (C4) — a data e o saldo iniciais, o ponto a partir
+    do qual a aplicação acompanha a conta:
+      - só numa conta MANUAL: numa conta vinculada, a âncora vem do banco;
+      - a data nunca é depois de hoje;
+      - a data nunca passa do primeiro movimento nem da primeira
+        reconciliação (pode ser igual: a âncora conta-se no INÍCIO do dia,
+        e uma reconciliação no FIM, por isso não colidem).
+    """
+    if await conta_tem_vinculo(db, conta.id):
+        raise RegraViolada("Numa conta vinculada ao banco, a data e o saldo iniciais vêm do banco.")
+    if data_ancora > hoje():
+        raise RegraViolada("A data de início não pode ser no futuro.")
+    primeiro_movimento, primeira_reconciliacao = await _limites_da_ancora(db, conta.id)
+    if primeiro_movimento is not None and data_ancora > primeiro_movimento:
+        raise RegraViolada("A data de início não pode ser depois do primeiro movimento.")
+    if primeira_reconciliacao is not None and data_ancora > primeira_reconciliacao:
+        raise RegraViolada("A data de início não pode ser depois da primeira reconciliação.")
+
+
+async def simular_ancora(
+    db: AsyncSession, conta: Conta, data_ancora: date, saldo_ancora: Decimal
+) -> dict:
+    """
+    O efeito de mudar a âncora, sem gravar nada (para mostrar ANTES de
+    gravar): o saldo atual que a conta passaria a ter e, se houver
+    reconciliações, o acerto que a primeira passaria a ter. Aplica as
+    mesmas regras que editar_ancora (erro se a data não for permitida).
+
+    Com reconciliações, o saldo atual NÃO muda: a partir da primeira
+    reconciliação o saldo é sempre o afirmado, e é o acerto da primeira que
+    absorve a diferença.
+    """
+    await _validar_ancora(db, conta, data_ancora)
+    diferenca = saldo_ancora.quantize(_DUAS_CASAS) - conta.saldo_ancora
+    saldo_atual = conta.saldo_ancora + await soma_movimentos(db, conta.id)
+    primeira = await db.scalar(
+        select(Reconciliacao)
+        .where(Reconciliacao.conta_id == conta.id)
+        .order_by(Reconciliacao.data)
+        .limit(1)
+    )
+    if primeira is None:
+        return {"saldo_atual": saldo_atual + diferenca, "acerto_primeira_reconciliacao": None}
+    acerto_atual = await db.scalar(
+        select(func.coalesce(func.sum(Movimento.valor), 0)).where(
+            Movimento.reconciliacao_id == primeira.id
+        )
+    )
+    return {
+        "saldo_atual": saldo_atual,
+        "acerto_primeira_reconciliacao": Decimal(acerto_atual) - diferenca,
+    }
+
+
+async def editar_ancora(
+    db: AsyncSession, conta: Conta, data_ancora: date, saldo_ancora: Decimal
+) -> Conta:
+    """
+    Muda a data e o saldo iniciais de uma conta manual (regra C4), e
+    recalcula os acertos das reconciliações (dependem do saldo inicial).
+    A conta fica bloqueada durante a operação (uma de cada vez por conta).
+    """
+    # Primeiro o bloqueio, depois as verificações (nenhuma outra operação
+    # pode mudar a conta entre uma e outra).
+    await bloquear_conta(db, conta.id)
+    await _validar_ancora(db, conta, data_ancora)
+    conta.data_ancora = data_ancora
+    conta.saldo_ancora = saldo_ancora.quantize(_DUAS_CASAS)
+    await db.flush()
+    await recalcular_acertos(db, conta.id)
+    await db.refresh(conta)
+    return conta

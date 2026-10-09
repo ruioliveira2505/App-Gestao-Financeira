@@ -57,8 +57,9 @@ TOLERÂNCIA A FALTA DE TAXA: uma conta ou um movimento sem taxa de câmbio
 disponível fica de fora da soma respectiva (incluindo da repartição por
 categoria/subcategoria), em silêncio — a mesma tolerância já usada em
 GET /contas (saldo_convertido=None nesse caso, em vez de a rota inteira
-falhar). Na prática, quase nunca acontece: o script de actualização
-(scripts/actualizar_taxas_cambio.py) mantém as taxas em dia.
+falhar). Na prática, quase nunca acontece: a rotina de actualização
+(a rotina de manutenção, app/services/manutencao.py, que o servidor
+corre uma vez por dia) mantém as taxas em dia.
 
 FILTRO DE CONTAS ("contas", em ambos os endpoints): a mesma forma já
 usada em GET /movimentos — uma lista de ids separados por vírgulas (ver

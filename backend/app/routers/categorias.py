@@ -58,6 +58,7 @@ def _para_saida(categoria: Categoria) -> CategoriaOut:
         parent_id=categoria.parent_id,
         direcao=categoria.direcao,
         protegida=categoria.protegida,
+        reservada=categoria.papel == "acerto",
     )
 
 
@@ -96,7 +97,9 @@ async def arvore_categorias(
             nome=grupo.nome,
             direcao=grupo.direcao,
             subcategorias=[
-                SubcategoriaArvoreOut(id=sub.id, nome=sub.nome, protegida=sub.protegida)
+                SubcategoriaArvoreOut(
+                    id=sub.id, nome=sub.nome, protegida=sub.protegida, reservada=sub.papel == "acerto"
+                )
                 for sub in subcategorias_por_grupo[grupo.id]
             ],
         )

@@ -43,6 +43,7 @@ from app.models.conta_bancaria import ContaBancaria
 from app.models.autorizacao import Autorizacao
 from app.models.movimento import Movimento
 from app.models.user import User
+from app.models.vinculo import Vinculo
 
 # Corpo mínimo válido para criar uma conta, só para os movimentos terem
 # onde entrar. A data-âncora fica bem no passado para não colidir com as
@@ -121,12 +122,16 @@ async def _vincular_conta(db_session, conta_id: str) -> None:
     )
     db_session.add(autorizacao)
     await db_session.flush()
+    conta_bancaria = ContaBancaria(autorizacao_id=autorizacao.id, uid=str(uuid.uuid4()), moeda="EUR")
+    db_session.add(conta_bancaria)
+    await db_session.flush()
+    # O vínculo: o facto de esta conta bancária alimentar a Conta.
     db_session.add(
-        ContaBancaria(
-            autorizacao_id=autorizacao.id,
-            uid=str(uuid.uuid4()),
-            moeda="EUR",
+        Vinculo(
+            user_id=utilizador.id,
             conta_id=uuid.UUID(conta_id),
+            conta_bancaria_id=conta_bancaria.id,
+            data_corte=date(2025, 12, 31),
         )
     )
     await db_session.commit()
@@ -1275,6 +1280,7 @@ async def test_id_transacao_externa_repetido_na_mesma_conta_e_recusado(
             descricao="Primeira",
             valor=Decimal("-10.00"),
             id_transacao_externa="1742",
+            origem="banco",
         )
     )
     await db_session.commit()
@@ -1287,6 +1293,7 @@ async def test_id_transacao_externa_repetido_na_mesma_conta_e_recusado(
             descricao="Segunda, mesmo id externo",
             valor=Decimal("-20.00"),
             id_transacao_externa="1742",
+            origem="banco",
         )
     )
     with pytest.raises(IntegrityError):
@@ -1310,6 +1317,7 @@ async def test_id_transacao_externa_repetido_em_contas_diferentes_e_aceite(
             descricao="Conta A",
             valor=Decimal("-10.00"),
             id_transacao_externa="1742",
+            origem="banco",
         )
     )
     db_session.add(
@@ -1320,6 +1328,7 @@ async def test_id_transacao_externa_repetido_em_contas_diferentes_e_aceite(
             descricao="Conta B, mesmo id externo",
             valor=Decimal("-5.00"),
             id_transacao_externa="1742",
+            origem="banco",
         )
     )
     # Não deve levantar nenhuma excepção — contas diferentes, sem conflito.

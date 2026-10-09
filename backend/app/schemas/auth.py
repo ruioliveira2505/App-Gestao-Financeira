@@ -121,3 +121,14 @@ class UserPreferencias(BaseModel):
     moeda_principal: str
 
     _validar_moeda = field_validator("moeda_principal")(moeda_suportada)
+
+
+class UserApagar(BaseModel):
+    """
+    O pedido de apagar a conta de utilizador (DELETE /auth/me): a password,
+    para confirmar que é mesmo o dono da conta quem o pede — apagar a conta
+    apaga TODOS os dados, sem volta atrás, e uma sessão iniciada noutro
+    dispositivo (ou esquecida aberta) não deve bastar para isso.
+    """
+
+    password: str = Field(min_length=1)

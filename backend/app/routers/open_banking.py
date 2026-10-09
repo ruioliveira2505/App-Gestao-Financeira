@@ -38,6 +38,22 @@ O FLUXO COMPLETO, pela ordem em que acontece:
 6. "/contas-bancarias/{id}/vinculo" (DELETE): desvincula, sem apagar nada
    da Conta nem dos movimentos já importados.
 
+E A GESTÃO DAS AUTORIZAÇÕES:
+  - "/autorizacoes" (GET): as autorizações, com o estado deduzido (ativa
+    ou terminada) e o motivo do fim;
+  - "/autorizacoes/{id}/revogar" (POST): termina uma autorização ativa,
+    avisando a Enable Banking;
+  - "/autorizacoes/{id}" (DELETE): esquece uma autorização terminada;
+  - "/autorizar?renova={id}": renova uma autorização (o banco e o país vêm
+    dela; no regresso, a antiga é revogada se ainda estiver ativa).
+
+OS ESTADOS NUNCA SE GUARDAM: a autorização, a conta bancária e a Conta têm
+estados (ativa/terminada; livre/vinculada/suspensa; manual/vinculada/
+suspensa) que se deduzem dos factos guardados — o prazo, se e porque a
+autorização terminou antes dele, se a conta bancária ficou indisponível,
+se há vínculo. Quando o banco responde que a autorização já não vale, ou
+que uma conta já não existe, isso fica registado mesmo que o pedido falhe.
+
 CONTAS JÁ CONHECIDAS: ao gravar uma autorização ("/callback"), cada conta
 bancária é reconhecida pela sua identificação estável (um código que não
 muda entre autorizações). Se a mesma conta real já alimenta uma Conta, o
@@ -63,7 +79,8 @@ aquele botão é uma ação do próprio painel, não o fluxo real.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -77,21 +94,37 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.deps import obter_utilizador_atual
-from app.core.erros import ErroDeDominio
+from app.core.erros import AutorizacaoTerminadaNoBanco, ErroDeDominio, InexistenteNoBanco
 from app.db.session import get_db
 from app.models.autorizacao import Autorizacao
 from app.models.autorizacao_pendente import AutorizacaoPendente
 from app.models.conta import Conta
+from app.models.conta_bancaria import ContaBancaria
 from app.models.movimento import Movimento
 from app.models.user import User
+from app.models.vinculo import Vinculo
+from app.schemas.vinculacao import VincularConfirmar, VincularSimular
+from app.services.autorizacoes import (
+    VALIDADE_DO_PEDIDO,
+    apagar_pedidos_expirados,
+    esquecer,
+    listar_autorizacoes,
+    marcar_indisponivel,
+    marcar_terminada_pelo_banco,
+    obter_autorizacao_do_utilizador,
+    revogar,
+    revogar_sessao_sem_falhar,
+    terminar_a_renovada,
+)
+from app.services.contas import obter_conta_do_utilizador
 from app.services.contas_bancarias import (
     conta_antiga_de,
-    desvincular,
     gravar_autorizacao,
     listar_contas_bancarias,
     nome_sugerido,
     obter_conta_bancaria_do_utilizador,
     tipo_sugerido,
+    vinculada_noutra_linha,
 )
 from app.services.enable_banking import (
     dias_de_validade,
@@ -99,10 +132,18 @@ from app.services.enable_banking import (
     listar_bancos,
     trocar_codigo_por_sessao,
 )
+from app.services.estados import estado_autorizacao, estado_conta_bancaria, motivo_do_fim
 from app.services.importacao_movimentos import (
     criar_conta_a_partir_de_conta_bancaria,
     sincronizar_conta_bancaria,
 )
+from app.services.vinculacao import (
+    acertar,
+    comparar_saldos,
+    simular_vinculacao,
+    vincular_conta_existente,
+)
+from app.services.vinculacao import desvincular_conta_bancaria as desvincular_com_modo
 
 router = APIRouter(prefix="/open-banking", tags=["open-banking"])
 
@@ -129,8 +170,9 @@ async def bancos(
 @router.post("/autorizar")
 async def autorizar(
     request: Request,
-    banco: str,
+    banco: str | None = None,
     pais: str = "PT",
+    renova: uuid.UUID | None = None,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> RedirectResponse:
@@ -164,9 +206,25 @@ async def autorizar(
     request.url_for("callback") constrói o URL da função "callback" desta
     aplicação em vez de o escrever à mão: o FastAPI já sabe por onde o
     pedido chegou.
+
+    RENOVAR: com "renova" (o id de uma autorização do utilizador), o banco
+    e o país vêm dessa autorização, e a nova fica a saber que a renova (no
+    regresso do banco, a antiga é revogada se ainda estiver ativa, e as
+    contas reconhecidas voltam a sincronizar).
+
+    Cada pedido de autorização EXPIRA ao fim de 15 minutos; os expirados
+    (de qualquer utilizador) apagam-se aqui, sempre que um novo começa.
     """
+    await apagar_pedidos_expirados(db)
+    renova_id = None
+    if renova is not None:
+        anterior = await obter_autorizacao_do_utilizador(db, utilizador.id, renova)
+        banco, pais, renova_id = anterior.banco, anterior.pais, anterior.id
+    if not banco:
+        return _erro_para_frontend("Escolhe um banco para autorizar.")
+
     state = str(uuid.uuid4())
-    db.add(AutorizacaoPendente(state=state, user_id=utilizador.id))
+    db.add(AutorizacaoPendente(state=state, user_id=utilizador.id, renova_id=renova_id))
 
     redirect_url = str(request.url_for("callback"))
     try:
@@ -227,17 +285,25 @@ async def callback(request: Request, db: AsyncSession = Depends(get_db)) -> Redi
     # deles apagar a linha; o outro não encontra nada e recebe "já usado",
     # em vez de tentar trocar o mesmo "code" uma segunda vez.
     estado = parametros.get("state")
-    user_id = None
+    pendente = None
     if estado:
-        user_id = (
+        pendente = (
             await db.execute(
                 delete(AutorizacaoPendente)
                 .where(AutorizacaoPendente.state == estado)
-                .returning(AutorizacaoPendente.user_id)
+                .returning(
+                    AutorizacaoPendente.user_id,
+                    AutorizacaoPendente.renova_id,
+                    AutorizacaoPendente.created_at,
+                )
             )
-        ).scalar_one_or_none()
-    if user_id is None:
+        ).one_or_none()
+    if pendente is None:
         return _erro_para_frontend("Pedido de autorização desconhecido ou já usado.")
+    user_id, renova_id, criado_em = pendente
+    if criado_em < datetime.now(timezone.utc) - VALIDADE_DO_PEDIDO:
+        await db.commit()
+        return _erro_para_frontend("O pedido de autorização expirou. Começa outra vez.")
     # O "state" fica consumido mesmo que a troca falhe a seguir: já não
     # serve para mais nada, e uma nova tentativa desde "/autorizar" gera um
     # "state" novo.
@@ -248,13 +314,105 @@ async def callback(request: Request, db: AsyncSession = Depends(get_db)) -> Redi
     except ErroDeDominio as excepcao:
         return _erro_para_frontend(excepcao.mensagem)
 
-    autorizacao = await gravar_autorizacao(db, user_id, sessao)
+    autorizacao = await gravar_autorizacao(db, user_id, sessao, renova_id=renova_id)
+    # Se renovou uma autorização ainda ativa, a antiga dá-se como terminada:
+    # nunca duas ativas no mesmo acesso.
+    sessao_antiga = await terminar_a_renovada(db, autorizacao)
     # O serviço só prepara as alterações; a rota torna-as definitivas, de
     # uma vez.
     await db.commit()
+    # Só depois do commit se revoga a sessão antiga no banco: revogar não
+    # tem volta atrás, e não pode acontecer se a gravação falhar.
+    if sessao_antiga is not None:
+        await revogar_sessao_sem_falhar(sessao_antiga)
     return RedirectResponse(
         f"{settings.frontend_url}/contas/nova?autorizacao={autorizacao.id}"
     )
+
+
+async def _registar_resposta_do_banco(
+    db: AsyncSession, erro: ErroDeDominio, conta_bancaria: ContaBancaria
+) -> None:
+    """
+    Quando o banco responde que a autorização já não vale, ou que a conta
+    já não existe, isso fica REGISTADO (regra A7), mesmo que o pedido falhe:
+    a autorização passa a terminada, ou a conta bancária a indisponível, e
+    a Conta que ela alimentava passa a suspensa.
+
+    Desfaz-se primeiro o que o pedido tenha deixado a meio (rollback), para
+    o commit seguinte gravar SÓ este registo. Depois do rollback, os
+    objetos em memória ficam desatualizados, por isso voltam a ler-se pelo
+    id, guardado antes.
+    """
+    conta_bancaria_id, autorizacao_id = conta_bancaria.id, conta_bancaria.autorizacao_id
+    await db.rollback()
+    if isinstance(erro, AutorizacaoTerminadaNoBanco):
+        await marcar_terminada_pelo_banco(db, await db.get(Autorizacao, autorizacao_id))
+    else:
+        await marcar_indisponivel(db, await db.get(ContaBancaria, conta_bancaria_id))
+    await db.commit()
+
+
+@router.get("/autorizacoes")
+async def autorizacoes(
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict]:
+    """
+    As autorizações do utilizador, da mais recente para a mais antiga, com
+    o ESTADO deduzido ("ativa" ou "terminada"), o motivo do fim
+    ("expirada", "revogada", "banco", ou None se ainda ativa), o prazo e o
+    número de contas bancárias vinculadas. Para a página das autorizações.
+    """
+    return [
+        {
+            "id": str(autorizacao.id),
+            "banco": autorizacao.banco,
+            "pais": autorizacao.pais,
+            "valido_ate": autorizacao.valido_ate.isoformat(),
+            "estado": estado_autorizacao(autorizacao),
+            "motivo": motivo_do_fim(autorizacao),
+            "renova_id": str(autorizacao.renova_id) if autorizacao.renova_id else None,
+            "contas_vinculadas": contagem,
+            "criada_em": autorizacao.created_at.isoformat(),
+        }
+        for autorizacao, contagem in await listar_autorizacoes(db, utilizador.id)
+    ]
+
+
+@router.post("/autorizacoes/{autorizacao_id}/revogar", status_code=status.HTTP_204_NO_CONTENT)
+async def revogar_autorizacao(
+    autorizacao_id: uuid.UUID,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Revoga uma autorização ativa (regra A8): pede à Enable Banking para
+    terminar a sessão e, se isso correr bem (ou a sessão já não existir),
+    a autorização fica terminada, e as Contas que alimentava passam a
+    suspensas. 409 se já estiver terminada; se o pedido ao banco falhar, o
+    erro chega ao utilizador e a autorização continua ativa.
+    """
+    autorizacao = await obter_autorizacao_do_utilizador(db, utilizador.id, autorizacao_id)
+    await revogar(db, autorizacao)
+    await db.commit()
+
+
+@router.delete("/autorizacoes/{autorizacao_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def esquecer_autorizacao(
+    autorizacao_id: uuid.UUID,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Esquece (apaga) uma autorização terminada, com as suas contas
+    bancárias. As Contas que estavam suspensas passam a manuais, com os
+    movimentos e a memória. 409 se ainda estiver ativa (revoga-se
+    primeiro).
+    """
+    autorizacao = await obter_autorizacao_do_utilizador(db, utilizador.id, autorizacao_id)
+    await esquecer(db, autorizacao)
+    await db.commit()
 
 
 @router.get("/autorizacoes/{autorizacao_id}/contas-bancarias")
@@ -282,9 +440,37 @@ async def contas_bancarias(
     nomes = [c.nome for c in contas_utilizador]
     nome_por_id = {c.id: c.nome for c in contas_utilizador}
 
+    # Os vínculos destas contas bancárias, de uma só vez: a Conta que cada
+    # uma alimenta, se alimentar alguma.
+    conta_por_conta_bancaria = dict(
+        (
+            await db.execute(
+                select(Vinculo.conta_bancaria_id, Vinculo.conta_id).where(
+                    Vinculo.conta_bancaria_id.in_([c.id for c in contas])
+                )
+            )
+        ).all()
+    )
+
     saida = []
     for conta in contas:
         antiga = await conta_antiga_de(db, utilizador.id, conta)
+        conta_id = conta_por_conta_bancaria.get(conta.id)
+        # O ESTADO da conta bancária, deduzido dos factos (ver
+        # app/services/estados.py): livre, livre_bloqueada, vinculada ou
+        # suspensa. E, se estiver livre, a ETIQUETA: "vinculada_noutra" (a
+        # mesma conta real já alimenta uma Conta através de outra
+        # autorização — não se pode vincular), "ja_foi" (uma Conta manual
+        # lembra-se dela) ou "nova".
+        estado = estado_conta_bancaria(conta, autorizacao, tem_vinculo=conta_id is not None)
+        etiqueta = None
+        if conta_id is None:
+            if await vinculada_noutra_linha(db, utilizador.id, conta) is not None:
+                etiqueta = "vinculada_noutra"
+            elif antiga is not None:
+                etiqueta = "ja_foi"
+            else:
+                etiqueta = "nova"
         saida.append(
             {
                 "id": str(conta.id),
@@ -295,8 +481,8 @@ async def contas_bancarias(
                 # Já vinculada: ou foi vinculada antes, ou o vínculo
                 # renovou-se sozinho ao autorizar. "conta_nome" é o nome
                 # dessa Conta, para o frontend a mostrar.
-                "conta_id": str(conta.conta_id) if conta.conta_id else None,
-                "conta_nome": nome_por_id.get(conta.conta_id) if conta.conta_id else None,
+                "conta_id": str(conta_id) if conta_id else None,
+                "conta_nome": nome_por_id.get(conta_id) if conta_id else None,
                 # Até quando vale esta autorização.
                 "valido_ate": autorizacao.valido_ate.isoformat(),
                 # Sugestões para uma Conta nova.
@@ -305,6 +491,9 @@ async def contas_bancarias(
                 # A Conta desvinculada que esta conta bancária já alimentou
                 # («Já foi a "X"»), ou None.
                 "conta_antiga": {"id": str(antiga.id), "nome": antiga.nome} if antiga else None,
+                "estado": estado,
+                "etiqueta": etiqueta,
+                "estado_autorizacao": estado_autorizacao(autorizacao),
             }
         )
     return saida
@@ -342,9 +531,13 @@ async def criar_conta(
     maiúsculas).
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
-    conta = await criar_conta_a_partir_de_conta_bancaria(
-        db, utilizador.id, conta_bancaria, nome, data_de, tipo
-    )
+    try:
+        conta = await criar_conta_a_partir_de_conta_bancaria(
+            db, utilizador.id, conta_bancaria, nome, data_de, tipo
+        )
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
     # A Conta, o vínculo e os movimentos importados gravam-se juntos: se
     # algo tivesse falhado a meio, nada ficaria gravado.
     await db.commit()
@@ -378,7 +571,11 @@ async def sincronizar(
     sincronizar (a regra vive no serviço).
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
-    total_novos = await sincronizar_conta_bancaria(db, utilizador, conta_bancaria)
+    try:
+        total_novos = await sincronizar_conta_bancaria(db, utilizador, conta_bancaria)
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
     await db.commit()
     return {"movimentos_importados": total_novos}
 
@@ -388,6 +585,7 @@ async def sincronizar(
 )
 async def desvincular_conta_bancaria(
     conta_bancaria_id: uuid.UUID,
+    modo: Literal["manter", "tirar"] = "manter",
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> None:
@@ -396,7 +594,109 @@ async def desvincular_conta_bancaria(
     Conta e os movimentos já importados ficam. O caminho termina em
     "/vinculo" porque o que se apaga é o vínculo, não a conta bancária nem
     a Conta. Para apagar tudo, elimina-se a Conta (DELETE /contas/{id}).
+
+    "modo": "manter" (por omissão — os movimentos do banco ficam e as
+    reconciliações do banco passam a ser do utilizador) ou "tirar" (saem os
+    movimentos e as reconciliações criados por este vínculo).
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
-    await desvincular(db, conta_bancaria)
+    await desvincular_com_modo(db, conta_bancaria, modo)
     await db.commit()
+
+
+def _texto(valor) -> str | None:
+    """Um valor em dinheiro como texto com 2 casas ("1234.50"), ou None."""
+    return f"{valor:.2f}" if valor is not None else None
+
+
+@router.post("/contas-bancarias/{conta_bancaria_id}/vincular/simular")
+async def simular_vinculacao_de_conta(
+    conta_bancaria_id: uuid.UUID,
+    dados: VincularSimular,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    O "antes → depois" de vincular uma Conta que já existe a esta conta
+    bancária, sem gravar nada (regra A4): em "continuar", a data de corte, o
+    saldo da aplicação e o do banco, o acerto que entraria (com e sem os
+    pares propostos) e os pares; em "substituir", o que se perderia.
+    """
+    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
+    conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
+    try:
+        efeito = await simular_vinculacao(db, utilizador, conta, conta_bancaria, dados.modo)
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
+    dinheiro = {"saldo_aplicacao", "saldo_banco", "acerto_sem_pares", "acerto_com_pares"}
+    saida = {chave: (_texto(valor) if chave in dinheiro else valor) for chave, valor in efeito.items()}
+    if "pares" in saida:
+        saida["pares"] = [{**par, "valor": _texto(par["valor"])} for par in saida["pares"]]
+    return saida
+
+
+@router.post("/contas-bancarias/{conta_bancaria_id}/vincular")
+async def vincular_conta(
+    conta_bancaria_id: uuid.UUID,
+    dados: VincularConfirmar,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Vincula uma Conta manual que já existe a esta conta bancária (regra A4),
+    em "continuar" (com os pares aceites) ou "substituir". Tudo numa só
+    transação: se o banco falhar a meio, nada fica gravado.
+    """
+    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
+    conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
+    try:
+        resultado = await vincular_conta_existente(
+            db, utilizador, conta, conta_bancaria, dados.modo, dados.pares_aceites
+        )
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
+    await db.commit()
+    return {**resultado, "acerto": _texto(resultado["acerto"])}
+
+
+@router.get("/contas-bancarias/{conta_bancaria_id}/comparar")
+async def comparar(
+    conta_bancaria_id: uuid.UUID,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    O saldo do banco contra o da aplicação, e a diferença (regra R8) — por
+    exemplo, depois de sincronizar ou de renovar. Se não for zero, o
+    utilizador pode "Acertar".
+    """
+    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
+    try:
+        comparacao = await comparar_saldos(db, utilizador, conta_bancaria)
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
+    return {chave: _texto(valor) for chave, valor in comparacao.items()}
+
+
+@router.post("/contas-bancarias/{conta_bancaria_id}/acertar")
+async def acertar_com_o_banco(
+    conta_bancaria_id: uuid.UUID,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Acerta o saldo da aplicação pelo do banco, com uma reconciliação do
+    banco no dia do movimento do banco mais recente (regra R8). Só quando o
+    utilizador pede: a aplicação nunca cria acertos em silêncio.
+    """
+    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
+    try:
+        resultado = await acertar(db, utilizador, conta_bancaria)
+    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
+        await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
+    await db.commit()
+    return {"data": resultado["data"].isoformat(), "acerto": _texto(resultado["acerto"])}

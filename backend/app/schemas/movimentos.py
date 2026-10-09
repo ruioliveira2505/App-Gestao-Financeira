@@ -44,6 +44,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.moedas import LIMITE_DE_VALOR
+
 
 class _CamposMovimento(BaseModel):
     """Os campos de um movimento, comuns à criação e à edição."""
@@ -67,7 +69,12 @@ class _CamposMovimento(BaseModel):
     descricao: str = Field(min_length=1, max_length=200)
 
     # Com sinal: positivo é uma entrada, negativo é uma saída.
-    valor: Decimal
+    # Field(ge=..., le=...): o valor tem de caber na coluna da base de
+    # dados (Numeric(14, 2): até 12 algarismos antes da vírgula e 2 depois).
+    # Um valor maior é recusado aqui com 422, em vez de rebentar mais à
+    # frente com um erro da base de dados. As casas a mais não se recusam:
+    # o serviço arredonda o valor aos cêntimos.
+    valor: Decimal = Field(ge=-LIMITE_DE_VALOR, le=LIMITE_DE_VALOR)
 
     @field_validator("descricao")
     @classmethod
@@ -83,7 +90,9 @@ class _CamposMovimento(BaseModel):
         # Um movimento de valor 0 não muda saldo nenhum — não corresponde
         # a nenhuma transacção real, é quase de certeza um erro de
         # preenchimento.
-        if valor == 0:
+        # Compara-se já arredondado aos cêntimos (como o serviço o vai
+        # gravar): 0.004 também é zero.
+        if valor.quantize(Decimal("0.01")) == 0:
             raise ValueError("O valor não pode ser zero.")
         return valor
 

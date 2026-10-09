@@ -26,7 +26,7 @@ durante um teste e o repõe no fim):
 import httpx
 import pytest
 
-from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento
+from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento, InexistenteNoBanco
 
 from app.services import enable_banking
 
@@ -225,3 +225,61 @@ async def test_registo_do_erro_nao_guarda_o_corpo_nem_quebras_de_linha(monkeypat
     assert "WRONG_REQUEST" in registado
     assert "linha um linha dois" in registado
     assert "segredo-123" not in registado
+
+
+@pytest.mark.asyncio
+async def test_revogar_uma_sessao_que_ja_nao_existe_conta_como_feito(monkeypatch):
+    """
+    Revogar é terminar a sessão no banco: se ela já não existir (404), ou já
+    tiver terminado no banco, o objetivo está cumprido — não é um erro.
+    """
+    pedidos = []
+
+    def responder(pedido):
+        pedidos.append((pedido.method, str(pedido.url)))
+        return httpx.Response(404, json={"error": "SESSION_NOT_FOUND"})
+
+    _simular_rede(monkeypatch, responder)
+
+    await enable_banking.revogar_sessao("sessao-1")
+
+    assert pedidos == [("DELETE", "https://api.enablebanking.com/sessions/sessao-1")]
+
+
+@pytest.mark.asyncio
+async def test_revogar_com_o_servico_em_baixo_e_um_erro(monkeypatch):
+    def responder(pedido):
+        return httpx.Response(500, text="erro interno")
+
+    _simular_rede(monkeypatch, responder)
+
+    with pytest.raises(BancoIndisponivel):
+        await enable_banking.revogar_sessao("sessao-1")
+
+
+@pytest.mark.parametrize(
+    ("estado", "corpo", "esperado"),
+    [
+        # Só este código diz "a conta já não existe": a conta fica indisponível.
+        (404, {"error": "ACCOUNT_NOT_FOUND"}, InexistenteNoBanco),
+        # Uma sessão que já não existe é uma autorização terminada.
+        (404, {"error": "SESSION_NOT_FOUND"}, AutorizacaoTerminadaNoBanco),
+        # Um 404 sem esse código (um endereço errado, um intermediário de
+        # rede com problemas) é uma falha passageira: nunca suspende nada.
+        (404, {"error": "NOT_FOUND"}, BancoIndisponivel),
+        (404, {}, BancoIndisponivel),
+    ],
+)
+@pytest.mark.asyncio
+async def test_classificacao_de_nao_encontrado(monkeypatch, estado, corpo, esperado):
+    def responder(pedido):
+        return httpx.Response(estado, json=corpo)
+
+    _simular_rede(monkeypatch, responder)
+
+    with pytest.raises(esperado) as erro:
+        await enable_banking._pedido("GET", "/accounts/uid-1/transactions")
+
+    # type() e não isinstance(): InexistenteNoBanco também é um
+    # BancoIndisponivel, e aqui interessa a classe exata.
+    assert type(erro.value) is esperado

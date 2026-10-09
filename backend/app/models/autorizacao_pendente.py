@@ -48,18 +48,29 @@ class AutorizacaoPendente(Base):
     state: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Chave estrangeira para quem iniciou este pedido de autorização — é
-    # este o valor que queremos recuperar no callback. SEM "ondelete",
-    # pela mesma razão já explicada em user_id de app/models/conta.py: não
-    # existe, por agora, nenhum endpoint que apague um User.
+    # este o valor que queremos recuperar no callback.
+    #
+    # ondelete="CASCADE": apagar um utilizador apaga também estas linhas,
+    # ao nível da própria base de dados — o direito ao apagamento do RGPD
+    # (o regulamento europeu de proteção de dados): apagar a conta de um
+    # utilizador apaga todos os seus dados.
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
-    # Momento de criação — não há, por agora, nenhuma limpeza automática de
-    # linhas antigas (de pedidos de autorização começados e nunca
-    # terminados); ficam a ocupar uma linha cada, sem consequência
-    # prática à escala desta aplicação. Guardado para, se um dia isso
-    # importar, ser possível apagar as mais antigas do que X horas.
+    # A autorização que este pedido RENOVA, quando o utilizador pediu para
+    # renovar uma autorização existente (em vez de autorizar um banco de
+    # novo). Passa para a autorização nova, no regresso do banco.
+    # ondelete="CASCADE": se a autorização a renovar for apagada entretanto,
+    # o pedido deixa de fazer sentido.
+    renova_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("autorizacoes.id", ondelete="CASCADE"), nullable=True
+    )
+
+    # Momento de criação. Um pedido de autorização EXPIRA ao fim de 15
+    # minutos (o utilizador começou e não voltou do banco): o regresso
+    # depois disso é recusado, e os pedidos expirados apagam-se sempre que
+    # um novo começa.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

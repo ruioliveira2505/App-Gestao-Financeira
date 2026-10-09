@@ -8,8 +8,9 @@ moeda para outra). Consultam apenas a tabela taxas_cambio (ver
 app/models/taxa_cambio.py, onde está explicado porquê as taxas são
 guardadas relativamente a 1 EUR, e não uma linha por cada par de moedas) —
 nunca fazem, elas próprias, nenhum pedido a uma fonte externa; isso é
-trabalho do script de actualização (scripts/actualizar_taxas_cambio.py),
-que só escreve nesta tabela, nunca a lê para converter nada.
+trabalho da rotina de manutenção (app/services/manutencao.py, que usa o
+cliente da Frankfurter API em app/services/frankfurter.py), que só
+escreve nesta tabela, nunca a lê para converter nada.
 
 Esta separação (quem escreve as taxas vs. quem as usa) permite testar a
 conversão sem qualquer dependência de rede: um teste semeia a tabela com
@@ -31,7 +32,7 @@ from app.models.taxa_cambio import TaxaCambio
 class SemTaxaCambio(Exception):
     """
     Levantada quando não existe, na tabela taxas_cambio, nenhuma taxa para
-    uma moeda na data pedida OU ANTES dela — normalmente porque o script
+    uma moeda na data pedida OU ANTES dela — normalmente porque a rotina
     de actualização ainda não tem histórico suficiente (ex.: uma moeda
     nova, acabada de acrescentar a app/core/moedas.py, ou uma data
     anterior ao dia em que se começou a guardar taxas).
@@ -235,8 +236,8 @@ async def guardar_taxas(db: AsyncSession, data_referencia: date, taxas: dict[str
     """
     Grava, para "data_referencia", a taxa de cada moeda em "taxas"
     (moeda -> quantas unidades valem 1 EUR). Usada por
-    scripts/actualizar_taxas_cambio.py, depois de ir buscar os valores
-    à Frankfurter API — este ficheiro nunca faz, ele próprio, nenhum
+    a rotina de manutenção (app/services/manutencao.py), depois de ir
+    buscar os valores à Frankfurter API — este ficheiro nunca faz, ele próprio, nenhum
     pedido de rede (ver a nota no topo do ficheiro).
 
     IDEMPOTENTE por linha (data, moeda): se já existir uma taxa para essa
@@ -246,8 +247,8 @@ async def guardar_taxas(db: AsyncSession, data_referencia: date, taxas: dict[str
     "já existe isto?".
 
     Não faz commit: quem chama decide quando confirmar a transacção (ver
-    scripts/actualizar_taxas_cambio.py, que faz um único commit no fim,
-    depois de todas as moedas gravadas).
+    app/services/manutencao.py, que faz um único commit no fim, depois
+    de todos os dias gravados).
     """
     for moeda, taxa in taxas.items():
         comando = insert(TaxaCambio).values(data=data_referencia, moeda=moeda, por_1_eur=taxa)
@@ -265,11 +266,11 @@ async def guardar_taxas(db: AsyncSession, data_referencia: date, taxas: dict[str
 async def ultima_data_guardada(db: AsyncSession) -> date | None:
     """
     A data mais recente com alguma taxa guardada, em toda a tabela —
-    "None" se a tabela ainda estiver vazia (primeira vez que o script de
-    actualização corre). Usada por scripts/actualizar_taxas_cambio.py
+    "None" se a tabela ainda estiver vazia (primeira vez que a rotina de
+    actualização corre). Usada pela rotina de manutenção
     para saber a partir de que dia pedir a taxas em falta à Frankfurter
     API, em vez de pedir sempre só "a mais recente": sem isto, um
-    intervalo de dias sem o script correr (ex.: uma semana de férias)
+    intervalo de dias sem a rotina correr (ex.: uma semana de férias)
     deixaria um buraco na tabela, nunca preenchido — cada dia em falta
     ficaria, para sempre, a usar a taxa do último dia antes do buraco
     (ainda correcto, pela regra "mais recente igual ou anterior", mas
@@ -308,7 +309,7 @@ async def data_inicio_do_historico(db: AsyncSession) -> date | None:
 
 async def proxima_data_a_pedir(db: AsyncSession) -> date | None:
     """
-    A partir de que data scripts/actualizar_taxas_cambio.py deve pedir
+    A partir de que data a rotina de manutenção deve pedir
     taxas à API, desta vez — "None" significa "só a mais recente"
     (equivalente a pedir /latest, sem intervalo).
 
@@ -318,7 +319,7 @@ async def proxima_data_a_pedir(db: AsyncSession) -> date | None:
        sempre) — usa-se a data-âncora mais antiga entre todas as contas
        (data_inicio_do_historico). Sem isto, converter um movimento
        anterior à primeira execução deste script falharia sempre com
-       SemTaxaCambio, por mais tempo que passasse a correr o script a
+       SemTaxaCambio, por mais tempo que passasse a correr a rotina a
        partir daí — o problema é falta de histórico ANTIGO, e só se
        resolve recuando, nunca avançando.
 
@@ -327,12 +328,12 @@ async def proxima_data_a_pedir(db: AsyncSession) -> date | None:
        o mesmo problema, só que descoberto mais tarde. Comparando sempre
        a data-âncora mais antiga necessária com primeira_data_guardada
        (não só verificando "a tabela está vazia?"), este caso corrige-se
-       sozinho na próxima vez que o script correr, sem precisar de
+       sozinho na próxima vez que a rotina correr, sem precisar de
        nenhuma intervenção manual.
 
     Fora destes dois casos (o normal, dia após dia, sem contas novas mais
     antigas), devolve ultima_data_guardada — só o que falta desde a
-    última vez que o script correu.
+    última vez que a rotina correu.
     """
     necessaria = await data_inicio_do_historico(db)
     primeira = await primeira_data_guardada(db)

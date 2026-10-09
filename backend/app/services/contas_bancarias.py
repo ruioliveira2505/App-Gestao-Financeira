@@ -17,10 +17,10 @@ RECONHECER CONTAS JÁ CONHECIDAS. Ao gravar uma autorização nova, cada conta
 bancária é comparada com as Contas do utilizador pela sua IDENTIFICAÇÃO
 ESTÁVEL (ver identificacao_bancaria, abaixo), guardada em cada Conta como
 memória, e só na mesma moeda:
-  - a Conta existe e ainda tem VÍNCULO (através de uma autorização
-    anterior): o vínculo RENOVA-SE — a linha antiga da conta bancária é
-    apagada, e a nova passa a alimentar a mesma Conta. É o caso de voltar
-    a autorizar o banco quando o prazo acaba;
+  - a mesma conta real já tem VÍNCULO a uma Conta (através de uma
+    autorização anterior): o vínculo RENOVA-SE — passa para a linha nova
+    da conta bancária, e a linha antiga fica livre na autorização antiga.
+    É o caso de voltar a autorizar o banco quando o prazo acaba;
   - a Conta existe mas foi DESVINCULADA: nada se vincula sozinho. A conta
     bancária aparece livre, e o frontend mostra «Já foi a "X"» (ver
     conta_antiga_de, abaixo);
@@ -41,15 +41,17 @@ conta que o banco envia; nome_sugerido junta-lhe o nome do banco (ex.:
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.erros import NaoEncontrado
+from app.core.erros import Conflito, NaoEncontrado
 from app.models.autorizacao import Autorizacao
 from app.models.conta import Conta
 from app.models.conta_bancaria import ContaBancaria
+from app.models.vinculo import Vinculo
+from app.services.estados import estado_conta_bancaria
 from app.services.nomes import normalizar_nome
 
 # Tipo de conta, a partir do código ISO 20022 que o banco envia em
@@ -144,7 +146,9 @@ def nome_sugerido(
     return nome
 
 
-async def gravar_autorizacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict) -> Autorizacao:
+async def gravar_autorizacao(
+    db: AsyncSession, user_id: uuid.UUID, sessao: dict, renova_id: uuid.UUID | None = None
+) -> Autorizacao:
     """
     Grava uma Autorizacao e uma ContaBancaria por cada conta trazida por
     "sessao" — o dicionário que a Enable Banking devolve quando o código
@@ -159,6 +163,10 @@ async def gravar_autorizacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict)
     que o utilizador já confirmou — ver _renovar_se_ja_vinculada, abaixo).
     Vincular uma conta bancária NOVA a uma Conta é sempre um passo
     posterior, confirmado pelo utilizador.
+
+    "renova_id": a autorização que esta renova, quando o utilizador pediu
+    para renovar uma autorização existente. Fica guardada na nova; quem
+    chama trata de terminar a antiga, se ainda estiver ativa.
     """
     autorizacao = Autorizacao(
         user_id=user_id,
@@ -169,6 +177,7 @@ async def gravar_autorizacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict)
         # "2026-12-26T13:44:51.529151Z"); fromisoformat entende
         # diretamente o sufixo "Z" (que quer dizer UTC) desde o Python 3.11.
         valido_ate=datetime.fromisoformat(sessao["access"]["valid_until"]),
+        renova_id=renova_id,
     )
     db.add(autorizacao)
 
@@ -191,7 +200,7 @@ async def gravar_autorizacao(db: AsyncSession, user_id: uuid.UUID, sessao: dict)
             tipo_conta_banco=_cortar(conta.get("cash_account_type"), 4),
         )
         db.add(nova)
-        await _renovar_se_ja_vinculada(db, user_id, nova)
+        await _renovar_se_ja_vinculada(db, user_id, nova, renova_id)
 
     # flush() envia as alterações à base de dados, dentro da transação em
     # curso, mas NÃO as torna definitivas: isso é o commit(), que só a rota
@@ -228,35 +237,89 @@ async def conta_com_identificacao(
 
 
 async def _renovar_se_ja_vinculada(
-    db: AsyncSession, user_id: uuid.UUID, nova: ContaBancaria
+    db: AsyncSession, user_id: uuid.UUID, nova: ContaBancaria, renova_id: uuid.UUID | None
 ) -> None:
     """
-    Se a conta real de "nova" já alimenta uma Conta do utilizador (tem
-    vínculo através de uma autorização anterior), renova esse vínculo:
-    apaga a linha antiga da conta bancária e vincula "nova" à mesma Conta
-    (ver RECONHECER CONTAS JÁ CONHECIDAS, no topo do ficheiro). Uma Conta
-    desvinculada fica como está: nunca volta a ter vínculo sozinha.
+    Se a conta real de "nova" já alimenta uma Conta do utilizador (uma
+    Conta com esta identificação na MEMÓRIA, e com vínculo), renova esse
+    vínculo: passa a apontar para "nova" (ver RECONHECER CONTAS JÁ
+    CONHECIDAS, no topo do ficheiro). É o MESMO vínculo, com o mesmo id: os movimentos que já
+    importou continuam a apontar para ele. A linha antiga da conta
+    bancária fica, livre, na autorização antiga. Uma Conta desvinculada
+    (sem vínculo) fica como está: nunca volta a ter vínculo sozinha.
+
+    SÓ SE MOVE se a ligação atual já não estiver a funcionar (a
+    autorização antiga terminou, ou o banco deixou de partilhar a conta
+    lá), ou se a autorização antiga for precisamente a que esta renova. Se
+    a mesma conta real ainda alimentar a Conta através de outra
+    autorização ATIVA (por exemplo, o mesmo banco autorizado com as
+    credenciais de outra pessoa), o vínculo fica onde está, e a linha nova
+    aparece como "Vinculada noutra autorização".
     """
-    conta = await conta_com_identificacao(
-        db, user_id, identificacao_bancaria(nova.identification_hash, nova.iban, nova.moeda)
-    )
+    identificacao = identificacao_bancaria(nova.identification_hash, nova.iban, nova.moeda)
+    conta = await conta_com_identificacao(db, user_id, identificacao)
     if conta is None:
         return
     # Uma conta bancária só alimenta uma Conta na mesma moeda: uma conta em
     # USD nunca renova o vínculo de uma Conta em EUR.
     if conta.moeda != nova.moeda:
         return
-    antiga = await obter_conta_bancaria_de_conta(db, conta.id)
-    if antiga is None:
+    vinculo = await vinculo_da_conta(db, conta.id)
+    if vinculo is None:
         return
-    await db.delete(antiga)
-    # flush entre os dois passos: a linha antiga sai da base de dados ANTES
-    # de a nova passar a alimentar a mesma Conta. Nunca há, nem por um
-    # instante, duas contas bancárias vinculadas à mesma Conta (o resto da
-    # aplicação assume que há no máximo uma — ver
-    # obter_conta_bancaria_de_conta, abaixo).
+    atual = await db.get(ContaBancaria, vinculo.conta_bancaria_id)
+    autorizacao_atual = await db.get(Autorizacao, atual.autorizacao_id)
+    ainda_a_funcionar = (
+        estado_conta_bancaria(atual, autorizacao_atual, tem_vinculo=True) == "vinculada"
+    )
+    if ainda_a_funcionar and autorizacao_atual.id != renova_id:
+        return
+    # flush: a linha nova tem de existir na base de dados antes de o
+    # vínculo apontar para ela.
     await db.flush()
-    nova.conta_id = conta.id
+    vinculo.conta_bancaria_id = nova.id
+    vinculo.identificacao = identificacao
+
+
+async def vincular(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    conta: Conta,
+    conta_bancaria: ContaBancaria,
+    data_corte: date,
+) -> Vinculo:
+    """
+    Cria o vínculo entre uma conta bancária e uma Conta, com a data de
+    corte (o último dia cujos movimentos não vêm do banco). A memória da
+    Conta (a identificação da conta real) é atualizada para esta conta
+    bancária. A base de dados recusa um segundo vínculo para a mesma
+    Conta, para a mesma conta bancária, ou para a mesma conta real.
+    """
+    identificacao = identificacao_bancaria(
+        conta_bancaria.identification_hash, conta_bancaria.iban, conta_bancaria.moeda
+    )
+    vinculo = Vinculo(
+        user_id=user_id,
+        conta_id=conta.id,
+        conta_bancaria_id=conta_bancaria.id,
+        identificacao=identificacao,
+        data_corte=data_corte,
+    )
+    db.add(vinculo)
+    await db.flush()
+    return vinculo
+
+
+async def vinculo_da_conta_bancaria(
+    db: AsyncSession, conta_bancaria_id: uuid.UUID
+) -> Vinculo | None:
+    """O vínculo desta conta bancária, se ela alimentar alguma Conta."""
+    return await db.scalar(select(Vinculo).where(Vinculo.conta_bancaria_id == conta_bancaria_id))
+
+
+async def vinculo_da_conta(db: AsyncSession, conta_id: uuid.UUID) -> Vinculo | None:
+    """O vínculo desta Conta, se uma conta bancária a alimentar."""
+    return await db.scalar(select(Vinculo).where(Vinculo.conta_id == conta_id))
 
 
 async def conta_antiga_de(
@@ -264,11 +327,12 @@ async def conta_antiga_de(
 ) -> Conta | None:
     """
     A Conta DESVINCULADA que esta conta bancária já alimentou, se houver —
-    o «Já foi a "X"» do frontend. None se a conta bancária nunca esteve na
-    aplicação, ou se a Conta que se lembra dela ainda tem vínculo (nesse
-    caso o vínculo renovou-se — ver _renovar_se_ja_vinculada, acima).
+    o «Já foi a "X"» do frontend. Deduz-se da MEMÓRIA da Conta (a
+    identificação da conta real que teve por último). None se a conta
+    bancária tem vínculo, se nunca esteve na aplicação, ou se a Conta que
+    se lembra dela ainda tem vínculo (nesse caso o vínculo renovou-se).
     """
-    if conta_bancaria.conta_id is not None:
+    if await vinculo_da_conta_bancaria(db, conta_bancaria.id) is not None:
         return None
     conta = await conta_com_identificacao(
         db,
@@ -277,27 +341,72 @@ async def conta_antiga_de(
             conta_bancaria.identification_hash, conta_bancaria.iban, conta_bancaria.moeda
         ),
     )
-    if conta is None or await obter_conta_bancaria_de_conta(db, conta.id) is not None:
+    if conta is None or await vinculo_da_conta(db, conta.id) is not None:
         return None
     return conta
+
+
+async def vinculada_noutra_linha(
+    db: AsyncSession, user_id: uuid.UUID, conta_bancaria: ContaBancaria
+) -> Vinculo | None:
+    """
+    O vínculo da mesma conta REAL através de OUTRA linha (outra
+    autorização), se houver — a etiqueta "Vinculada noutra autorização".
+    A mesma conta real só alimenta uma Conta, por isso esta linha não se
+    pode vincular enquanto esse vínculo existir.
+    """
+    identificacao = identificacao_bancaria(
+        conta_bancaria.identification_hash, conta_bancaria.iban, conta_bancaria.moeda
+    )
+    if identificacao is None:
+        return None
+    return await db.scalar(
+        select(Vinculo).where(
+            Vinculo.user_id == user_id,
+            Vinculo.identificacao == identificacao,
+            Vinculo.conta_bancaria_id != conta_bancaria.id,
+        )
+    )
+
+
+async def garantir_que_se_pode_vincular(
+    db: AsyncSession, user_id: uuid.UUID, conta_bancaria: ContaBancaria
+) -> None:
+    """
+    Só uma conta bancária LIVRE (sem vínculo, numa autorização ativa e
+    disponível no banco) pode ser vinculada a uma Conta. Lança Conflito
+    (409) com a razão em cada um dos outros casos:
+      - já tem vínculo;
+      - a autorização terminou, ou o banco deixou de a partilhar;
+      - a mesma conta real já alimenta uma Conta através de outra
+        autorização.
+    """
+    if await vinculo_da_conta_bancaria(db, conta_bancaria.id) is not None:
+        raise Conflito("Esta conta bancária já está vinculada.")
+    autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
+    if estado_conta_bancaria(conta_bancaria, autorizacao, tem_vinculo=False) == "livre_bloqueada":
+        if conta_bancaria.indisponivel_em is not None:
+            raise Conflito("O banco deixou de partilhar esta conta.")
+        raise Conflito("A autorização deste banco já terminou. É preciso autorizá-lo outra vez.")
+    noutra = await vinculada_noutra_linha(db, user_id, conta_bancaria)
+    if noutra is not None:
+        dona = await db.get(Conta, noutra.conta_id)
+        raise Conflito(f"Esta conta bancária já está vinculada à conta «{dona.nome}».")
 
 
 async def conta_tem_vinculo(db: AsyncSession, conta_id: uuid.UUID) -> bool:
     """
     True se alguma conta bancária alimentar esta Conta (se a Conta tiver
-    VÍNCULO). Usada pelos serviços de contas e de movimentos para aplicar as
-    regras de uma Conta alimentada pelo banco: banco e moeda fixos, e
+    VÍNCULO). Usada pelos serviços de contas e de movimentos para aplicar
+    as regras de uma Conta alimentada pelo banco: banco e moeda fixos, e
     movimentos só editáveis na categoria.
 
     Não confundir com "este movimento veio do banco": uma Conta pode ter
     sido DESVINCULADA depois de ter recebido movimentos importados. Esses
-    movimentos continuam a existir, mas a Conta deixa de estar sujeita a
-    estas regras, porque já nenhuma conta bancária a alimenta.
+    movimentos continuam a existir (com origem "banco"), mas a Conta deixa
+    de estar sujeita a estas regras.
     """
-    resultado = await db.execute(
-        select(ContaBancaria.id).where(ContaBancaria.conta_id == conta_id).limit(1)
-    )
-    return resultado.first() is not None
+    return await vinculo_da_conta(db, conta_id) is not None
 
 
 async def listar_contas_bancarias(
@@ -324,15 +433,15 @@ async def obter_conta_bancaria_de_conta(
     db: AsyncSession, conta_id: uuid.UUID
 ) -> ContaBancaria | None:
     """
-    A conta bancária que alimenta esta Conta, se houver — a mesma pergunta
-    de conta_tem_vinculo (acima), mas devolvendo a linha inteira. Usada,
-    por exemplo, para mostrar no detalhe de uma Conta de que banco vem e
-    até quando vale a autorização.
+    A conta bancária que alimenta esta Conta, se houver (através do
+    vínculo). Usada, por exemplo, para mostrar no detalhe de uma Conta de
+    que banco vem e até quando vale a autorização.
     """
-    resultado = await db.execute(
-        select(ContaBancaria).where(ContaBancaria.conta_id == conta_id)
+    return await db.scalar(
+        select(ContaBancaria)
+        .join(Vinculo, Vinculo.conta_bancaria_id == ContaBancaria.id)
+        .where(Vinculo.conta_id == conta_id)
     )
-    return resultado.scalar_one_or_none()
 
 
 async def obter_conta_bancaria_do_utilizador(
@@ -353,23 +462,3 @@ async def obter_conta_bancaria_do_utilizador(
     if conta_bancaria is None:
         raise NaoEncontrado("Conta bancária não encontrada.")
     return conta_bancaria
-
-
-async def desvincular(db: AsyncSession, conta_bancaria: ContaBancaria) -> None:
-    """
-    Desfaz o vínculo de uma conta bancária. Hoje apaga a linha da conta
-    bancária (e com ela o vínculo); a Conta e todos os seus movimentos
-    ficam intactos, só deixam de estar sujeitos às regras de uma Conta
-    vinculada e de receber sincronizações. A memória da Conta (a
-    identificação da conta bancária) também fica.
-
-    A AUTORIZAÇÃO não se apaga: pode ter trazido várias contas bancárias,
-    e desvincular uma não deve afetar as outras.
-    """
-    await db.delete(conta_bancaria)
-    # flush() envia as alterações à base de dados, dentro da transação em
-    # curso, mas NÃO as torna definitivas: isso é o commit(), que só a rota
-    # (ou o script) que chamou este serviço faz, uma vez, no fim. Assim,
-    # várias operações chamadas pelo mesmo pedido gravam-se todas juntas
-    # ou nenhuma (ver a nota no topo do ficheiro).
-    await db.flush()

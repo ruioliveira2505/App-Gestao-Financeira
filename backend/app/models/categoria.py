@@ -56,9 +56,23 @@ categorizado" é ele próprio uma categoria real, igual a qualquer outra —
 os grupos "Outras Entradas" e "Outras Saídas" (ver a semente em
 app/services/categorias_seed.py), um por cada direcao.
 
-PROTEGIDA: sinaliza precisamente esses dois grupos-refúgio. Uma categoria
-com protegida=True não pode ser renomeada nem apagada (aplicado no
-serviço, não aqui) — têm de continuar sempre disponíveis, para que:
+PAPEL E PROTEGIDA: algumas categorias têm um PAPEL na aplicação, guardado
+na coluna "papel":
+  - "refugio": as subcategorias "Outros" dos grupos "Outras Entradas" e
+    "Outras Saídas", uma por direção — o destino de um movimento sem
+    categoria escolhida (por exemplo, um importado do banco);
+  - "acerto": as categorias "Acerto de saldo", uma por direção, onde ficam
+    os movimentos de ACERTO das reconciliações (o movimento que a
+    aplicação cria pela diferença entre o saldo afirmado numa
+    reconciliação e o saldo que ela calcula). São reservadas: nenhum outro
+    movimento as pode usar.
+Uma categoria com papel é PROTEGIDA (a propriedade "protegida", calculada
+a partir do papel): não pode ser renomeada nem apagada (aplicado no
+serviço). Cada utilizador tem no máximo UMA categoria de cada papel em
+cada direção, garantido por um índice único na base de dados — antes,
+com só uma marca "protegida" (sim ou não), uma segunda categoria
+protegida tornaria ambíguo qual era o refúgio. As categorias-refúgio têm
+de continuar sempre disponíveis, para que:
   (a) exista sempre um destino de categoria válido para um movimento novo
       antes de o utilizador escolher algo mais específico, e
   (b) ao apagar QUALQUER OUTRA categoria que ainda tenha movimentos (dela
@@ -66,8 +80,13 @@ serviço, não aqui) — têm de continuar sempre disponíveis, para que:
       exija que se escolha explicitamente para onde esses movimentos
       migram — nunca uma reatribuição silenciosa, e "Outras Entradas"/
       "Outras Saídas" são sempre um destino possível dessa migração.
-Todas as outras categorias nascem com protegida=False (o valor por
-omissão) e podem ser livremente renomeadas ou apagadas.
+Todas as outras categorias nascem sem papel (o valor por omissão) e
+podem ser livremente renomeadas ou apagadas.
+
+GARANTIAS NA BASE DE DADOS (restrições CHECK, que o PostgreSQL verifica
+em cada escrita, seja qual for o código que a faça): a direção é sempre
+"entrada" ou "saida", e o papel, quando existe, é sempre "refugio" ou
+"acerto".
 
 ELIMINAR: apagar um grupo apaga também as suas subcategorias (ver o
 ondelete="CASCADE" abaixo, em parent_id) — mas apagar uma categoria NUNCA
@@ -82,7 +101,7 @@ oposta (CASCADE, em app/models/movimento.py).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -94,6 +113,21 @@ class Categoria(Base):
     """Uma categoria (grupo) ou subcategoria de movimento, consoante parent_id."""
 
     __tablename__ = "categorias"
+    __table_args__ = (
+        CheckConstraint("direcao IN ('entrada', 'saida')", name="ck_categorias_direcao"),
+        CheckConstraint("papel IN ('refugio', 'acerto')", name="ck_categorias_papel"),
+        # Índice único PARCIAL (só sobre as linhas com papel): no máximo uma
+        # categoria de cada papel, em cada direção, por utilizador. As
+        # categorias sem papel (a grande maioria) ficam de fora do índice.
+        Index(
+            "ux_categorias_user_id_papel_direcao",
+            "user_id",
+            "papel",
+            "direcao",
+            unique=True,
+            postgresql_where=text("papel IS NOT NULL"),
+        ),
+    )
 
     # Chave primária. UUID, pela mesma razão das outras tabelas (users,
     # contas, movimentos): um id sequencial expõe quantas categorias
@@ -103,12 +137,14 @@ class Categoria(Base):
     # Chave estrangeira para o dono da categoria. Cada utilizador tem a sua
     # própria árvore de categorias, semeada automaticamente no registo;
     # index=True porque toda e qualquer consulta a categorias filtra por
-    # este campo ("as categorias deste utilizador"). SEM "ondelete" — a
-    # mesma nota de "user_id" em conta.py: não há, por agora, nenhum
-    # endpoint que apague um User; quando existir, esta relação precisa de
-    # uma política explícita, não a ausência de uma.
+    # este campo ("as categorias deste utilizador").
+    #
+    # ondelete="CASCADE": apagar um utilizador apaga as suas categorias, ao
+    # nível da própria base de dados (o direito ao apagamento do RGPD, o
+    # regulamento europeu de proteção de dados: apagar a conta de um
+    # utilizador apaga todos os seus dados).
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # A auto-referência descrita no topo do ficheiro: NULO para um grupo de
@@ -140,10 +176,9 @@ class Categoria(Base):
     # movimento, e o filtro de movimentos, usam estes mesmos dois valores.
     direcao: Mapped[str] = mapped_column(String(7), nullable=False)
 
-    # Ver a nota PROTEGIDA no topo do ficheiro. False por omissão: só as
-    # duas categorias-refúgio semeadas automaticamente ("Outras Entradas",
-    # "Outras Saídas") nascem com este valor a True.
-    protegida: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Ver a nota PAPEL E PROTEGIDA no topo do ficheiro: "refugio",
+    # "acerto", ou vazio (a grande maioria das categorias).
+    papel: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     # Ver a nota ORDEM no topo do ficheiro. Sem valor por omissão de
     # propósito: quem cria uma categoria (a semente, ou o serviço ao criar
@@ -162,3 +197,15 @@ class Categoria(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    @property
+    def protegida(self) -> bool:
+        """
+        True se a categoria tiver um papel na aplicação (ver PAPEL E
+        PROTEGIDA, no topo do ficheiro): não se renomeia nem se apaga.
+        Calculada a partir do papel, e não guardada à parte, para as duas
+        nunca poderem discordar. "@property" faz de uma função um
+        atributo de leitura: escreve-se categoria.protegida, sem
+        parênteses.
+        """
+        return self.papel is not None

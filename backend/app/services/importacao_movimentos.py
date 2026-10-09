@@ -69,7 +69,9 @@ nunca se esgota — situação nunca observada, mas esta integração já
 surpreendeu vezes suficientes para não confiar cegamente nisso.
 """
 
+import hashlib
 import uuid
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -84,13 +86,20 @@ from app.models.conta import Conta
 from app.models.conta_bancaria import ContaBancaria
 from app.models.movimento import Movimento
 from app.models.user import User
-from app.services.contas import garantir_nome_livre, obter_conta_do_utilizador
-from app.services.enable_banking import obter_movimentos, obter_saldos
+from app.models.vinculo import Vinculo
+from app.services.bloqueios import bloquear_conta
+from app.services.contas import garantir_nome_livre, gravar_conta, obter_conta_do_utilizador
 from app.services.contas_bancarias import (
     conta_com_identificacao,
+    garantir_que_se_pode_vincular,
     identificacao_bancaria,
-    obter_conta_bancaria_de_conta,
+    vincular,
+    vinculo_da_conta,
+    vinculo_da_conta_bancaria,
 )
+from app.services.estados import estado_conta_bancaria
+from app.services.reconciliacoes import recalcular_acertos
+from app.services.enable_banking import obter_movimentos, obter_saldos
 
 # Número máximo de páginas seguidas antes de desistir com um erro claro
 # (ver a nota PAGINAÇÃO COMPLETA, no topo do ficheiro) — generoso para
@@ -183,6 +192,60 @@ def _esta_confirmada(transacao: dict) -> bool:
     return transacao.get("status") == "BOOK"
 
 
+def _identificadores(transacoes: list[dict]) -> list[str]:
+    """
+    O identificador de cada transacção da lista, pela mesma ordem — a
+    chave que impede uma sincronização de gravar a mesma transacção duas
+    vezes (a coluna id_transacao_externa, única em cada conta).
+
+    É o identificador do banco (ver _id_externo, acima) quando existe.
+    Quando o banco não dá nenhum, calcula-se uma IMPRESSÃO DIGITAL: um
+    resumo, com o prefixo "fp:", da data, do valor, da descrição e da
+    ORDEM dessa transacção entre as que, no mesmo pedido, têm a mesma data,
+    o mesmo valor e a mesma descrição. A ordem distingue, por exemplo,
+    dois cafés iguais no mesmo dia: o primeiro e o segundo dão impressões
+    diferentes, e cada um só entra uma vez. O resumo é o SHA-256 (uma
+    função que transforma um texto num código de tamanho fixo, sempre o
+    mesmo para o mesmo texto), cortado a 32 caracteres.
+
+    LIMITAÇÃO: a ordem conta-se dentro do que o banco devolveu. Como cada
+    sincronização volta a pedir os últimos dias inteiros, um mesmo dia vem
+    sempre completo, e a ordem repete-se.
+    """
+    ocorrencias: dict[tuple[str, str, str], int] = {}
+    resultado = []
+    for transacao in transacoes:
+        externo = _id_externo(transacao)
+        if externo:
+            resultado.append(externo)
+            continue
+        chave = (transacao["booking_date"], str(_valor_com_sinal(transacao)), _descricao(transacao))
+        ordem = ocorrencias.get(chave, 0)
+        ocorrencias[chave] = ordem + 1
+        texto = "|".join([*chave, str(ordem)])
+        resultado.append("fp:" + hashlib.sha256(texto.encode()).hexdigest()[:32])
+    return resultado
+
+
+def _pode_ser_gravada(transacao: dict) -> bool:
+    """
+    True se uma transacção já confirmada pode virar um Movimento AGORA:
+      - o valor não é 0 (um movimento de valor 0 não seria nem entrada nem
+        saída; a base de dados recusa-o);
+      - a data não é depois de hoje (em Lisboa): um movimento nunca está
+        no futuro. Uma transacção com data futura não se perde: a
+        sincronização seguinte volta a pedir os últimos dias ao banco, e
+        ela entra quando a data chegar.
+
+    Só decide o que se GRAVA. O cálculo da âncora de uma conta nova (ver
+    a nota SALDO-ÂNCORA, no topo do ficheiro) continua a somar todas as
+    transacções confirmadas, mesmo as de data futura: já estão contadas no
+    saldo do banco, e tirá-las da soma faria-as contar duas vezes quando
+    entrassem mais tarde.
+    """
+    return _valor_com_sinal(transacao) != 0 and date.fromisoformat(transacao["booking_date"]) <= hoje()
+
+
 def _id_externo(transacao: dict) -> str | None:
     """
     A chave de deduplicação (ver id_transacao_externa, em
@@ -197,23 +260,65 @@ def _id_externo(transacao: dict) -> str | None:
 
 async def _categoria_refugio(db: AsyncSession, user_id: uuid.UUID, direcao: str) -> Categoria:
     """
-    Devolve a categoria-refúgio protegida da direcção indicada ("entrada"
+    Devolve a categoria com o papel "refugio" da direcção indicada ("entrada"
     ou "saida") — ver a nota CATEGORIA OBRIGATÓRIA em
     app/models/movimento.py: um movimento importado, tal como um
     movimento manual sem escolha explícita, fica sempre com esta
     categoria por omissão, nunca sem nenhuma. scalar_one() falha alto e
-    claro se, por algum motivo, não existir exactamente uma — nunca
-    deveria acontecer, porque semear_categorias (app/services/
-    categorias_seed.py) garante sempre as duas, uma por direcção.
+    claro se, por algum motivo, não existir exactamente uma. Mais do que
+    uma é impossível (um índice único na base de dados garante no máximo
+    uma categoria de cada papel por direção); nenhuma também não deveria
+    acontecer, porque semear_categorias (app/services/categorias_seed.py)
+    cria sempre as duas, uma por direcção.
     """
     resultado = await db.execute(
         select(Categoria).where(
             Categoria.user_id == user_id,
-            Categoria.protegida.is_(True),
+            Categoria.papel == "refugio",
             Categoria.direcao == direcao,
         )
     )
     return resultado.scalar_one()
+
+
+async def saldo_contabilistico(uid: str) -> Decimal:
+    """
+    O saldo CONTABILÍSTICO atual de uma conta bancária (o tipo "CLBD" que o
+    banco devolve: só com movimentos já lançados, sem os pendentes) — ver a
+    nota SALDO-ÂNCORA, no topo do ficheiro. BancoIndisponivel (502) se o
+    banco não o devolver.
+    """
+    saldos = await obter_saldos(uid)
+    saldo = next(
+        (
+            Decimal(item["balance_amount"]["amount"])
+            for item in saldos["balances"]
+            if item["balance_type"] == "CLBD"
+        ),
+        None,
+    )
+    if saldo is None:
+        raise BancoIndisponivel("O banco não devolveu o saldo contabilístico desta conta.")
+    return saldo
+
+
+def ancora_do_banco(saldo_actual: Decimal, transacoes: list[dict]) -> tuple[date, Decimal]:
+    """
+    A âncora (data e saldo iniciais) de uma conta cujo histórico vem todo do
+    banco: a data da transacção confirmada mais antiga, e o saldo atual
+    menos a soma de todas as transacções confirmadas (ver a nota
+    SALDO-ÂNCORA, no topo do ficheiro). Assim, saldo inicial + transacções
+    dá exatamente o saldo do banco.
+
+    min(…, hoje()): a data inicial nunca fica no futuro, mesmo que o banco
+    só devolva transacções com data futura. Sem transacções, a âncora é
+    hoje, com o saldo atual — não há histórico nenhum para trazer.
+    """
+    if not transacoes:
+        return hoje(), saldo_actual
+    data_ancora = min(min(date.fromisoformat(t["booking_date"]) for t in transacoes), hoje())
+    soma = sum((_valor_com_sinal(t) for t in transacoes), Decimal("0"))
+    return data_ancora, saldo_actual - soma
 
 
 async def criar_conta_a_partir_de_conta_bancaria(
@@ -226,7 +331,7 @@ async def criar_conta_a_partir_de_conta_bancaria(
 ) -> Conta:
     """
     Cria uma Conta nova a partir de uma ContaBancaria ainda sem vínculo,
-    vincula-as (conta_bancaria.conta_id), e importa de imediato as
+    vincula-as (cria o vínculo, com a data de corte), e importa de imediato as
     transacções disponíveis como Movimento — ver as notas SALDO-ÂNCORA e
     PAGINAÇÃO COMPLETA, no topo do ficheiro, para o desenho exacto desse
     cálculo.
@@ -256,7 +361,9 @@ async def criar_conta_a_partir_de_conta_bancaria(
     esperar pela importação para falhar):
       - o nome conta sem os espaços nas pontas, e não pode ficar vazio
         (DadosInvalidos, 422);
-      - a conta bancária não pode já ter vínculo (Conflito, 409);
+      - a conta bancária tem de estar livre: sem vínculo, numa autorização
+        ativa, disponível no banco, e a sua conta real não pode alimentar
+        já outra Conta (Conflito, 409, com a razão);
       - o nome não pode repetir o de outra conta do utilizador (Conflito,
         409 — ver garantir_nome_livre, em app/services/contas.py).
 
@@ -267,8 +374,11 @@ async def criar_conta_a_partir_de_conta_bancaria(
     nome = nome.strip()
     if not nome:
         raise DadosInvalidos("O nome não pode ser vazio.")
-    if conta_bancaria.conta_id is not None:
-        raise Conflito("Esta conta bancária já está vinculada.")
+    # Só uma conta bancária livre (sem vínculo, numa autorização ativa,
+    # disponível, e cuja conta real não alimente já outra Conta) se pode
+    # vincular — ver garantir_que_se_pode_vincular, em
+    # app/services/contas_bancarias.py.
+    await garantir_que_se_pode_vincular(db, user_id, conta_bancaria)
     await garantir_nome_livre(db, user_id, nome)
 
     # A identificação estável da conta bancária (ver identificacao_bancaria,
@@ -288,22 +398,16 @@ async def criar_conta_a_partir_de_conta_bancaria(
     # autorização. Recusa-se ANTES de qualquer pedido ao banco, que a PSD2
     # limita.
     dona = await conta_com_identificacao(db, user_id, identificacao)
-    if dona is not None and await obter_conta_bancaria_de_conta(db, dona.id) is not None:
+    if dona is not None and await vinculo_da_conta(db, dona.id) is not None:
         raise Conflito(f"Esta conta bancária já está vinculada à conta «{dona.nome}».")
+    # (A mesma conta real com vínculo noutra linha já foi recusada acima;
+    # esta verificação, pela memória das Contas, apanha também uma Conta
+    # cuja memória coincide mas cujo vínculo ainda guardava outra
+    # identificação.)
 
     autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
 
-    saldos = await obter_saldos(conta_bancaria.uid)
-    saldo_actual = next(
-        (
-            Decimal(saldo["balance_amount"]["amount"])
-            for saldo in saldos["balances"]
-            if saldo["balance_type"] == "CLBD"
-        ),
-        None,
-    )
-    if saldo_actual is None:
-        raise BancoIndisponivel("O banco não devolveu o saldo contabilístico desta conta.")
+    saldo_actual = await saldo_contabilistico(conta_bancaria.uid)
 
     # "longest": a primeira importação acontece logo a seguir à autenticação
     # no banco — o único período (cerca de uma hora, pela PSD2) em que o
@@ -317,23 +421,13 @@ async def criar_conta_a_partir_de_conta_bancaria(
     todas = await _obter_todas_transacoes(conta_bancaria.uid, data_de, estrategia="longest")
     transacoes = [t for t in todas if _esta_confirmada(t)]
 
-    if transacoes:
-        data_ancora = min(date.fromisoformat(t["booking_date"]) for t in transacoes)
-        soma_transacoes = sum((_valor_com_sinal(t) for t in transacoes), Decimal("0"))
-        saldo_ancora = saldo_actual - soma_transacoes
-    else:
-        # Sem transacções disponíveis: a âncora é hoje, com o saldo actual
-        # — não há histórico nenhum para trazer.
-        data_ancora = hoje()
-        saldo_ancora = saldo_actual
+    data_ancora, saldo_ancora = ancora_do_banco(saldo_actual, transacoes)
 
     # Se esta conta bancária já alimentou uma Conta antiga, entretanto
     # desvinculada, e o utilizador escolheu criar uma conta nova em vez de
-    # a vincular à antiga (isso ainda não existe — precisa de
-    # reconciliações), a identificação passa para a conta nova: duas Contas
-    # com a mesma
-    # identificação tornariam o reconhecimento ambíguo. A conta antiga
-    # fica como conta manual, com todo o seu histórico.
+    # vincular a antiga, a identificação passa para a conta nova: duas
+    # Contas com a mesma identificação tornariam o reconhecimento ambíguo.
+    # A conta antiga fica como conta manual, com todo o seu histórico.
     if identificacao is not None:
         await db.execute(
             update(Conta)
@@ -352,16 +446,25 @@ async def criar_conta_a_partir_de_conta_bancaria(
         identificacao_bancaria=identificacao,
     )
     db.add(conta)
-    await db.flush()
+    # gravar_conta faz o flush e traduz um nome repetido, apanhado pelo
+    # índice único da base de dados, num Conflito (409).
+    await gravar_conta(db)
 
-    conta_bancaria.conta_id = conta.id
+    # O vínculo, com a data de corte na véspera da data inicial: tudo o que
+    # esta Conta tem vem do banco.
+    vinculo = await vincular(
+        db, user_id, conta, conta_bancaria, data_corte=data_ancora - timedelta(days=1)
+    )
 
     # Uma categoria-refúgio por direcção, obtida uma única vez antes do
     # ciclo — não há razão para repetir a mesma consulta por transacção.
     categoria_entrada = await _categoria_refugio(db, user_id, "entrada")
     categoria_saida = await _categoria_refugio(db, user_id, "saida")
 
-    for transacao in transacoes:
+    # Grava-se só o que pode virar um movimento agora (ver
+    # _pode_ser_gravada: sem valor 0 nem datas futuras).
+    a_gravar = [t for t in transacoes if _pode_ser_gravada(t)]
+    for transacao, identificador in zip(a_gravar, _identificadores(a_gravar)):
         categoria = (
             categoria_entrada if transacao["credit_debit_indicator"] == "CRDT" else categoria_saida
         )
@@ -372,7 +475,9 @@ async def criar_conta_a_partir_de_conta_bancaria(
                 descricao=_descricao(transacao),
                 valor=_valor_com_sinal(transacao),
                 categoria_id=categoria.id,
-                id_transacao_externa=_id_externo(transacao),
+                id_transacao_externa=identificador,
+                origem="banco",
+                vinculo_id=vinculo.id,
             )
         )
 
@@ -386,51 +491,84 @@ async def criar_conta_a_partir_de_conta_bancaria(
     return conta
 
 
-async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_bancaria: ContaBancaria) -> int:
+@dataclass
+class Sincronizacao:
     """
-    Importa os movimentos NOVOS de uma Conta JÁ vinculada
-    (ao contrário de criar_conta_a_partir_de_conta_bancaria, que trata da
-    PRIMEIRA importação) — chamada pelo botão "Sincronizar agora"
-    (POST /open-banking/contas-bancarias/{id}/sincronizar,
-    app/routers/open_banking.py), através de sincronizar_conta_bancaria.
-    Devolve quantos movimentos novos foram gravados.
+    O resultado de uma sincronização: quantos movimentos novos entraram, e
+    a soma das transações confirmadas com data FUTURA que ficaram por
+    importar (um movimento nunca fica no futuro; entram quando a data
+    chegar). Essa soma já está no saldo que o banco informa, e uma
+    reconciliação do banco criada a seguir precisa de a descontar (ver
+    futuros_no_banco, no modelo das reconciliações).
+    """
+
+    novos: int
+    futuros: Decimal
+
+
+def soma_dos_futuros(transacoes: list[dict]) -> Decimal:
+    """
+    A soma das transações (já confirmadas) com data depois de hoje: as que
+    o banco já conta no saldo, mas que ainda não se podem importar.
+    """
+    return sum(
+        (
+            _valor_com_sinal(t)
+            for t in transacoes
+            if date.fromisoformat(t["booking_date"]) > hoje()
+        ),
+        Decimal("0"),
+    )
+
+
+async def sincronizar_movimentos(
+    db: AsyncSession, conta: Conta, conta_bancaria: ContaBancaria, vinculo: Vinculo
+) -> Sincronizacao:
+    """
+    Importa os movimentos NOVOS de uma Conta JÁ vinculada (ao contrário de
+    criar_conta_a_partir_de_conta_bancaria, que trata da PRIMEIRA
+    importação) — chamada através de sincronizar_conta_bancaria, abaixo,
+    quando o utilizador pede para sincronizar, e antes de "acertar" com o
+    banco. Devolve quantos movimentos novos foram gravados e a soma das
+    transações de data futura que ficaram por importar.
 
     NUNCA MEXE EM saldo_ancora: a âncora já foi fixada na primeira
-    importação (ver a nota SALDO-ÂNCORA, no topo do ficheiro) — uma
-    sincronização só acrescenta Movimento por cima dela; o "saldo actual"
-    de uma conta é sempre calculado dinamicamente (saldo_ancora + soma dos
-    movimentos, ver app/routers/contas.py:_para_saida), por isso não há
-    nada a recalcular aqui.
+    importação (ver a nota SALDO-ÂNCORA, no topo do ficheiro); uma
+    sincronização só acrescenta movimentos. O saldo actual é sempre
+    calculado (saldo_ancora + soma dos movimentos), por isso não há nada a
+    recalcular aqui.
 
-    DESDE QUANDO IMPORTAR (nunca uma escolha do utilizador, ao contrário
-    da primeira importação — ver a nota em criar_conta_a_partir_de_conta_bancaria):
-    a data do movimento mais recente já gravado para esta conta, recuada
-    _MARGEM_SEGURANCA_DIAS dias (ver a nota no topo do ficheiro) — ou
-    conta.data_ancora, se a conta ainda não tiver nenhum movimento (nunca
-    deveria acontecer na prática, uma conta nascida por Open Banking já
-    traz sempre a sua importação inicial, mas serve de rede de segurança).
+    DESDE QUANDO IMPORTAR (nunca uma escolha do utilizador): o mais recente
+    de dois dias —
+      - o dia seguinte à DATA DE CORTE do vínculo (o último dia cujos
+        movimentos não vêm do banco): nada até ao corte entra, para o
+        histórico do banco nunca cair por cima de movimentos que já estão
+        na Conta;
+      - a data do último movimento de ORIGEM BANCO, recuada
+        _MARGEM_SEGURANCA_DIAS dias (ver a nota no topo do ficheiro): o
+        banco pode lançar uma transacção dias depois.
+    Conta só o último movimento do banco, e não o último de qualquer
+    origem: um movimento manual antigo (de antes do vínculo) não pode puxar
+    a importação para trás.
 
-    DEDUPLICAÇÃO: antes de gravar, consulta-se os id_transacao_externa já
-    existentes NESTA conta, e ignora-se qualquer transacção trazida cujo
-    identificador já lá esteja — mais simples e mais barato (uma única
-    consulta) do que confiar só na restrição UNIQUE da base de dados
-    (ux_movimentos_conta_id_id_transacao_externa, em app/models/
-    movimento.py) e apanhar o erro de integridade depois, transacção a
-    transacção.
+    O QUE ENTRA: só transacções confirmadas, de data posterior ao corte e
+    não anterior à data inicial da conta, e que possam virar movimentos
+    agora (sem valor 0 nem datas futuras — ver _pode_ser_gravada).
 
-    VALIDAÇÃO DA DATA-ÂNCORA (achado de uma revisão anterior a este
-    código): qualquer transacção com booking_date anterior a
-    conta.data_ancora é ignorada — mesmo com a margem de segurança acima,
-    uma transacção assim tão antiga já devia estar reflectida no
-    saldo_ancora calculado na importação inicial; gravá-la agora somaria
-    o mesmo valor uma segunda vez, por cima de um saldo que já a contava
-    implicitamente.
+    DEDUPLICAÇÃO: consulta-se os identificadores já gravados NESTA conta (o
+    do banco ou a impressão digital — ver _identificadores) e ignora-se
+    tudo o que já lá esteja. A restrição única da base de dados (conta,
+    identificador) é a rede de segurança.
     """
-    resultado = await db.execute(
-        select(Movimento.data).where(Movimento.conta_id == conta.id).order_by(Movimento.data.desc()).limit(1)
+    ultimo_do_banco = await db.scalar(
+        select(Movimento.data)
+        .where(Movimento.conta_id == conta.id, Movimento.origem == "banco")
+        .order_by(Movimento.data.desc())
+        .limit(1)
     )
-    ultima_data = resultado.scalar_one_or_none()
-    data_de = (ultima_data or conta.data_ancora) - timedelta(days=_MARGEM_SEGURANCA_DIAS)
+    data_de = vinculo.data_corte + timedelta(days=1)
+    if ultimo_do_banco is not None:
+        data_de = max(data_de, ultimo_do_banco - timedelta(days=_MARGEM_SEGURANCA_DIAS))
 
     transacoes = [
         # Estratégia por omissão, de propósito (não "longest"): aqui só
@@ -439,7 +577,14 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_bancaria:
         # antigo para dar.
         t for t in await _obter_todas_transacoes(conta_bancaria.uid, data_de) if _esta_confirmada(t)
     ]
-    transacoes = [t for t in transacoes if date.fromisoformat(t["booking_date"]) >= conta.data_ancora]
+    futuros = soma_dos_futuros(transacoes)
+    transacoes = [
+        t
+        for t in transacoes
+        if date.fromisoformat(t["booking_date"]) > vinculo.data_corte
+        and date.fromisoformat(t["booking_date"]) >= conta.data_ancora
+        and _pode_ser_gravada(t)
+    ]
 
     ids_existentes = set(
         (
@@ -451,15 +596,18 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_bancaria:
             )
         ).scalars()
     )
-    transacoes_novas = [t for t in transacoes if _id_externo(t) not in ids_existentes]
-
-    if not transacoes_novas:
-        return 0
+    novas = [
+        (transacao, identificador)
+        for transacao, identificador in zip(transacoes, _identificadores(transacoes))
+        if identificador not in ids_existentes
+    ]
+    if not novas:
+        return Sincronizacao(novos=0, futuros=futuros)
 
     categoria_entrada = await _categoria_refugio(db, conta.user_id, "entrada")
     categoria_saida = await _categoria_refugio(db, conta.user_id, "saida")
 
-    for transacao in transacoes_novas:
+    for transacao, identificador in novas:
         categoria = (
             categoria_entrada if transacao["credit_debit_indicator"] == "CRDT" else categoria_saida
         )
@@ -470,17 +618,21 @@ async def sincronizar_movimentos(db: AsyncSession, conta: Conta, conta_bancaria:
                 descricao=_descricao(transacao),
                 valor=_valor_com_sinal(transacao),
                 categoria_id=categoria.id,
-                id_transacao_externa=_id_externo(transacao),
+                id_transacao_externa=identificador,
+                origem="banco",
+                vinculo_id=vinculo.id,
             )
         )
 
     # flush() envia as alterações à base de dados, dentro da transação em
     # curso, mas NÃO as torna definitivas: isso é o commit(), que só a rota
-    # (ou o script) que chamou este serviço faz, uma vez, no fim. Assim,
-    # várias operações chamadas pelo mesmo pedido gravam-se todas juntas
-    # ou nenhuma (ver a nota no topo do ficheiro).
+    # que chamou este serviço faz, uma vez, no fim (ver a nota TRANSAÇÕES,
+    # no topo do ficheiro).
     await db.flush()
-    return len(transacoes_novas)
+    # Movimentos novos mudam o saldo calculado: os acertos das
+    # reconciliações recalculam-se.
+    await recalcular_acertos(db, conta.id)
+    return Sincronizacao(novos=len(novas), futuros=futuros)
 
 
 async def sincronizar_conta_bancaria(
@@ -493,7 +645,24 @@ async def sincronizar_conta_bancaria(
     movimentos novos (ver sincronizar_movimentos, acima). Devolve quantos
     movimentos novos entraram; quem chama faz o commit.
     """
-    if conta_bancaria.conta_id is None:
+    vinculo = await vinculo_da_conta_bancaria(db, conta_bancaria.id)
+    if vinculo is None:
         raise Conflito("Esta conta bancária ainda não está vinculada a nenhuma conta.")
-    conta = await obter_conta_do_utilizador(db, utilizador, conta_bancaria.conta_id)
-    return await sincronizar_movimentos(db, conta, conta_bancaria)
+    conta = await obter_conta_do_utilizador(db, utilizador, vinculo.conta_id)
+    # Uma operação de cada vez por Conta: duas sincronizações em simultâneo
+    # pediriam e gravariam os mesmos movimentos (a segunda recebe 409). O
+    # bloqueio vem antes das verificações, e o vínculo volta a ler-se
+    # depois dele: outra operação (desvincular, por exemplo) pode tê-lo
+    # mudado entre a primeira leitura e o bloqueio.
+    await bloquear_conta(db, conta.id)
+    vinculo = await vinculo_da_conta_bancaria(db, conta_bancaria.id)
+    if vinculo is None or vinculo.conta_id != conta.id:
+        raise Conflito("Esta conta bancária deixou de estar vinculada a esta conta.")
+    # Uma Conta SUSPENSA (a autorização terminou, ou o banco deixou de
+    # partilhar a conta) não sincroniza: diz-se porquê, e o que fazer.
+    autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
+    if estado_conta_bancaria(conta_bancaria, autorizacao, tem_vinculo=True) == "suspensa":
+        if conta_bancaria.indisponivel_em is not None:
+            raise Conflito("O banco deixou de partilhar esta conta. Podes desvinculá-la.")
+        raise Conflito("A autorização deste banco já terminou. É preciso autorizá-lo outra vez.")
+    return (await sincronizar_movimentos(db, conta, conta_bancaria, vinculo)).novos

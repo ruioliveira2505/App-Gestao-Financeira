@@ -284,6 +284,10 @@ async def eliminar_categoria(
             raise RegraViolada(
                 "O destino da migração tem de ser da mesma direção (entrada ou saída)."
             )
+        if destino.papel == "acerto":
+            raise RegraViolada(
+                "A categoria «Acerto de saldo» é só para os acertos das reconciliações."
+            )
 
     n_movimentos = await db.scalar(
         select(func.count())

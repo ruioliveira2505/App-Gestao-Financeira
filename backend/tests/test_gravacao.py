@@ -44,7 +44,7 @@ async def _categoria(db_session, direcao: str) -> Categoria:
             Categoria.user_id == utilizador.id,
             Categoria.direcao == direcao,
             Categoria.parent_id.is_not(None),
-            Categoria.protegida.is_(False),
+            Categoria.papel.is_(None),
         )
     )
 
@@ -128,7 +128,7 @@ async def test_operacoes_em_lote_gravam(cliente_autenticado, db_session):
             select(Categoria).where(
                 Categoria.direcao == "saida",
                 Categoria.parent_id.is_not(None),
-                Categoria.protegida.is_(False),
+                Categoria.papel.is_(None),
             )
         )
     ).all()[1]

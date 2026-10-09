@@ -3,7 +3,7 @@ TESTES DO SERVIÇO DE CÂMBIO
 ==============================
 
 Semeiam directamente a tabela taxas_cambio (sem passar por nenhuma rota
-da API — esta tabela não tem endpoints próprios, só é escrita pelo script
+da API — esta tabela não tem endpoints próprios, só é escrita pela rotina
 de actualização) e verificam a matemática de obter_taxa/converter, e das
 suas variantes "em lote" (obter_taxas_do_periodo/converter_com_taxas, que
 convertem muitos valores do mesmo período sem uma consulta por valor —
@@ -334,7 +334,7 @@ async def test_guardar_taxas_grava_uma_linha_por_moeda(db_session):
 
 @pytest.mark.asyncio
 async def test_guardar_taxas_e_idempotente_actualiza_em_vez_de_duplicar(db_session):
-    # Regressão: correr o script duas vezes no mesmo dia (ex.: por
+    # Regressão: correr a rotina duas vezes no mesmo dia (ex.: por
     # engano) não deve criar uma segunda linha para a mesma (data, moeda)
     # — deve só actualizar o valor.
     await guardar_taxas(db_session, date(2026, 1, 15), {"USD": Decimal("1.10")})
@@ -419,7 +419,7 @@ async def test_proxima_data_a_pedir_caso_normal_devolve_a_ultima_data_guardada(
     cliente_autenticado, db_session
 ):
     # Já há histórico, e nenhuma conta é mais antiga do que ele — o caso
-    # do dia-a-dia: só avançar desde a última vez que o script correu.
+    # do dia-a-dia: só avançar desde a última vez que a rotina correu.
     await cliente_autenticado.post(
         "/contas",
         json={"nome": "Conta", "moeda": "EUR", "data_ancora": "2026-01-01", "saldo_ancora": "0"},
@@ -436,7 +436,7 @@ async def test_proxima_data_a_pedir_recua_quando_aparece_uma_conta_mais_antiga_d
 ):
     # Regressão do caso central desta pergunta: já havia histórico
     # (começado em Junho), mas uma segunda conta com âncora de Janeiro foi
-    # criada DEPOIS — a próxima execução do script tem de recuar até lá,
+    # criada DEPOIS — a próxima execução da rotina tem de recuar até lá,
     # sozinha, sem correcção manual nenhuma.
     await _semear_taxa(db_session, "USD", date(2026, 6, 1), "1.09")
     await _semear_taxa(db_session, "USD", date(2026, 9, 1), "1.05")  # a mais recente guardada

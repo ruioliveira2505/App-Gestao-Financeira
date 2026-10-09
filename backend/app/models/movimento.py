@@ -37,13 +37,27 @@ subcategorias que caiam com ela em cascata) exige que o serviço
 (app/services/categorias.py) receba explicitamente para onde esses
 movimentos migram — nunca uma reatribuição silenciosa à categoria-refúgio,
 e nunca a eliminação dos próprios movimentos.
+
+ORIGEM: cada movimento sabe de onde veio, numa coluna própria:
+  - "manual": registado pelo utilizador;
+  - "banco": importado de uma conta bancária (Open Banking). Guarda também
+    o VÍNCULO que o importou (vinculo_id) — o facto de uma conta bancária
+    alimentar esta Conta —, para se poder saber, mais tarde, o que veio
+    de cada vínculo (por exemplo, para "tirar o que veio do banco" ao
+    desvincular só leva o que veio do vínculo atual);
+  - "acerto": gerado por uma reconciliação (a afirmação «no fim do dia D,
+    o saldo era S»), pela diferença entre o saldo afirmado e o calculado.
+    Aponta para a sua reconciliação (reconciliacao_id), nunca se edita
+    diretamente, e é sempre o último movimento do seu dia.
+Um movimento do banco continua "banco" mesmo depois de a Conta ser
+desvinculada e o movimento editado: a origem é um facto histórico.
 """
 
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -70,6 +84,29 @@ class Movimento(Base):
     # dados, não o encontraria nos metadados do modelo, e propunha
     # apagá-lo.
     __table_args__ = (
+        # Um movimento nunca tem valor 0: não seria nem entrada nem saída, e
+        # a categoria (de entrada ou de saída) deixaria de fazer sentido. A
+        # validação do pedido já o recusa; esta restrição CHECK (verificada
+        # pelo PostgreSQL em cada escrita) garante-o também para qualquer
+        # outro caminho, como a importação do banco.
+        CheckConstraint("valor <> 0", name="ck_movimentos_valor_nao_zero"),
+        # A origem é sempre uma das três (ver a nota ORIGEM, no topo).
+        CheckConstraint(
+            "origem IN ('manual', 'banco', 'acerto')", name="ck_movimentos_origem"
+        ),
+        # Um movimento do banco tem sempre o identificador da transação
+        # (o do banco ou uma impressão digital, "fp:…"), que impede que uma
+        # sincronização o grave duas vezes; um manual nunca tem.
+        CheckConstraint(
+            "(origem = 'banco') = (id_transacao_externa IS NOT NULL)",
+            name="ck_movimentos_origem_banco_tem_id",
+        ),
+        # Um acerto pertence sempre a uma reconciliação, e só um acerto
+        # pertence a uma reconciliação.
+        CheckConstraint(
+            "(origem = 'acerto') = (reconciliacao_id IS NOT NULL)",
+            name="ck_movimentos_acerto_tem_reconciliacao",
+        ),
         Index(
             "ix_movimentos_conta_id_data_created_at_id",
             "conta_id",
@@ -150,9 +187,19 @@ class Movimento(Base):
     # "filha" deixa de fazer sentido sem a "pai" e deve desaparecer com
     # ela; aqui é o oposto — um movimento nunca deve desaparecer por causa
     # de uma categoria que se apagou.
+    #
+    # VERIFICADA NO FIM DA TRANSAÇÃO (deferrable=True, initially="DEFERRED"):
+    # por omissão, o PostgreSQL verifica esta chave logo a cada passo. Ao
+    # apagar um UTILIZADOR, a base de dados apaga em cascata as suas
+    # categorias e as suas contas (e, com elas, os movimentos) — mas, a
+    # meio dessa cascata, as categorias podem sair antes dos movimentos, e
+    # uma verificação imediata recusaria o apagamento. Adiada para o fim da
+    # transação (o commit), a verificação já encontra os movimentos
+    # apagados. A proteção mantém-se: apagar uma categoria que ainda tenha
+    # movimentos continua a ser recusado, só que no commit.
     categoria_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("categorias.id"),
+        ForeignKey("categorias.id", deferrable=True, initially="DEFERRED"),
         nullable=False,
         index=True,
     )
@@ -174,6 +221,28 @@ class Movimento(Base):
     # número de referência podia, em teoria, repetir-se noutra conta ou
     # noutro banco.
     id_transacao_externa: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # De onde veio o movimento: "manual", "banco" ou "acerto" (ver a nota
+    # ORIGEM, no topo do ficheiro). "manual" por omissão, o caso de um
+    # movimento criado pelo utilizador.
+    origem: Mapped[str] = mapped_column(String(6), nullable=False, default="manual")
+
+    # O vínculo que importou este movimento (só para origem "banco").
+    # ondelete="SET NULL": quando o vínculo é apagado (ao desvincular),
+    # o movimento fica, só deixa de apontar para ele.
+    vinculo_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("vinculos.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    # A reconciliação de que este movimento é o ACERTO (só para origem
+    # "acerto"). unique=True: cada reconciliação tem no máximo um acerto.
+    # ondelete="CASCADE": apagar a reconciliação apaga o seu acerto.
+    reconciliacao_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("reconciliacoes.id", ondelete="CASCADE"),
+        nullable=True,
+        unique=True,
+    )
 
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(

@@ -31,7 +31,7 @@ nome inválidos, nome repetido).
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -41,6 +41,7 @@ from app.models.conta import Conta
 from app.models.conta_bancaria import ContaBancaria
 from app.models.autorizacao import Autorizacao
 from app.models.user import User
+from app.models.vinculo import Vinculo
 from app.services import importacao_movimentos
 from app.services.enable_banking import dias_de_validade, validade_do_consentimento
 from app.services.contas_bancarias import (
@@ -61,6 +62,11 @@ CONTA_VALIDA = {
     "saldo_ancora": "1000.00",
 }
 
+# O fim do prazo das sessões fictícias: daqui a 90 dias, calculado a cada
+# execução. Uma data fixa ("2027-04-01") faria estes testes falhar sozinhos
+# no dia em que passasse, porque a autorização passaria a "terminada".
+_VALIDO_ATE = (datetime.now(timezone.utc) + timedelta(days=90)).replace(microsecond=0).isoformat()
+
 
 async def _criar_conta_bancaria(db_session, email: str, conta_id: str | None) -> str:
     """
@@ -76,20 +82,34 @@ async def _criar_conta_bancaria(db_session, email: str, conta_id: str | None) ->
         session_id=str(uuid.uuid4()),
         banco="Banco Teste",
         pais="PT",
-        valido_ate=datetime.now(timezone.utc),
+        # Um prazo futuro: a autorização está ativa.
+        valido_ate=datetime.now(timezone.utc) + timedelta(days=90),
     )
     db_session.add(autorizacao)
     await db_session.flush()
-    conta_bancaria = ContaBancaria(
-        autorizacao_id=autorizacao.id,
-        uid=str(uuid.uuid4()),
-        moeda="EUR",
-        conta_id=uuid.UUID(conta_id) if conta_id else None,
-    )
+    conta_bancaria = ContaBancaria(autorizacao_id=autorizacao.id, uid=str(uuid.uuid4()), moeda="EUR")
     db_session.add(conta_bancaria)
+    await db_session.flush()
+    if conta_id:
+        # O vínculo: o facto de esta conta bancária alimentar a Conta.
+        db_session.add(
+            Vinculo(
+                user_id=utilizador.id,
+                conta_id=uuid.UUID(conta_id),
+                conta_bancaria_id=conta_bancaria.id,
+                data_corte=date(2025, 12, 31),
+            )
+        )
     await db_session.commit()
     await db_session.refresh(conta_bancaria)
     return str(conta_bancaria.id)
+
+
+async def _conta_alimentada(db_session, conta_bancaria_id) -> uuid.UUID | None:
+    """A Conta que esta conta bancária alimenta (pelo vínculo), ou None se estiver livre."""
+    return await db_session.scalar(
+        select(Vinculo.conta_id).where(Vinculo.conta_bancaria_id == uuid.UUID(str(conta_bancaria_id)))
+    )
 
 
 @pytest.mark.asyncio
@@ -102,9 +122,10 @@ async def test_desvincular_remove_o_vinculo_mas_mantem_conta_e_movimentos(
     resposta = await cliente_autenticado.delete(f"/open-banking/contas-bancarias/{conta_bancaria_id}/vinculo")
     assert resposta.status_code == 204
 
-    # A ContaBancaria desapareceu...
-    ainda_existe = await db_session.get(ContaBancaria, uuid.UUID(conta_bancaria_id))
-    assert ainda_existe is None
+    # O vínculo desapareceu, mas a conta bancária fica, livre, na mesma
+    # autorização (pode voltar a ser vinculada sem autorizar outra vez)...
+    assert await db_session.get(ContaBancaria, uuid.UUID(conta_bancaria_id)) is not None
+    assert await _conta_alimentada(db_session, conta_bancaria_id) is None
 
     # ...mas a Conta continua lá, sem qualquer alteração.
     resposta_conta = await cliente_autenticado.get(f"/contas/{conta_id}")
@@ -187,7 +208,8 @@ async def test_listar_contas_bancarias_devolve_as_da_autorizacao(cliente_autenti
         session_id=str(uuid.uuid4()),
         banco="Banco Teste",
         pais="PT",
-        valido_ate=datetime.now(timezone.utc),
+        # Um prazo futuro: a autorização está ativa.
+        valido_ate=datetime.now(timezone.utc) + timedelta(days=90),
     )
     db_session.add(autorizacao)
     await db_session.flush()
@@ -263,7 +285,8 @@ async def test_listar_contas_bancarias_de_autorizacao_de_outro_utilizador_devolv
         session_id=str(uuid.uuid4()),
         banco="Banco Teste",
         pais="PT",
-        valido_ate=datetime.now(timezone.utc),
+        # Um prazo futuro: a autorização está ativa.
+        valido_ate=datetime.now(timezone.utc) + timedelta(days=90),
     )
     db_session.add(autorizacao)
     await db_session.commit()
@@ -458,7 +481,7 @@ def _sessao(
     return {
         "session_id": str(uuid.uuid4()),
         "aspsp": {"name": "Caixa Geral de Depósitos", "country": "PT"},
-        "access": {"valid_until": "2027-04-01T10:00:00+00:00"},
+        "access": {"valid_until": _VALIDO_ATE},
         "accounts": [
             {
                 "uid": str(uuid.uuid4()),
@@ -475,9 +498,9 @@ def _sessao(
 @pytest.mark.asyncio
 async def test_autorizacao_nova_a_conta_ja_vinculada_renova_o_vinculo(cliente_autenticado, db_session):
     """
-    A conta bancária já alimenta uma Conta, com vínculo (ex.: o prazo da
-    autorização está a acabar e o utilizador voltou a autorizar): o
-    vínculo passa para a conta bancária nova, sem o utilizador fazer nada.
+    A conta bancária já alimenta uma Conta, com vínculo, e o utilizador
+    RENOVA essa autorização (o prazo está a acabar): o vínculo passa para a
+    conta bancária nova, sem o utilizador fazer nada.
     """
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
     antiga_id = await _criar_conta_bancaria(db_session, "teste@example.com", conta_id)
@@ -485,20 +508,62 @@ async def test_autorizacao_nova_a_conta_ja_vinculada_renova_o_vinculo(cliente_au
     conta.identificacao_bancaria = "hash-cgd"
     await db_session.commit()
     utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+    autorizacao_antiga_id = (await db_session.get(ContaBancaria, uuid.UUID(antiga_id))).autorizacao_id
 
-    autorizacao = await gravar_autorizacao(db_session, utilizador.id, _sessao("hash-cgd"))
+    autorizacao = await gravar_autorizacao(
+        db_session, utilizador.id, _sessao("hash-cgd"), renova_id=autorizacao_antiga_id
+    )
 
     nova = await db_session.scalar(select(ContaBancaria).where(ContaBancaria.autorizacao_id == autorizacao.id))
-    assert nova.conta_id == uuid.UUID(conta_id)
-    # A linha antiga da conta bancária desapareceu: nunca há duas contas
-    # bancárias vinculadas à mesma Conta.
-    assert await db_session.get(ContaBancaria, uuid.UUID(antiga_id)) is None
+    assert await _conta_alimentada(db_session, nova.id) == uuid.UUID(conta_id)
+    # O vínculo passou para a linha nova; a antiga fica, livre: nunca há
+    # duas contas bancárias vinculadas à mesma Conta.
+    assert await db_session.get(ContaBancaria, uuid.UUID(antiga_id)) is not None
+    assert await _conta_alimentada(db_session, antiga_id) is None
 
     resposta = await cliente_autenticado.get(f"/open-banking/autorizacoes/{autorizacao.id}/contas-bancarias")
     [conta_devolvida] = resposta.json()
     assert conta_devolvida["conta_id"] == conta_id
     assert conta_devolvida["conta_nome"] == CONTA_VALIDA["nome"]
-    assert conta_devolvida["valido_ate"].startswith("2027-04-01")
+    assert conta_devolvida["valido_ate"].startswith(_VALIDO_ATE[:10])
+
+
+@pytest.mark.asyncio
+async def test_mesma_conta_real_vinculada_por_outra_autorizacao_ativa_nao_se_move(
+    cliente_autenticado, db_session
+):
+    """
+    A mesma conta real já alimenta uma Conta através de uma autorização
+    AINDA ATIVA, e chega por uma autorização nova que NÃO a renova (por
+    exemplo, o mesmo banco autorizado com as credenciais de outra pessoa):
+    o vínculo fica onde está, e a linha nova aparece "Vinculada noutra
+    autorização" — não se pode vincular a outra Conta (regra A3).
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    antiga_id = await _criar_conta_bancaria(db_session, "teste@example.com", conta_id)
+    (await db_session.get(Conta, uuid.UUID(conta_id))).identificacao_bancaria = "hash-cgd"
+    await db_session.commit()
+    vinculo = await db_session.scalar(
+        select(Vinculo).where(Vinculo.conta_bancaria_id == uuid.UUID(antiga_id))
+    )
+    vinculo.identificacao = "hash-cgd"
+    await db_session.commit()
+    utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
+
+    autorizacao = await gravar_autorizacao(db_session, utilizador.id, _sessao("hash-cgd"))
+
+    nova = await db_session.scalar(select(ContaBancaria).where(ContaBancaria.autorizacao_id == autorizacao.id))
+    assert await _conta_alimentada(db_session, antiga_id) == uuid.UUID(conta_id)
+    assert await _conta_alimentada(db_session, nova.id) is None
+    resposta = await cliente_autenticado.get(
+        f"/open-banking/autorizacoes/{autorizacao.id}/contas-bancarias"
+    )
+    [devolvida] = resposta.json()
+    assert devolvida["etiqueta"] == "vinculada_noutra"
+    tentativa = await cliente_autenticado.post(
+        f"/open-banking/contas-bancarias/{nova.id}/criar-conta", params={"nome": "Outra"}
+    )
+    assert tentativa.status_code == 409
 
 
 @pytest.mark.asyncio
@@ -555,7 +620,7 @@ async def test_conta_bancaria_sem_hash_nem_iban_nao_corresponde_a_conta_manual(
     autorizacao = await gravar_autorizacao(db_session, utilizador.id, _sessao(None, iban=None))
 
     nova = await db_session.scalar(select(ContaBancaria).where(ContaBancaria.autorizacao_id == autorizacao.id))
-    assert nova.conta_id is None
+    assert await _conta_alimentada(db_session, nova.id) is None
     assert await conta_antiga_de(db_session, utilizador.id, nova) is None
 
 
@@ -587,8 +652,9 @@ async def test_a_mesma_conta_bancaria_noutro_utilizador_nao_se_cruza(cliente_aut
     nova_b = await db_session.scalar(select(ContaBancaria).where(ContaBancaria.autorizacao_id == lig_b.id))
     # O vínculo de A continua intacto e a de B não herdou a Conta de A.
     antiga = await db_session.get(ContaBancaria, uuid.UUID(antiga_id))
-    assert antiga is not None and antiga.conta_id == uuid.UUID(vinculada_id)
-    assert nova_a.conta_id is None
+    assert antiga is not None
+    assert await _conta_alimentada(db_session, antiga.id) == uuid.UUID(vinculada_id)
+    assert await _conta_alimentada(db_session, nova_a.id) is None
     # B não vê a conta desvinculada de A como sua.
     assert await conta_antiga_de(db_session, utilizador_b.id, nova_b) is None
 
@@ -608,7 +674,7 @@ async def test_renovacao_so_na_mesma_moeda(cliente_autenticado, db_session):
     autorizacao = await gravar_autorizacao(db_session, utilizador.id, _sessao("hash-x", moeda="USD"))
 
     nova = await db_session.scalar(select(ContaBancaria).where(ContaBancaria.autorizacao_id == autorizacao.id))
-    assert nova.conta_id is None
+    assert await _conta_alimentada(db_session, nova.id) is None
     assert await db_session.get(ContaBancaria, uuid.UUID(antiga_id)) is not None
 
 

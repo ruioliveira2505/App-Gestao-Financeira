@@ -20,7 +20,8 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String
+from sqlalchemy import CheckConstraint, Date, DateTime, ForeignKey, Index, Numeric, String
+from sqlalchemy.orm import validates
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -41,6 +42,14 @@ class Conta(Base):
     # alimentar as duas, duplicando os movimentos). unique=True numa
     # coluna que aceita NULL não impede vários NULL (as contas manuais): o
     # PostgreSQL trata cada NULL como diferente de qualquer outro.
+    #
+    # O NOME de uma conta também é único por utilizador, comparado sem
+    # acentos nem maiúsculas: o índice único é sobre "nome_normalizado"
+    # (ver essa coluna, abaixo), não sobre o nome tal como foi escrito.
+    #
+    # O formato do código de moeda (três letras maiúsculas, ex.: "EUR") é
+    # garantido pela base de dados (restrição CHECK; "~" é o operador do
+    # PostgreSQL que testa uma expressão regular, um padrão de texto).
     __table_args__ = (
         Index(
             "ux_contas_user_id_identificacao_bancaria",
@@ -48,6 +57,8 @@ class Conta(Base):
             "identificacao_bancaria",
             unique=True,
         ),
+        Index("ux_contas_user_id_nome_normalizado", "user_id", "nome_normalizado", unique=True),
+        CheckConstraint("moeda ~ '^[A-Z]{3}$'", name="ck_contas_moeda_formato"),
     )
 
     # Chave primária. UUID (aleatório e imprevisível), não um número a
@@ -60,21 +71,30 @@ class Conta(Base):
     # Chave estrangeira para o dono da conta. A base de dados recusa uma
     # conta associada a um utilizador inexistente. index=True porque toda e
     # qualquer consulta a contas filtra por este campo ("as contas deste
-    # utilizador"). SEM "ondelete" (ao contrário de "categoria_id", em
-    # movimento.py, ou "parent_id", em categoria.py, que usam CASCADE): não
-    # existe, por agora, nenhum endpoint que apague um User — quando
-    # existir ("eliminar conta de utilizador"), esta relação precisa de
-    # uma decisão explícita (CASCADE para apagar tudo o que é dele, ou
-    # RESTRICT para obrigar a confirmar/exportar primeiro), não o "sem
-    # política nenhuma" que isto é hoje.
+    # utilizador").
+    #
+    # ondelete="CASCADE": apagar um utilizador apaga as suas contas (e, com
+    # elas, os movimentos), ao nível da própria base de dados — o direito
+    # ao apagamento do RGPD (o regulamento europeu de proteção de dados):
+    # apagar a conta de um utilizador apaga todos os seus dados.
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # Nome dado pelo utilizador ("Conta à ordem BPI", "Revolut", "Dinheiro").
     # Limite de comprimento para evitar valores absurdos; a exigência de não
     # ser vazio é feita no schema da API (Pydantic), não aqui.
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    # O nome na forma usada para COMPARAR: sem espaços nas pontas, sem
+    # acentos e sem distinção entre maiúsculas e minúsculas ("Poupança" e
+    # " poupanca" dão o mesmo valor). Preenchido sozinho sempre que o nome
+    # muda (ver _normalizar_o_nome, abaixo), e nunca escrito à mão. É sobre
+    # ele que está o índice único: dois pedidos ao mesmo tempo a criar
+    # contas com o "mesmo" nome nunca passam os dois — a base de dados
+    # recusa o segundo, mesmo que a verificação no código tenha deixado
+    # passar ambos no mesmo instante.
+    nome_normalizado: Mapped[str] = mapped_column(String(120), nullable=False)
 
     # Banco/instituição. Texto livre (o utilizador escolhe de sugestões mas
     # pode escrever outro valor), opcional — "Dinheiro" não tem banco.
@@ -85,9 +105,10 @@ class Conta(Base):
     tipo: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # Código ISO da moeda ("EUR", "USD"...). Guardado como texto de 3
-    # letras; o conjunto de moedas permitidas é fechado, mas essa
-    # restrição — e o símbolo de cada moeda — vive na aplicação, não na
-    # base de dados. "EUR" por omissão.
+    # letras maiúsculas (o formato é garantido pela base de dados, ver
+    # __table_args__); o conjunto de moedas permitidas é fechado, mas essa
+    # lista — e o símbolo de cada moeda — vive na aplicação. "EUR" por
+    # omissão.
     moeda: Mapped[str] = mapped_column(String(3), nullable=False, default="EUR")
 
     # A data da âncora: o dia para o qual o saldo_ancora é afirmado. A
@@ -127,3 +148,19 @@ class Conta(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    @validates("nome")
+    def _normalizar_o_nome(self, _chave: str, nome: str) -> str:
+        """
+        Sempre que o nome é atribuído (ao criar ou ao editar a conta),
+        preenche também nome_normalizado. "@validates" é um mecanismo do
+        SQLAlchemy: chama esta função em cada atribuição a conta.nome, seja
+        qual for o código que a faça, por isso as duas colunas nunca
+        divergem. A função de normalização é importada aqui dentro, e não no
+        topo do ficheiro, para o modelo não depender da camada de serviços
+        ao ser carregado.
+        """
+        from app.services.nomes import normalizar_nome
+
+        self.nome_normalizado = normalizar_nome(nome)
+        return nome

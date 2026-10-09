@@ -4,8 +4,8 @@ CONFIGURAÇÃO DA APLICAÇÃO
 
 Este ficheiro é responsável por obter, a partir do exterior do código, os
 valores que variam consoante o computador ou servidor onde a aplicação está
-a correr — o endereço de acesso à base de dados e o atributo "Secure" do
-cookie de sessão.
+a correr — por exemplo, o endereço de acesso à base de dados e o atributo
+"Secure" do cookie de sessão.
 
 Esses valores residem num ficheiro à parte, designado ".env" (não faz parte
 do código-fonte partilhado — cada máquina possui o seu próprio .env, com os
@@ -81,6 +81,14 @@ class Settings(BaseSettings):
     # (esse continua a ser um URL desta API, nunca do frontend — é o
     # painel deles que precisa de o conhecer antecipadamente).
     frontend_url: str = "http://localhost:5173"
+
+    # Se o servidor corre sozinho a rotina de manutenção (apagar sessões e
+    # pedidos de autorização expirados, atualizar as taxas de câmbio): ao
+    # arrancar e depois uma vez por dia (ver app/services/manutencao.py).
+    # True por omissão. Desliga-se (MANUTENCAO_AUTOMATICA=false no .env)
+    # quando a rotina passar a ser agendada por fora do servidor, por
+    # exemplo por um "cron" (o agendador de tarefas do Linux).
+    manutencao_automatica: bool = True
 
     # Indica à biblioteca onde procurar os valores: no ficheiro ".env",
     # localizado na mesma pasta em que a aplicação é executada.

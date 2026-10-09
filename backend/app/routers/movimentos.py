@@ -92,6 +92,14 @@ mesmo método (não tem: aquele é GET/PATCH/DELETE, estes são POST).
 Atómicos: confirma-se sempre que o LOTE INTEIRO é válido antes de mudar
 alguma coisa — nunca uma eliminação ou recategorização parcial.
 
+O ACERTO É O ÚLTIMO DO DIA: um acerto (o movimento que uma reconciliação
+cria pela diferença entre o saldo afirmado no fim de um dia e o
+calculado) vem sempre DEPOIS dos outros movimentos do mesmo dia — na lista
+e no saldo remanescente —, seja qual for a hora a que foi criado. Por
+isso a ordem tem uma chave a mais, logo a seguir à data ("é acerto"); o
+cursor continua com os mesmos três campos, e essa chave descobre-se a
+partir do movimento do cursor.
+
 AS REGRAS DE NEGÓCIO NÃO VIVEM AQUI, mas no serviço de movimentos
 (app/services/movimentos.py): a data nunca antes da data inicial da
 conta, a categoria coerente com o sinal do valor, e nada se cria, move ou
@@ -107,7 +115,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, status
 
-from sqlalchemy import func, or_, select, tuple_
+from sqlalchemy import case, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import obter_utilizador_atual
@@ -162,6 +170,14 @@ def _para_saida(movimento: Movimento, saldo_apos: Decimal | None = None) -> Movi
     )
 
 
+# 1 para um acerto (o movimento que uma reconciliação cria pela diferença
+# entre o saldo afirmado e o calculado), 0 para os outros. Entra na ordem
+# logo a seguir à data: dentro do mesmo dia, o acerto vem sempre DEPOIS dos
+# outros movimentos (a reconciliação afirma o saldo no FIM do dia), seja
+# qual for a hora a que foi criado.
+_E_ACERTO = case((Movimento.origem == "acerto", 1), else_=0)
+
+
 def _saldo_apos_sq(utilizador: User):
     """
     Subconsulta que calcula, para CADA movimento de CADA conta do
@@ -189,6 +205,7 @@ def _saldo_apos_sq(utilizador: User):
                     partition_by=Movimento.conta_id,
                     order_by=(
                         Movimento.data.asc(),
+                        _E_ACERTO.asc(),
                         Movimento.created_at.asc(),
                         Movimento.id.asc(),
                     ),
@@ -317,13 +334,19 @@ async def listar_movimentos(
     # "created_at" ao ponto do segundo, e só o "id" continua a distingui-
     # -los sem ambiguidade.
     if antes_data is not None and antes_criado_em is not None and antes_id is not None:
+        # A ordem tem quatro chaves (data, "é acerto", criado em, id), mas o
+        # cursor só traz três: a segunda descobre-se aqui, a partir do
+        # movimento do cursor (antes_id), para a API do cursor não mudar.
+        cursor_e_acerto = 1 if (
+            await db.scalar(select(Movimento.origem).where(Movimento.id == antes_id))
+        ) == "acerto" else 0
         query = query.where(
-            tuple_(Movimento.data, Movimento.created_at, Movimento.id)
-            < tuple_(antes_data, antes_criado_em, antes_id)
+            tuple_(Movimento.data, _E_ACERTO, Movimento.created_at, Movimento.id)
+            < tuple_(antes_data, cursor_e_acerto, antes_criado_em, antes_id)
         )
 
     query = query.order_by(
-        Movimento.data.desc(), Movimento.created_at.desc(), Movimento.id.desc()
+        Movimento.data.desc(), _E_ACERTO.desc(), Movimento.created_at.desc(), Movimento.id.desc()
     ).limit(limite)
 
     resultado = await db.execute(query)

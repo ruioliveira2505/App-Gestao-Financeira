@@ -14,9 +14,10 @@ já rejeita qualquer sessão cujo expires_at tenha passado, mesmo que a
 linha continue na tabela. É só falta de limpeza: sem isto, a tabela cresce
 sem qualquer travão, para sempre.
 
-apagar_sessoes_expiradas é chamada por um script de linha de comandos
-(scripts/limpar_sessoes.py), pensado para correr periodicamente (ex.:
-uma vez por dia, via cron) — à maneira do comando "clearsessions" do
+apagar_sessoes_expiradas é chamada pela rotina de manutenção
+(app/services/manutencao.py), que o servidor corre sozinho ao arrancar e
+depois uma vez por dia, e que também se pode correr à mão
+(scripts/manutencao.py) — à maneira do comando "clearsessions" do
 Django, o padrão comum para sessões guardadas numa base de dados
 relacional (ao contrário de, por exemplo, o Redis, onde a própria base de
 dados apaga sozinha uma chave ao fim de um TTL, sem precisar de nenhum
@@ -36,12 +37,12 @@ async def apagar_sessoes_expiradas(db: AsyncSession) -> int:
     Apaga todas as sessões cujo expires_at já passou (de qualquer
     utilizador — esta função não filtra por um em particular). Devolve
     quantas linhas foram apagadas, só para quem chama poder relatar o
-    resultado (ver scripts/limpar_sessoes.py).
+    resultado (ver app/services/manutencao.py).
     """
     resultado = await db.execute(
         delete(UserSession).where(UserSession.expires_at < datetime.now(timezone.utc))
     )
-    # Sem commit: quem chama (scripts/limpar_sessoes.py) é que o faz, no
+    # Sem commit: quem chama (a rotina de manutenção) é que o faz, no
     # fim. Um serviço nunca torna as alterações definitivas sozinho, para
     # poder ser combinado com outras operações na mesma transação.
     return resultado.rowcount

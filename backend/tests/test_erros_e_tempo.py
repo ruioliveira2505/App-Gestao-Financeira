@@ -91,6 +91,30 @@ async def test_tradutor_da_a_cada_erro_o_seu_codigo_e_a_mensagem(classe, codigo)
 
 
 @pytest.mark.asyncio
+async def test_recusa_da_base_de_dados_vira_um_conflito_sem_pormenores_tecnicos():
+    """
+    Quando a base de dados recusa uma gravação (IntegrityError: por
+    exemplo, dois pedidos ao mesmo tempo a gravar a mesma coisa), a
+    resposta é 409 com uma mensagem para o utilizador, e não um 500; o
+    pormenor técnico (nomes de tabelas e restrições) nunca vai na resposta.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    aplicacao = FastAPI()
+    registar_tradutor(aplicacao)
+
+    @aplicacao.get("/x")
+    async def lancar():
+        raise IntegrityError("INSERT ...", {}, Exception('duplicate key "uq_vinculos_conta_id"'))
+
+    async with AsyncClient(transport=ASGITransport(app=aplicacao), base_url="https://t") as cliente:
+        resposta = await cliente.get("/x")
+
+    assert resposta.status_code == 409
+    assert resposta.json() == {"detail": "Os dados mudaram entretanto. Atualiza a página e tenta outra vez."}
+
+
+@pytest.mark.asyncio
 async def test_erro_de_dominio_numa_rota_real(cliente_autenticado):
     # Uma conta que não existe: o serviço lança NaoEncontrado, e a API
     # responde 404 com a mensagem no campo "detail".

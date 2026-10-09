@@ -48,7 +48,7 @@ import httpx
 import jwt
 
 from app.core.config import settings
-from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento
+from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento, InexistenteNoBanco
 
 # O registo (log) deste ficheiro: mensagens para quem opera o servidor, não
 # para o utilizador. logging.getLogger(__name__) cria um registo com o nome
@@ -59,8 +59,22 @@ _registo = logging.getLogger(__name__)
 # Os códigos de erro da Enable Banking (campo "error" do corpo de uma
 # resposta de erro) que querem dizer "esta autorização já não é válida".
 # EXPIRED_SESSION foi visto ao vivo: chega quando a sessão expirou ou foi
-# revogada no banco antes do prazo previsto.
-_ERROS_AUTORIZACAO_TERMINADA = {"EXPIRED_SESSION", "REVOKED_SESSION", "CLOSED_SESSION"}
+# revogada no banco antes do prazo previsto. Uma sessão que já não existe
+# (SESSION_NOT_FOUND) é o mesmo caso: a autorização inteira terminou.
+_ERROS_AUTORIZACAO_TERMINADA = {
+    "EXPIRED_SESSION",
+    "REVOKED_SESSION",
+    "CLOSED_SESSION",
+    "SESSION_NOT_FOUND",
+}
+
+# O código de erro que quer dizer "esta conta já não existe no banco" (deixou
+# de ser partilhada, ou foi fechada). Só este, e com o código exato: a
+# consequência é permanente (a conta bancária fica indisponível, e a Conta
+# que ela alimentava fica suspensa). Um 404 ("Not Found") sem este código
+# (um endereço errado, um intermediário de rede com problemas) é tratado
+# como uma falha passageira, para nunca suspender uma conta por engano.
+_ERRO_CONTA_INEXISTENTE = "ACCOUNT_NOT_FOUND"
 
 # URL base da API da Enable Banking em produção (existe também um
 # "api.tilisy.com", mas está marcado como obsoleto na documentação
@@ -136,7 +150,9 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
     return resposta
 
 
-def _erro_da_resposta(resposta: httpx.Response) -> AutorizacaoTerminadaNoBanco | BancoIndisponivel:
+def _erro_da_resposta(
+    resposta: httpx.Response,
+) -> AutorizacaoTerminadaNoBanco | InexistenteNoBanco | BancoIndisponivel:
     """
     O erro de domínio que corresponde a uma resposta de erro da Enable
     Banking.
@@ -152,6 +168,10 @@ def _erro_da_resposta(resposta: httpx.Response) -> AutorizacaoTerminadaNoBanco |
       - um código de "autorização terminada" (ver
         _ERROS_AUTORIZACAO_TERMINADA, no topo) → AutorizacaoTerminadaNoBanco
         (409): a autorização já não é válida e é preciso autorizar outra vez;
+      - um código de "já não existe" (ver _ERROS_INEXISTENTE, no topo), ou o
+        código HTTP 404 → InexistenteNoBanco (502, se ninguém o tratar):
+        uma conta que deixou de ser partilhada, ou uma sessão que já não
+        existe;
       - o código HTTP 429 ("Too Many Requests", demasiados pedidos) → o
         limite diário de acessos que a PSD2 permite a uma conta foi
         atingido. É dito ao utilizador, para não tentar repetidamente e
@@ -194,6 +214,8 @@ def _erro_da_resposta(resposta: httpx.Response) -> AutorizacaoTerminadaNoBanco |
         return AutorizacaoTerminadaNoBanco(
             "A autorização deste banco já terminou. É preciso autorizá-lo outra vez."
         )
+    if codigo == _ERRO_CONTA_INEXISTENTE:
+        return InexistenteNoBanco("O banco já não tem esta conta.")
     if resposta.status_code == 429:
         return BancoIndisponivel(
             "Atingiste o limite de acessos que o banco permite por dia. Tenta outra vez amanhã."
@@ -455,3 +477,20 @@ async def obter_movimentos(
     resposta = await _pedido("GET", f"/accounts/{uid}/transactions", params=parametros)
 
     return resposta.json()
+
+
+async def revogar_sessao(session_id: str) -> None:
+    """
+    Pede à Enable Banking para terminar uma sessão (uma autorização) — DELETE
+    /sessions/{session_id}. A partir daí, a aplicação deixa de poder ler as
+    contas dessa autorização.
+
+    Se a sessão já não existir, ou já tiver terminado no banco, o objetivo
+    está cumprido: não é um erro. Qualquer outra falha (rede, serviço em
+    baixo) é lançada, para quem chama decidir o que fazer (na aplicação, a
+    autorização continua ativa e o utilizador pode tentar outra vez).
+    """
+    try:
+        await _pedido("DELETE", f"/sessions/{session_id}")
+    except (InexistenteNoBanco, AutorizacaoTerminadaNoBanco):
+        return

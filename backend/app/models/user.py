@@ -11,7 +11,7 @@ para converter entre linhas da base de dados e objectos Python.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import CheckConstraint, DateTime, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -23,6 +23,14 @@ class User(Base):
     """Representa um utilizador registado na aplicação."""
 
     __tablename__ = "users"  # nome real da tabela na base de dados
+
+    # O formato do código da moeda principal (três letras maiúsculas, ex.:
+    # "EUR") é garantido pela base de dados: uma restrição CHECK, que o
+    # PostgreSQL verifica em cada escrita ("~" testa uma expressão regular,
+    # um padrão de texto).
+    __table_args__ = (
+        CheckConstraint("moeda_principal ~ '^[A-Z]{3}$'", name="ck_users_moeda_principal_formato"),
+    )
 
     # Mapped[uuid.UUID] constitui a anotação de tipo em Python: este
     # atributo comporta-se, no código, como um valor do tipo uuid.UUID.

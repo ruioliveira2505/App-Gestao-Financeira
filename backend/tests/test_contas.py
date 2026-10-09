@@ -8,7 +8,7 @@ utilizador (um utilizador nunca vê contas de outro).
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -20,6 +20,7 @@ from app.models.conta_bancaria import ContaBancaria
 from app.models.autorizacao import Autorizacao
 from app.models.taxa_cambio import TaxaCambio
 from app.models.user import User
+from app.models.vinculo import Vinculo
 
 # Corpo mínimo válido para criar uma conta, reutilizado e ajustado nos
 # testes.
@@ -73,12 +74,16 @@ async def _vincular_conta(db_session, conta_id: str, valido_ate: datetime | None
     )
     db_session.add(autorizacao)
     await db_session.flush()
+    conta_bancaria = ContaBancaria(autorizacao_id=autorizacao.id, uid=str(uuid.uuid4()), moeda="EUR")
+    db_session.add(conta_bancaria)
+    await db_session.flush()
+    # O vínculo: o facto de esta conta bancária alimentar a Conta.
     db_session.add(
-        ContaBancaria(
-            autorizacao_id=autorizacao.id,
-            uid=str(uuid.uuid4()),
-            moeda="EUR",
+        Vinculo(
+            user_id=utilizador.id,
             conta_id=uuid.UUID(conta_id),
+            conta_bancaria_id=conta_bancaria.id,
+            data_corte=date(2025, 12, 31),
         )
     )
     await db_session.commit()

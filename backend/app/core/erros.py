@@ -23,6 +23,8 @@ formato que a HTTPException já produzia. O frontend não nota diferença.
 CADA CLASSE DIZ QUE CÓDIGO HTTP LHE CORRESPONDE (estado_http). Os
 códigos usados:
   - 400 Bad Request: o pedido viola uma regra de negócio;
+  - 403 Forbidden: não é permitido a quem o pediu (ex.: falta confirmar
+    com a password certa);
   - 404 Not Found: não existe, ou não é deste utilizador (os dois casos
     juntam-se de propósito, para a resposta não revelar qual se aplica);
   - 409 Conflict: o pedido choca com o estado atual (um nome repetido,
@@ -33,8 +35,14 @@ códigos usados:
     tempo.
 """
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
+
+# O registo (log) deste ficheiro: mensagens para quem opera o servidor.
+_registo = logging.getLogger(__name__)
 
 
 class ErroDeDominio(Exception):
@@ -54,6 +62,16 @@ class RegraViolada(ErroDeDominio):
     """O pedido viola uma regra de negócio (ex.: mudar a moeda de uma conta com movimentos)."""
 
     estado_http = 400
+
+
+class Proibido(ErroDeDominio):
+    """
+    O pedido não é permitido a quem o fez (ex.: apagar a conta com uma
+    password errada). 403 Forbidden: a sessão é válida, mas falta a
+    confirmação.
+    """
+
+    estado_http = 403
 
 
 class NaoEncontrado(ErroDeDominio):
@@ -90,6 +108,18 @@ class BancoIndisponivel(ErroDeDominio):
     estado_http = 502
 
 
+class InexistenteNoBanco(BancoIndisponivel):
+    """
+    O banco (ou a Enable Banking) respondeu que aquilo que se pediu já não
+    existe: uma conta bancária que deixou de ser partilhada ou foi fechada,
+    ou uma sessão que já não existe. É um caso particular de
+    BancoIndisponivel (chega ao utilizador como 502, se ninguém o tratar),
+    mas quem chama pode apanhá-lo para reagir: marcar a conta bancária como
+    indisponível, ou dar como feita a revogação de uma sessão que já não
+    existia.
+    """
+
+
 class BancoLento(ErroDeDominio):
     """O banco (ou a Enable Banking) não respondeu dentro do tempo limite."""
 
@@ -108,3 +138,20 @@ def registar_tradutor(app: FastAPI) -> None:
     @app.exception_handler(ErroDeDominio)
     async def traduzir(_pedido: Request, erro: ErroDeDominio) -> JSONResponse:
         return JSONResponse(status_code=erro.estado_http, content={"detail": erro.mensagem})
+
+    # UMA REGRA DA BASE DE DADOS RECUSOU A GRAVAÇÃO (IntegrityError: um
+    # índice único, uma chave estrangeira, uma restrição CHECK). Os
+    # serviços verificam as regras antes de gravar; quando, mesmo assim, a
+    # base de dados recusa, quase sempre é porque OUTRO pedido, ao mesmo
+    # tempo, gravou algo que choca com este (dois pedidos a vincular a
+    # mesma conta bancária, por exemplo). A resposta é um 409 (conflito)
+    # com uma mensagem genérica, e não um 500 ("erro interno"): o
+    # utilizador pode atualizar e tentar outra vez. O pormenor técnico
+    # fica só no registo do servidor, nunca na resposta.
+    @app.exception_handler(IntegrityError)
+    async def traduzir_integridade(_pedido: Request, erro: IntegrityError) -> JSONResponse:
+        _registo.warning("A base de dados recusou uma gravação: %s", erro.orig)
+        return JSONResponse(
+            status_code=409,
+            content={"detail": "Os dados mudaram entretanto. Atualiza a página e tenta outra vez."},
+        )

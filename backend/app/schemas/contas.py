@@ -28,7 +28,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.moedas import MOEDA_OMISSAO, moeda_suportada
+from app.core.moedas import LIMITE_DE_VALOR, MOEDA_OMISSAO, moeda_suportada
 
 
 class _CamposDescritivos(BaseModel):
@@ -76,19 +76,52 @@ class ContaCriar(_CamposDescritivos):
     data_ancora: date
     # Aceita uma string ("1234.56"), um inteiro ou um número; o Pydantic
     # converte para Decimal. Pode ser negativo (ex.: um cartão de crédito).
-    saldo_ancora: Decimal
+    # Field(ge=..., le=...): o valor tem de caber na coluna da base de
+    # dados (Numeric(14, 2): até 12 algarismos antes da vírgula e 2 depois).
+    # Um valor maior é recusado aqui com 422, em vez de rebentar mais à
+    # frente com um erro da base de dados. As casas a mais não se recusam:
+    # o serviço arredonda o valor aos cêntimos.
+    saldo_ancora: Decimal = Field(ge=-LIMITE_DE_VALOR, le=LIMITE_DE_VALOR)
 
 
 class ContaEditar(_CamposDescritivos):
     """
     Dados recebidos no pedido de edição de uma conta (PATCH /contas/{id}).
 
-    Só os campos descritivos — a edição nunca mexe na âncora (data_ancora,
-    saldo_ancora); mudar a âncora depois de já existirem movimentos exige
-    pensar no que acontece a esses movimentos (continuam a contar? a
-    partir de quando?), por isso fica de fora deste endpoint até haver um
-    desenho próprio para esse caso.
+    Só os campos descritivos — a âncora (data_ancora, saldo_ancora) muda-se
+    num pedido próprio (PATCH /contas/{id}/ancora, ver AncoraEditar), com
+    as suas regras: só numa conta manual, nunca depois do primeiro
+    movimento nem da primeira reconciliação.
     """
+
+
+class AncoraEditar(BaseModel):
+    """
+    A âncora nova de uma conta (PATCH /contas/{id}/ancora, ou a sua
+    pré-visualização): a data e o saldo iniciais — o ponto a partir do qual
+    a aplicação acompanha a conta, e o saldo no início desse dia.
+    """
+
+    data_ancora: date
+    # Aceita uma string ("1234.56") ou um número; o Pydantic converte para
+    # Decimal. Pode ser negativo (ex.: um cartão de crédito).
+    # Field(ge=..., le=...): o valor tem de caber na coluna da base de
+    # dados (Numeric(14, 2): até 12 algarismos antes da vírgula e 2 depois).
+    # Um valor maior é recusado aqui com 422, em vez de rebentar mais à
+    # frente com um erro da base de dados. As casas a mais não se recusam:
+    # o serviço arredonda o valor aos cêntimos.
+    saldo_ancora: Decimal = Field(ge=-LIMITE_DE_VALOR, le=LIMITE_DE_VALOR)
+
+
+class AncoraSimuladaOut(BaseModel):
+    """
+    O efeito de mudar a âncora, sem gravar nada: o saldo atual que a conta
+    passaria a ter e, se houver reconciliações, o acerto que a primeira
+    passaria a ter (None se não houver nenhuma). Valores como texto.
+    """
+
+    saldo_atual: str
+    acerto_primeira_reconciliacao: str | None
 
 
 class VinculoOut(BaseModel):
@@ -110,6 +143,17 @@ class VinculoOut(BaseModel):
     # frontend usa-a para mostrar, na lista de contas, se a autorização
     # está ativa, prestes a terminar ou já terminada.
     valido_ate: datetime
+    # A autorização da conta bancária (para a renovar, por exemplo).
+    autorizacao_id: uuid.UUID
+    # O ESTADO da Conta, deduzido (nunca guardado): "vinculada" (sincroniza)
+    # ou "suspensa" (a autorização terminou, ou o banco deixou de partilhar
+    # a conta: continua bloqueada, mas não sincroniza).
+    estado: str
+    # Porque está suspensa: "expirada" (o prazo passou), "revogada" (na
+    # aplicação), "banco" (o banco disse que a autorização já não vale) ou
+    # "indisponivel" (o banco deixou de partilhar a conta). None se estiver
+    # vinculada.
+    motivo: str | None = None
 
 
 class ContaOut(BaseModel):

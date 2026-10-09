@@ -41,8 +41,8 @@ CADA GRUPO TEM O SEU PRÓPRIO "OUTROS": além do "Outros" de cada grupo
 normal (uma subcategoria comum, tão editável ou apagável como qualquer
 outra — serve só de destino óbvio para "sei a área, não quero detalhar
 mais"), há dois grupos especiais, "Outras Entradas" e "Outras Saídas", cujo
-"Outros" é que fica com protegida=True (ver a nota PROTEGIDA em
-app/models/categoria.py): são o refúgio ÚLTIMO, garantido, para quando nem
+"Outros" é que fica com o PAPEL "refugio" (ver a nota PAPEL E PROTEGIDA
+em app/models/categoria.py), o que o torna protegido: são o refúgio ÚLTIMO, garantido, para quando nem
 a área nem o tipo de evento são conhecidos — o destino por omissão de um
 movimento novo, e o único destino que nunca pode ser apagado nem
 renomeado.
@@ -56,12 +56,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.categoria import Categoria
 
 # Cada grupo é (nome, direcao, subcategorias). Uma subcategoria é, na
-# maioria dos casos, só o seu nome (nasce com protegida=False); as duas
-# excepções — o "Outros" de "Outras Entradas" e de "Outras Saídas" — vêm
-# como um par (nome, protegida=True), para ficar explícito no próprio
+# maioria dos casos, só o seu nome (nasce sem papel); as duas excepções —
+# o "Outros" de "Outras Entradas" e de "Outras Saídas" — vêm como um par
+# (nome, papel), com o papel "refugio", e o mesmo para as duas categorias
+# "Acerto de saldo" (papel "acerto", reservadas aos acertos das
+# reconciliações), para ficar explícito no próprio
 # dado, sem o código de semear ter de adivinhar "isto é um grupo especial"
 # a partir do nome do grupo.
-ARVORE_PADRAO: list[tuple[str, str, list[str | tuple[str, bool]]]] = [
+ARVORE_PADRAO: list[tuple[str, str, list[str | tuple[str, str]]]] = [
     # --- Entradas: cada grupo é uma ORIGEM do dinheiro ---
     ("Trabalho", "entrada", ["Salário", "Prémios", "Recibos Verdes", "Outros"]),
     ("Investimentos", "entrada", ["Renda de Imóveis", "Dividendos", "Juros", "Outros"]),
@@ -73,7 +75,7 @@ ARVORE_PADRAO: list[tuple[str, str, list[str | tuple[str, bool]]]] = [
     # não só pelo nome (ver a nota "_nome_duplicado" em
     # app/services/categorias.py, que já antecipa este caso exacto).
     ("Transferências", "entrada", ["Entre Contas Bancárias", "Depósito em Numerário", "Outros"]),
-    ("Outras Entradas", "entrada", ["Reembolsos", "Presentes", "Donativos", "Heranças", ("Outros", True)]),
+    ("Outras Entradas", "entrada", ["Reembolsos", "Presentes", "Donativos", "Heranças", ("Outros", "refugio"), ("Acerto de saldo", "acerto")]),
     # --- Saídas: a maioria dos grupos é uma ÁREA DE VIDA ---
     (
         "Habitação",
@@ -116,7 +118,7 @@ ARVORE_PADRAO: list[tuple[str, str, list[str | tuple[str, bool]]]] = [
     ("Impostos e Encargos", "saida", ["IRS", "IUC", "IMI", "Coimas", "Juros", "Comissões", "Outros"]),
     ("Compra de Ativos", "saida", ["Imóveis", "Veículos", "Equipamentos", "Ativos Financeiros", "Outros"]),
     ("Transferências", "saida", ["Entre Contas Bancárias", "Levantamento em Numerário", "Outros"]),
-    ("Outras Saídas", "saida", ["Presentes", "Donativos", "Quotas", ("Outros", True)]),
+    ("Outras Saídas", "saida", ["Presentes", "Donativos", "Quotas", ("Outros", "refugio"), ("Acerto de saldo", "acerto")]),
 ]
 
 
@@ -158,14 +160,13 @@ async def semear_categorias(db: AsyncSession, user_id: uuid.UUID) -> None:
         await db.flush()
 
         for ordem_subcategoria, entrada in enumerate(subcategorias):
-            # Uma subcategoria vem como só o nome (o caso comum, protegida
-            # fica no valor por omissão da coluna, False) ou como um par
-            # (nome, protegida) — só usado nos dois "Outros" descritos na
-            # nota PROTEGIDA no topo do ficheiro.
+            # Uma subcategoria vem como só o nome (o caso comum, sem papel)
+            # ou como um par (nome, papel) — só usado nos dois "Outros"
+            # descritos no topo do ficheiro.
             if isinstance(entrada, tuple):
-                nome_subcategoria, protegida = entrada
+                nome_subcategoria, papel = entrada
             else:
-                nome_subcategoria, protegida = entrada, False
+                nome_subcategoria, papel = entrada, None
 
             db.add(
                 Categoria(
@@ -173,7 +174,7 @@ async def semear_categorias(db: AsyncSession, user_id: uuid.UUID) -> None:
                     parent_id=grupo.id,
                     nome=nome_subcategoria,
                     direcao=direcao,
-                    protegida=protegida,
+                    papel=papel,
                     # A posição DENTRO DO GRUPO (não da lista toda) —
                     # reinicia em 0 a cada grupo, porque as subcategorias de
                     # grupos diferentes nunca aparecem umas ao lado das

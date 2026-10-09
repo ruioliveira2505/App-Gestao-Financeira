@@ -57,7 +57,7 @@ class TaxaCambio(Base):
     # por dia — nunca duas taxas em competição para a mesma combinação.
     # Ao contrário das outras tabelas da aplicação, não há aqui um "id"
     # UUID próprio: esta tabela não é criada nem editada por um
-    # utilizador através da API (só o script de actualização escreve
+    # utilizador através da API (só a rotina de actualização escreve
     # nela), por isso não há razão para esconder "quantas linhas existem"
     # ou "em que ordem foram inseridas" — o único identificador que
     # importa é, precisamente, a combinação (data, moeda).

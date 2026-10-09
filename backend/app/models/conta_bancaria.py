@@ -14,14 +14,15 @@ Uma conta bancária NÃO é uma segunda tabela de contas a duplicar a tabela
 utilizador acompanha, com a sua âncora (data e saldo iniciais) e os seus
 movimentos, seja alimentada à mão ou pelo banco. Esta tabela guarda só o
 que o banco diz sobre a conta real (o identificador para pedir saldos e
-movimentos, o IBAN, a moeda…) e, através de "conta_id", o VÍNCULO: qual a
-Conta que esta conta bancária alimenta.
+movimentos, o IBAN, a moeda…).
 
-O vínculo nunca se cria sozinho para uma conta bancária nova: fica vazio
-até o utilizador confirmar a que Conta ela corresponde. A única exceção é
-a RENOVAÇÃO: se esta conta bancária é a mesma conta real que já alimenta
-uma Conta, a linha nova herda o vínculo da antiga — não é uma associação
-nova, é a continuação de uma que o utilizador já confirmou.
+O VÍNCULO (qual a Conta que esta conta bancária alimenta) vive numa
+tabela própria, "vinculos". Nunca se cria sozinho para uma conta bancária
+nova: só quando o utilizador confirma a que Conta ela corresponde. A
+única exceção é a RENOVAÇÃO: se esta conta bancária é a mesma conta real
+que já alimenta uma Conta, o vínculo passa para esta linha nova — não é
+uma associação nova, é a continuação de uma que o utilizador já
+confirmou. Sem vínculo, a conta bancária está LIVRE.
 
 A MESMA CONTA REAL, AUTORIZADA DUAS VEZES, DÁ DUAS LINHAS (uma por
 autorização). As duas reconhecem-se pela mesma identificação estável (o
@@ -31,7 +32,7 @@ autorização). As duas reconhecem-se pela mesma identificação estável (o
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -43,6 +44,15 @@ class ContaBancaria(Base):
     """Uma conta real de um banco, trazida por uma autorização, que pode alimentar uma Conta desta aplicação."""
 
     __tablename__ = "contas_bancarias"
+    __table_args__ = (
+        # Cada conta bancária aparece uma só vez em cada autorização: o
+        # identificador que a Enable Banking lhe dá ("uid") é único dentro
+        # da autorização. Garantido pela base de dados, para uma mesma
+        # resposta do banco nunca dar duas linhas.
+        UniqueConstraint("autorizacao_id", "uid", name="uq_contas_bancarias_autorizacao_id_uid"),
+        # O código da moeda tem sempre três letras maiúsculas (ex.: "EUR").
+        CheckConstraint("moeda ~ '^[A-Z]{3}$'", name="ck_contas_bancarias_moeda_formato"),
+    )
 
     # Chave primária. UUID (um identificador aleatório de 128 bits), para
     # não revelar quantas linhas existem nem ser fácil de adivinhar.
@@ -101,16 +111,11 @@ class ContaBancaria(Base):
     # de uma Conta nova. Nem todos os bancos o enviam.
     tipo_conta_banco: Mapped[str | None] = mapped_column(String(4), nullable=True)
 
-    # O VÍNCULO: a Conta desta aplicação que esta conta bancária alimenta.
-    # Vazio enquanto a conta bancária estiver livre (nunca vinculada, ou
-    # desvinculada).
-    #
-    # ondelete="CASCADE": hoje, eliminar a Conta apaga também esta linha.
-    # (As regras de negócio pedem que a conta bancária fique livre; isso
-    # muda quando o vínculo passar a ter tabela própria.)
-    conta_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("contas.id", ondelete="CASCADE"), nullable=True
-    )
+    # Quando o banco respondeu que esta conta não existe ou deixou de ser
+    # partilhada (por exemplo, foi fechada, ou o utilizador tirou-a do
+    # consentimento). Vazio enquanto estiver disponível. Uma conta bancária
+    # indisponível não se vincula, e a Conta que alimentava fica Suspensa.
+    indisponivel_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(

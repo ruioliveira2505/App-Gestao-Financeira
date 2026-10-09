@@ -16,6 +16,8 @@ Todas as moedas listadas usam 2 casas decimais, o que casa com o tipo
 Numeric(14, 2) da coluna "saldo_ancora".
 """
 
+from decimal import Decimal
+
 # Código -> símbolo e nome. É a única fonte de verdade do conjunto.
 MOEDAS: dict[str, dict[str, str]] = {
     "EUR": {"simbolo": "€", "nome": "Euro"},
@@ -47,3 +49,11 @@ def moeda_suportada(valor: str) -> str:
     if valor not in MOEDAS:
         raise ValueError(f"Moeda não suportada: {valor}")
     return valor
+
+
+# O maior valor em dinheiro (em módulo) que a aplicação aceita num pedido:
+# as colunas de valores da base de dados são Numeric(14, 2), ou seja, até
+# 12 algarismos antes da vírgula e 2 depois. Os schemas (o formato dos
+# pedidos) recusam com 422 qualquer valor maior, em vez de deixar a base
+# de dados rebentar com um erro.
+LIMITE_DE_VALOR = Decimal("999999999999.99")

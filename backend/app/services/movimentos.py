@@ -10,7 +10,7 @@ AS REGRAS, em resumo:
   - um movimento só existe numa conta do utilizador, e a sua categoria
     também tem de ser do utilizador (caso contrário, "não encontrado");
   - a data nunca é anterior à data inicial da conta (a "âncora", o dia a
-    partir do qual a aplicação acompanha a conta);
+    partir do qual a aplicação acompanha a conta) nem posterior a hoje;
   - a categoria tem de ser coerente com o sinal do valor (uma categoria
     de entrada só num valor positivo, uma de saída só num negativo);
   - numa conta VINCULADA (alimentada por uma conta bancária através do
@@ -19,7 +19,22 @@ AS REGRAS, em resumo:
     — qualquer uma dessas mudanças desalinharia o saldo da aplicação do
     saldo real do banco;
   - uma operação em lote é válida por inteiro ou recusada por inteiro:
-    tudo é verificado ANTES de se mexer em qualquer linha.
+    tudo é verificado ANTES de se mexer em qualquer linha;
+  - um ACERTO (o movimento que uma reconciliação cria pela diferença entre
+    o saldo afirmado e o calculado) nunca se edita, apaga ou recategoriza
+    diretamente: muda-se a reconciliação. E a categoria "Acerto de saldo"
+    é reservada aos acertos: nenhum outro movimento a pode usar;
+  - depois de qualquer alteração, os acertos das contas afetadas
+    recalculam-se sozinhos (um movimento entre duas reconciliações muda o
+    saldo calculado, e por isso o acerto);
+  - criar, editar e eliminar BLOQUEIAM a conta durante a operação (uma
+    operação de cada vez por conta, com um "advisory lock" do PostgreSQL:
+    um bloqueio que a aplicação pede à base de dados, largado sozinho no
+    fim da transação). Sem isto, duas gravações ao mesmo tempo na mesma
+    conta recalculariam o acerto cada uma sem ver a outra, e ficaria o
+    valor errado; e um movimento criado a meio de uma vinculação podia
+    cair depois do dia de corte e contar duas vezes. Uma segunda operação
+    ao mesmo tempo recebe 409 (conflito) e pode tentar outra vez.
 
 Quando uma regra é violada, estas funções lançam um ERRO DE DOMÍNIO (um
 erro da lógica de negócio, com uma mensagem para o utilizador), que a API
@@ -39,13 +54,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.erros import NaoEncontrado, RegraViolada
+from app.core.tempo import hoje
 from app.models.categoria import Categoria
 from app.models.conta import Conta
 from app.models.movimento import Movimento
 from app.models.user import User
 from app.services.categorias import obter_categoria_do_utilizador
+from app.services.bloqueios import bloquear_conta
 from app.services.contas import obter_conta_do_utilizador
 from app.services.contas_bancarias import conta_tem_vinculo
+from app.services.reconciliacoes import recalcular_acertos
 
 # Usado para normalizar os valores monetários a 2 casas decimais, coerente
 # com a coluna Numeric(14, 2).
@@ -101,13 +119,18 @@ async def _obter_movimentos_do_utilizador(
 
 def _validar_data(data_movimento: date, conta: Conta) -> None:
     """
-    A data de um movimento nunca pode ser anterior à data inicial (a
-    âncora) da sua conta: é o ponto a partir do qual a aplicação acompanha
-    a conta, e um movimento mais antigo não tem onde entrar no cálculo do
-    saldo.
+    A data de um movimento fica entre a data inicial da conta e hoje:
+      - nunca antes da data inicial (a âncora): é o ponto a partir do qual
+        a aplicação acompanha a conta, e um movimento mais antigo não tem
+        onde entrar no cálculo do saldo;
+      - nunca depois de hoje (a data civil em Lisboa): um movimento
+        regista dinheiro que já entrou ou saiu. Um movimento futuro
+        entraria no saldo atual antes de acontecer.
     """
     if data_movimento < conta.data_ancora:
         raise RegraViolada("A data do movimento não pode ser anterior à data de início da conta.")
+    if data_movimento > hoje():
+        raise RegraViolada("A data do movimento não pode ser no futuro.")
 
 
 async def _recusar_se_conta_vinculada(db: AsyncSession, conta_id: uuid.UUID, mensagem: str) -> None:
@@ -119,6 +142,20 @@ async def _recusar_se_conta_vinculada(db: AsyncSession, conta_id: uuid.UUID, men
     """
     if await conta_tem_vinculo(db, conta_id):
         raise RegraViolada(mensagem)
+
+
+def _validar_categoria_utilizavel(categoria: Categoria) -> None:
+    """A categoria "Acerto de saldo" (papel "acerto") é só para os acertos das reconciliações."""
+    if categoria.papel == "acerto":
+        raise RegraViolada("A categoria «Acerto de saldo» é só para os acertos das reconciliações.")
+
+
+def _recusar_acerto(movimento: Movimento) -> None:
+    """Um acerto nunca se altera diretamente: muda-se a reconciliação de que ele vem."""
+    if movimento.origem == "acerto":
+        raise RegraViolada(
+            "Um acerto de saldo não se altera diretamente: muda ou apaga a reconciliação."
+        )
 
 
 def _validar_direcao(valor: Decimal, categoria: Categoria) -> None:
@@ -157,11 +194,13 @@ async def criar_movimento(
     valores do mesmo tipo por engano.
     """
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+    await bloquear_conta(db, conta.id)
     await _recusar_se_conta_vinculada(
         db, conta.id, "Não é possível criar movimentos manuais numa conta vinculada ao banco."
     )
     _validar_data(data, conta)
     categoria = await obter_categoria_do_utilizador(db, utilizador, categoria_id)
+    _validar_categoria_utilizavel(categoria)
     _validar_direcao(valor, categoria)
 
     movimento = Movimento(
@@ -173,6 +212,7 @@ async def criar_movimento(
     )
     db.add(movimento)
     await db.flush()
+    await recalcular_acertos(db, conta.id)
     # Volta a ler a linha para preencher os campos que só a base de dados
     # sabe (created_at, updated_at).
     await db.refresh(movimento)
@@ -202,7 +242,12 @@ async def editar_movimento(
     Qualquer diferença noutro campo é recusada ANTES de se aplicar o que
     quer que seja — nunca uma alteração parcial e silenciosa.
     """
+    _recusar_acerto(movimento)
     conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+    # As duas contas (a atual e a de destino) ficam bloqueadas, sempre pela
+    # mesma ordem (a dos ids), antes de qualquer verificação.
+    for id_conta in sorted({movimento.conta_id, conta.id}):
+        await bloquear_conta(db, id_conta)
 
     if await conta_tem_vinculo(db, movimento.conta_id) or await conta_tem_vinculo(db, conta.id):
         mudou_algo_alem_da_categoria = (
@@ -218,14 +263,19 @@ async def editar_movimento(
 
     _validar_data(data, conta)
     categoria = await obter_categoria_do_utilizador(db, utilizador, categoria_id)
+    _validar_categoria_utilizavel(categoria)
     _validar_direcao(valor, categoria)
 
+    conta_anterior = movimento.conta_id
     movimento.conta_id = conta.id
     movimento.categoria_id = categoria.id
     movimento.data = data
     movimento.descricao = descricao
     movimento.valor = valor.quantize(_DUAS_CASAS)
     await db.flush()
+    # Recalculam-se as duas contas, se o movimento mudou de conta.
+    for id_conta in {conta_anterior, conta.id}:
+        await recalcular_acertos(db, id_conta)
     await db.refresh(movimento)
     return movimento
 
@@ -236,9 +286,13 @@ async def apagar_movimento(db: AsyncSession, movimento: Movimento) -> None:
     remover um movimento importado é desvincular a conta (o que liberta
     todos os seus movimentos para edição normal) ou eliminar a conta.
     """
+    _recusar_acerto(movimento)
+    await bloquear_conta(db, movimento.conta_id)
     await _recusar_se_conta_vinculada(db, movimento.conta_id, _MENSAGEM_ELIMINAR_VINCULADA)
+    conta_id = movimento.conta_id
     await db.delete(movimento)
     await db.flush()
+    await recalcular_acertos(db, conta_id)
 
 
 async def eliminar_em_lote(db: AsyncSession, utilizador: User, ids: list[uuid.UUID]) -> None:
@@ -252,10 +306,17 @@ async def eliminar_em_lote(db: AsyncSession, utilizador: User, ids: list[uuid.UU
     confirmação ou migração como ao eliminar uma categoria.
     """
     movimentos = await _obter_movimentos_do_utilizador(db, utilizador, ids)
-    for id_conta in {m.conta_id for m in movimentos}:
+    for movimento in movimentos:
+        _recusar_acerto(movimento)
+    contas = {m.conta_id for m in movimentos}
+    for id_conta in sorted(contas):
+        await bloquear_conta(db, id_conta)
+    for id_conta in contas:
         await _recusar_se_conta_vinculada(db, id_conta, _MENSAGEM_ELIMINAR_VINCULADA)
     await db.execute(delete(Movimento).where(Movimento.id.in_([m.id for m in movimentos])))
     await db.flush()
+    for id_conta in contas:
+        await recalcular_acertos(db, id_conta)
 
 
 async def recategorizar_em_lote(
@@ -269,7 +330,9 @@ async def recategorizar_em_lote(
     """
     movimentos = await _obter_movimentos_do_utilizador(db, utilizador, ids)
     categoria = await obter_categoria_do_utilizador(db, utilizador, categoria_id)
+    _validar_categoria_utilizavel(categoria)
     for movimento in movimentos:
+        _recusar_acerto(movimento)
         _validar_direcao(movimento.valor, categoria)
 
     await db.execute(

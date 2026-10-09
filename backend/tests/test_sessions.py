@@ -2,7 +2,7 @@
 TESTES A apagar_sessoes_expiradas (app/services/sessions.py)
 =================================================================
 
-Cobre a função que o script de limpeza (scripts/limpar_sessoes.py) chama:
+Cobre a função que a rotina de manutenção (app/services/manutencao.py) chama:
 apaga só as sessões cujo prazo já passou, e deixa intocadas as que ainda
 são válidas.
 """

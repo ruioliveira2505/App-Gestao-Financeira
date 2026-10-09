@@ -47,8 +47,9 @@ from app.core.sessions import SESSION_DURATION, gerar_token_sessao, hash_token
 from app.db.session import get_db
 from app.models.session import UserSession
 from app.models.user import User
-from app.schemas.auth import UserLogin, UserPreferencias, UserPublico, UserRegisto
+from app.schemas.auth import UserApagar, UserLogin, UserPreferencias, UserPublico, UserRegisto
 from app.services.categorias_seed import semear_categorias
+from app.services.utilizadores import apagar_utilizador
 
 # APIRouter agrupa rotas relacionadas entre si; é depois incluído na
 # aplicação principal (app/main.py). prefix="/auth" faz com que todas as
@@ -317,3 +318,28 @@ async def mudar_preferencias(
     await db.commit()
     await db.refresh(utilizador)
     return utilizador
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def apagar_conta_de_utilizador(
+    dados: UserApagar,
+    response: Response,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """
+    Apaga a conta do utilizador autenticado e TODOS os seus dados (o
+    direito ao apagamento do RGPD, o regulamento europeu de proteção de
+    dados). Pede a password (403 se não estiver certa); revoga no banco as
+    autorizações ativas; e a base de dados apaga tudo em cascata (contas,
+    movimentos, categorias, reconciliações, autorizações, sessões). No fim,
+    o cookie de sessão é apagado do browser, tal como no logout.
+    """
+    await apagar_utilizador(db, utilizador, dados.password)
+    await db.commit()
+    response.delete_cookie(
+        "session_token",
+        httponly=True,
+        samesite="lax",
+        secure=settings.cookie_secure,
+    )

@@ -31,17 +31,20 @@ from app.db.session import get_db
 from app.models.conta import Conta
 from app.models.user import User
 from app.models.autorizacao import Autorizacao
-from app.schemas.contas import ContaCriar, ContaEditar, ContaOut, VinculoOut
+from app.schemas.contas import AncoraEditar, AncoraSimuladaOut, ContaCriar, ContaEditar, ContaOut, VinculoOut
 from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import (
     apagar_conta as apagar_conta_servico,
     criar_conta as criar_conta_servico,
+    editar_ancora,
     editar_conta as editar_conta_servico,
     obter_conta_do_utilizador,
+    simular_ancora,
     soma_movimentos,
     somas_de_movimentos,
 )
 from app.services.contas_bancarias import obter_conta_bancaria_de_conta
+from app.services.estados import estado_conta, motivo_do_fim
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -90,15 +93,27 @@ async def _para_saida(
 
     # Se uma conta bancária alimentar esta Conta (se tiver VÍNCULO), o
     # frontend precisa do id da conta bancária (para sincronizar e
-    # desvincular), do nome do banco e do prazo da autorização.
+    # desvincular), do nome do banco, do prazo da autorização e do ESTADO
+    # da Conta (vinculada ou suspensa), deduzido dos factos.
     vinculo_out = None
     conta_bancaria = await obter_conta_bancaria_de_conta(db, conta.id)
     if conta_bancaria is not None:
         autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
+        estado = estado_conta(conta_bancaria, autorizacao)
+        motivo = None
+        if estado == "suspensa":
+            motivo = (
+                "indisponivel"
+                if conta_bancaria.indisponivel_em is not None
+                else motivo_do_fim(autorizacao)
+            )
         vinculo_out = VinculoOut(
             conta_bancaria_id=conta_bancaria.id,
             banco=autorizacao.banco,
             valido_ate=autorizacao.valido_ate,
+            autorizacao_id=autorizacao.id,
+            estado=estado,
+            motivo=motivo,
         )
 
     return ContaOut(
@@ -196,6 +211,45 @@ async def editar_conta(
 
     soma = await soma_movimentos(db, conta.id)
     return await _para_saida(db, conta, soma, utilizador.moeda_principal)
+
+
+@router.patch("/{conta_id}/ancora", response_model=ContaOut)
+async def editar_ancora_da_conta(
+    conta_id: uuid.UUID,
+    dados: AncoraEditar,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> ContaOut:
+    """
+    Muda a âncora (a data e o saldo iniciais) de uma conta manual. Nunca
+    depois do primeiro movimento nem da primeira reconciliação; os acertos
+    das reconciliações recalculam-se. As regras vivem no serviço.
+    """
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+    conta = await editar_ancora(db, conta, dados.data_ancora, dados.saldo_ancora)
+    await db.commit()
+    soma = await soma_movimentos(db, conta.id)
+    return await _para_saida(db, conta, soma, utilizador.moeda_principal)
+
+
+@router.post("/{conta_id}/ancora/simular", response_model=AncoraSimuladaOut)
+async def simular_ancora_da_conta(
+    conta_id: uuid.UUID,
+    dados: AncoraEditar,
+    utilizador: User = Depends(obter_utilizador_atual),
+    db: AsyncSession = Depends(get_db),
+) -> AncoraSimuladaOut:
+    """
+    O efeito de mudar a âncora, sem gravar: o saldo atual novo e, havendo
+    reconciliações, o acerto novo da primeira (para mostrar antes de gravar).
+    """
+    conta = await obter_conta_do_utilizador(db, utilizador, conta_id)
+    efeito = await simular_ancora(db, conta, dados.data_ancora, dados.saldo_ancora)
+    acerto = efeito["acerto_primeira_reconciliacao"]
+    return AncoraSimuladaOut(
+        saldo_atual=f"{efeito['saldo_atual']:.2f}",
+        acerto_primeira_reconciliacao=f"{acerto:.2f}" if acerto is not None else None,
+    )
 
 
 @router.delete("/{conta_id}", status_code=status.HTTP_204_NO_CONTENT)

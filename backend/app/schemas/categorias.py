@@ -57,7 +57,7 @@ class CategoriaCriar(BaseModel):
             raise ValueError("Um grupo novo tem de indicar a direção (entrada ou saída).")
         if self.parent_id is not None and self.direcao is not None:
             raise ValueError(
-                "Uma subcategoria herda a direção do grupo a que pertence — não se indica aqui."
+                "Uma subcategoria herda a direção do grupo a que pertence: não se indica aqui."
             )
         return self
 
@@ -95,6 +95,9 @@ class CategoriaOut(BaseModel):
     parent_id: uuid.UUID | None
     direcao: Direcao
     protegida: bool
+    # True só para as categorias "Acerto de saldo": reservadas aos acertos
+    # das reconciliações, nunca se escolhem para um movimento.
+    reservada: bool = False
 
 
 class SubcategoriaArvoreOut(BaseModel):
@@ -103,6 +106,9 @@ class SubcategoriaArvoreOut(BaseModel):
     id: uuid.UUID
     nome: str
     protegida: bool
+    # True só para as categorias "Acerto de saldo": reservadas aos acertos
+    # das reconciliações, nunca se escolhem para um movimento.
+    reservada: bool = False
 
 
 class GrupoArvoreOut(BaseModel):
