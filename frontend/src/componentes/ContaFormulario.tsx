@@ -85,6 +85,7 @@ import { useAuth } from '../auth/useAuth'
 import { ErroApi } from '../lib/http'
 import { useContas } from '../hooks/useContas'
 import { sugestoes, type Conta } from '../lib/contas'
+import { hojeIso } from '../lib/datas'
 import { OPCOES_MOEDA } from '../lib/moedas'
 import estilos from './ContaFormulario.module.css'
 
@@ -113,15 +114,6 @@ type Props = {
   aoMudarValidez?: (valido: boolean) => void
 }
 
-// A data de HOJE em ISO ("AAAA-MM-DD"), no fuso local (o
-// "toISOString()" daria a data em UTC — perto da meia-noite, o dia
-// errado).
-function hojeLocal(): string {
-  const agora = new Date()
-  const mes = String(agora.getMonth() + 1).padStart(2, '0')
-  const dia = String(agora.getDate()).padStart(2, '0')
-  return `${agora.getFullYear()}-${mes}-${dia}`
-}
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível guardar. Tenta novamente.'
 
 export function ContaFormulario({
@@ -141,7 +133,7 @@ export function ContaFormulario({
   // ainda não estar carregado (na app, este formulário só aparece depois).
   const { utilizador } = useAuth()
   const [moeda, setMoeda] = useState(inicial?.moeda ?? utilizador?.moeda_principal ?? 'EUR')
-  const hoje = hojeLocal()
+  const hoje = hojeIso()
   const [dataAncora, setDataAncora] = useState(inicial?.data_ancora ?? hoje)
   // O saldo sem sinal, e o sinal à parte (ver a nota SALDO NEGATIVO).
   const [saldoAncora, setSaldoAncora] = useState(inicial?.saldo_ancora?.replace('-', '') ?? '')

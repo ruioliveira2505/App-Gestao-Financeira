@@ -107,6 +107,7 @@ import {
   criarSubcategoria,
   editarCategoria,
   eliminarCategoria,
+  escolhiveis,
   obterArvoreCategorias,
   type GrupoArvore,
   type SubcategoriaArvore,
@@ -406,7 +407,8 @@ export function CategoriaGrupo() {
   const opcoesMigracao: OpcaoLista[] = arvore
     .filter((g) => g.direcao === grupo.direcao)
     .flatMap((g) =>
-      g.subcategorias
+      // Sem o "Acerto de saldo": não é destino de migração.
+      escolhiveis(g.subcategorias)
         .filter((s) => !idsAExcluirDaMigracao.includes(s.id))
         .map((s) => ({
           valor: s.id,

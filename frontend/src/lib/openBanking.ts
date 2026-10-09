@@ -41,8 +41,9 @@ export type Banco = {
  *     alimentava uma conta tua, e o vínculo renovou-se sozinho (ou já
  *     tinha sido vinculada antes). "conta_nome" é o nome dessa conta;
  *   - JÁ FOI UMA CONTA TUA, entretanto desvinculada: "conta_antiga"
- *     preenchido. Por agora entra como conta nova (vincular à antiga
- *     precisa de reconciliações, que ainda não existem);
+ *     preenchido. Nesta interface entra como conta nova: o backend já
+ *     sabe vincular a conta antiga, mas o ecrã para isso ainda não
+ *     existe;
  *   - NOVA: nenhum dos dois.
  */
 export type ContaBancaria = {

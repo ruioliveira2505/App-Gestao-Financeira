@@ -29,15 +29,15 @@ const ARVORE: GrupoArvore[] = [
     nome: 'Alimentação',
     direcao: 'saida',
     subcategorias: [
-      { id: 's1', nome: 'Supermercado', protegida: false },
-      { id: 's2', nome: 'Restaurantes', protegida: false },
+      { id: 's1', nome: 'Supermercado', protegida: false, reservada: false },
+      { id: 's2', nome: 'Restaurantes', protegida: false, reservada: false },
     ],
   },
   {
     id: 'g2',
     nome: 'Transportes',
     direcao: 'saida',
-    subcategorias: [{ id: 's3', nome: 'Combustível', protegida: false }],
+    subcategorias: [{ id: 's3', nome: 'Combustível', protegida: false, reservada: false }],
   },
   {
     id: 'g3',

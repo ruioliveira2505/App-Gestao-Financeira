@@ -21,6 +21,7 @@ import { definirEcraMobile } from '../test/setup'
 import { MovimentoNovo } from './MovimentoNovo'
 import { ComConsultas } from '../test/consultas'
 import { CHAVES, criarClienteConsultas } from '../lib/consultas'
+import { hojeIso } from '../lib/datas'
 
 // Todas as montagens deste ficheiro levam a cache dos dados do servidor à
 // volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova).
@@ -54,7 +55,18 @@ const ARVORE = [
   { id: 'g1', nome: 'Trabalho', direcao: 'entrada', subcategorias: [{ id: 'sub1', nome: 'Salário', protegida: false }] },
   { id: 'g2', nome: 'Outras Entradas', direcao: 'entrada', subcategorias: [{ id: 'sub2', nome: 'Outros', protegida: true }] },
   { id: 'g3', nome: 'Alimentação', direcao: 'saida', subcategorias: [{ id: 'sub3', nome: 'Supermercado', protegida: false }] },
-  { id: 'g4', nome: 'Outras Saídas', direcao: 'saida', subcategorias: [{ id: 'sub4', nome: 'Outros', protegida: true }] },
+  {
+    id: 'g4',
+    nome: 'Outras Saídas',
+    direcao: 'saida',
+    subcategorias: [
+      // "Acerto de saldo" vem primeiro de propósito: é reservada aos
+      // acertos das reconciliações, por isso não pode ser escolhida nem
+      // usada como categoria por omissão, mesmo sendo protegida.
+      { id: 'sub5', nome: 'Acerto de saldo', protegida: true, reservada: true },
+      { id: 'sub4', nome: 'Outros', protegida: true },
+    ],
+  },
 ]
 
 function montar(entrada = '/movimentos/novo') {
@@ -73,6 +85,18 @@ function montar(entrada = '/movimentos/novo') {
 }
 
 describe('Página Novo movimento', () => {
+  it('a categoria reservada "Acerto de saldo" não aparece para escolher, e a data não passa de hoje', async () => {
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([CONTA])))
+
+    montar()
+    // A categoria por omissão de uma saída é "Outros", e não a reservada.
+    await userEvent.click(await screen.findByText('Outros'))
+
+    expect(screen.getByText('Supermercado')).toBeInTheDocument()
+    expect(screen.queryByText('Acerto de saldo')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Data')).toHaveAttribute('max', hojeIso())
+  })
+
   it('cria uma saída (valor negativo) e volta à lista', async () => {
     let corpoRecebido: Record<string, unknown> | null = null
     servidorMsw.use(

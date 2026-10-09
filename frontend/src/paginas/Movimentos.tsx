@@ -177,7 +177,7 @@ import { IconeCheck, IconeChecklist, IconeFechar, IconeFunil, IconeMais } from '
 import { LinkBotao } from '../componentes/LinkBotao'
 import { ListaDeOpcoes, type OpcaoLista } from '../componentes/ListaDeOpcoes'
 import { PontoCategoria } from '../componentes/PontoCategoria'
-import { obterArvoreCategorias, type GrupoArvore } from '../lib/categorias'
+import { escolhiveis, obterArvoreCategorias, type GrupoArvore } from '../lib/categorias'
 import { listarContas, type Conta } from '../lib/contas'
 import { rotuloDiaRelativo } from '../lib/datas'
 import {
@@ -725,7 +725,8 @@ export function Movimentos() {
     ? arvore
         .filter((grupo) => grupo.direcao === direcaoUnica)
         .flatMap((grupo) =>
-          grupo.subcategorias.map((sub) => ({
+          // Sem o "Acerto de saldo", reservado aos acertos das reconciliações.
+          escolhiveis(grupo.subcategorias).map((sub) => ({
             valor: sub.id,
             etiqueta: sub.nome,
             grupo: grupo.nome,

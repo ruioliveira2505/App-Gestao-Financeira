@@ -60,9 +60,11 @@ import { listarContas, type Conta } from '../lib/contas'
 import {
   categoriaRefugio,
   direcaoDaCategoria,
+  escolhiveis,
   obterArvoreCategorias,
   type GrupoArvore,
 } from '../lib/categorias'
+import { hojeIso } from '../lib/datas'
 import { simboloDe } from '../lib/moedas'
 import type { Movimento } from '../lib/movimentos'
 import estilos from './MovimentoFormulario.module.css'
@@ -84,7 +86,6 @@ type Props = {
   aoMudarValidez?: (valido: boolean) => void
 }
 
-const HOJE = new Date().toISOString().slice(0, 10)
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível guardar. Tenta novamente.'
 
 /** Deriva o par (tipo, valor absoluto) a partir de um valor com sinal —
@@ -111,7 +112,8 @@ export function MovimentoFormulario({
 
   const [contaId, setContaId] = useState(inicial?.conta_id ?? '')
   const [categoriaId, setCategoriaId] = useState(inicial?.categoria_id ?? '')
-  const [data, setData] = useState(inicial?.data ?? HOJE)
+  // A data sugerida é hoje, no fuso do dispositivo (ver hojeIso).
+  const [data, setData] = useState(inicial?.data ?? hojeIso())
   const [descricao, setDescricao] = useState(inicial?.descricao ?? '')
   const [tipo, setTipo] = useState<'entrada' | 'saida'>(inicialTipoValor?.tipo ?? 'saida')
   const [valorAbsoluto, setValorAbsoluto] = useState(inicialTipoValor?.valor ?? '')
@@ -194,7 +196,8 @@ export function MovimentoFormulario({
   const opcoesCategoria: OpcaoLista[] = (arvore ?? [])
     .filter((grupo) => grupo.direcao === tipo)
     .flatMap((grupo) =>
-      grupo.subcategorias.map((sub) => ({
+      // Sem o "Acerto de saldo", reservado aos acertos das reconciliações.
+      escolhiveis(grupo.subcategorias).map((sub) => ({
         valor: sub.id,
         etiqueta: sub.nome,
         grupo: grupo.nome,
@@ -361,6 +364,9 @@ export function MovimentoFormulario({
           valor={data}
           aoMudar={setData}
           obrigatorio
+          // Um movimento nunca está no futuro: o calendário não deixa
+          // escolher depois de hoje (e o backend também o recusa).
+          max={hojeIso()}
         />
         <CampoDinheiro
           disposicao="linha"

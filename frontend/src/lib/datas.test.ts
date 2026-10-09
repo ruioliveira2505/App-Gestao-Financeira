@@ -3,9 +3,9 @@
  * ============================
  */
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { formatarIntervalo, rotuloDiaRelativo } from './datas'
+import { formatarIntervalo, hojeIso, rotuloDiaRelativo } from './datas'
 
 /** ISO (AAAA-MM-DD) de hoje deslocado N dias, em data LOCAL — tal como
  *  rotuloDiaRelativo compara (não UTC, senão a poucas horas da meia-noite
@@ -59,5 +59,23 @@ describe('formatarIntervalo', () => {
 
   it('ambas as pontas null → ""', () => {
     expect(formatarIntervalo(null, null)).toBe('')
+  })
+})
+
+describe('hojeIso', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('dá a data local, e não a UTC, logo a seguir à meia-noite', () => {
+    // vi.setSystemTime fixa o relógio do teste. A data é construída em
+    // hora LOCAL (3 de julho, 00h30), por isso o resultado esperado não
+    // depende do fuso horário da máquina que corre o teste: em Lisboa, no
+    // verão, este instante ainda é 2 de julho em UTC, e toISOString()
+    // daria o dia errado.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 3, 0, 30))
+
+    expect(hojeIso()).toBe('2026-07-03')
   })
 })

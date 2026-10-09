@@ -65,6 +65,7 @@ import { SeletorData } from './SeletorData'
 import { IconeCadeado } from './icones'
 import { useContas } from '../hooks/useContas'
 import { sugestoes } from '../lib/contas'
+import { hojeIso } from '../lib/datas'
 import { etiquetaMoeda } from '../lib/moedas'
 import type { ContaBancaria } from '../lib/openBanking'
 // As MESMAS fichas do formulário manual (cartão, linhas, traço recuado,
@@ -90,17 +91,6 @@ type Props = {
 // Desligado «Todo o histórico», «Desde» propõe o início do ano corrente —
 // um ponto de partida natural para acompanhar finanças.
 const INICIO_DO_ANO = `${new Date().getFullYear()}-01-01`
-
-// A data de HOJE em ISO ("AAAA-MM-DD"), no fuso local — o último dia que o
-// calendário do "Desde" deixa escolher (não há movimentos no futuro).
-// Não serve "toISOString()": daria a data em UTC, o dia errado perto da
-// meia-noite.
-function hojeLocal(): string {
-  const agora = new Date()
-  const mes = String(agora.getMonth() + 1).padStart(2, '0')
-  const dia = String(agora.getDate()).padStart(2, '0')
-  return `${agora.getFullYear()}-${mes}-${dia}`
-}
 
 // "PT50001800031497057802084" → "PT50 •••• 2084": os primeiros quatro
 // caracteres (país e controlo) e os últimos quatro, o bastante para conferir com o extracto, numa linha.
@@ -241,7 +231,7 @@ export function ContaLigadaFormulario({ contas, idFormulario, aoConfirmar, aoMud
             etiqueta="Desde"
             valor={dataDe}
             aoMudar={setDataDe}
-            maximo={hojeLocal()}
+            maximo={hojeIso()}
           />
         )}
       </fieldset>

@@ -3,8 +3,24 @@
  * ===================
  *
  * As datas vêm da API como texto ISO ("2026-01-01"). Aqui converte-se
- * para apresentação em português.
+ * para apresentação em português, e calcula-se a data de hoje.
  */
+
+/**
+ * A data de HOJE em ISO ("AAAA-MM-DD"), no fuso horário do dispositivo.
+ *
+ * Não serve "new Date().toISOString()": daria a data em UTC (o tempo
+ * universal coordenado), e entre a meia-noite e a uma da manhã em Lisboa,
+ * no verão, o UTC ainda está no dia anterior. É usada como data sugerida
+ * e como data máxima nos calendários: nem um movimento nem a data inicial
+ * de uma conta podem estar no futuro (o backend também o recusa).
+ */
+export function hojeIso(): string {
+  const agora = new Date()
+  const mes = String(agora.getMonth() + 1).padStart(2, '0')
+  const dia = String(agora.getDate()).padStart(2, '0')
+  return `${agora.getFullYear()}-${mes}-${dia}`
+}
 
 /**
  * "2026-01-01" -> "1 de jan. de 2026".

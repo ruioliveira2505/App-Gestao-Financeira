@@ -33,10 +33,20 @@ export type Direcao = 'entrada' | 'saida'
 export type SubcategoriaArvore = {
   id: string
   nome: string
-  // Categorias protegidas ("Outros", dentro de "Outras Entradas"/"Outras
-  // Saídas") não podem ser editadas nem eliminadas — são o destino
-  // garantido de um movimento sem categoria mais específica.
+  // Categorias protegidas não podem ser editadas nem eliminadas: o
+  // "Outros" de "Outras Entradas"/"Outras Saídas" (o destino garantido de
+  // um movimento sem categoria mais específica) e o "Acerto de saldo".
   protegida: boolean
+  // "Acerto de saldo": reservada aos acertos das reconciliações (o
+  // movimento que a aplicação cria pela diferença entre o saldo afirmado e
+  // o calculado). Nunca se oferece para escolher num movimento; aparece
+  // nos filtros, para se poder ver ou esconder os acertos.
+  reservada: boolean
+}
+
+/** As subcategorias que se podem escolher para um movimento: todas menos as reservadas aos acertos. */
+export function escolhiveis(subcategorias: SubcategoriaArvore[]): SubcategoriaArvore[] {
+  return subcategorias.filter((sub) => !sub.reservada)
 }
 
 export type GrupoArvore = {
@@ -61,6 +71,7 @@ export type Categoria = {
   parent_id: string | null
   direcao: Direcao
   protegida: boolean
+  reservada: boolean
 }
 
 /** Cria um GRUPO (parentId nulo, direcao obrigatória) ou uma SUBCATEGORIA
@@ -114,7 +125,8 @@ export function eliminarCategoria(id: string, migrarParaId?: string): Promise<vo
 export function categoriaRefugio(arvore: GrupoArvore[], direcao: Direcao): string | undefined {
   for (const grupo of arvore) {
     if (grupo.direcao !== direcao) continue
-    const refugio = grupo.subcategorias.find((sub) => sub.protegida)
+    // Protegida e NÃO reservada: o "Acerto de saldo" também é protegido.
+    const refugio = grupo.subcategorias.find((sub) => sub.protegida && !sub.reservada)
     if (refugio) return refugio.id
   }
   return undefined

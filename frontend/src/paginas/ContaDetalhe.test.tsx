@@ -238,7 +238,10 @@ const CONTA_LIGADA = {
   vinculo: {
     conta_bancaria_id: 'cl-1',
     banco: 'Caixa Geral de Depósitos',
-    valido_ate: '2027-04-01T10:00:00Z',
+    // Daqui a 90 dias, calculado a cada execução: com uma data fixa, a
+    // ligação passaria a "expirada" sozinha no dia em que a data passasse,
+    // e os testes falhariam sem nada ter mudado no código.
+    valido_ate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
   },
 } satisfies Conta
 
