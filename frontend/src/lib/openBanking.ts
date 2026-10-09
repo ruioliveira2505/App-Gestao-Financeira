@@ -8,11 +8,16 @@
  * ContaDetalhe.tsx) chama estas funções e nunca usa "fetch" diretamente —
  * mesma regra do resto do cliente HTTP desta app (ver src/lib/http.ts).
  *
- * UMA FUNÇÃO NÃO SEGUE ESTE PADRÃO: iniciarLigacao, mais abaixo, não usa
- * "pedido" (que faz um "fetch") — faz o browser SAIR da SPA de propósito
- * (window.location.href), porque o endpoint que chama (GET /open-banking/
- * ligar) reencaminha para o ecrã de login real do banco, fora desta
- * aplicação. Ver a nota nessa função.
+ * VOCABULÁRIO: uma AUTORIZAÇÃO é o consentimento dado no banco para a
+ * aplicação ler as contas partilhadas, durante um prazo; cada conta
+ * partilhada é uma CONTA BANCÁRIA; o VÍNCULO é o facto de uma conta
+ * bancária alimentar uma conta desta aplicação.
+ *
+ * UMA FUNÇÃO NÃO SEGUE ESTE PADRÃO: iniciarAutorizacao, mais abaixo, não
+ * usa "pedido" (que faz um "fetch") — faz o browser SAIR da aplicação de
+ * propósito, porque o endpoint que chama (POST /open-banking/autorizar)
+ * reencaminha para o ecrã de login real do banco. Ver a nota nessa
+ * função.
  */
 
 import { pedido } from './http'
@@ -28,21 +33,21 @@ export type Banco = {
 }
 
 /**
- * Uma conta bancária trazida por uma ligação — ver GET /open-banking/
- * ligacoes/{id}/contas-ligadas. Ao voltar do banco, cada uma é de um de
- * três casos (o backend reconhece-as pela identificação estável da conta
- * bancária):
+ * Uma conta bancária trazida por uma autorização — ver GET /open-banking/
+ * autorizacoes/{id}/contas-bancarias. Ao voltar do banco, cada uma é de um
+ * de três casos (o backend reconhece-as pela identificação estável da
+ * conta bancária):
  *   - JÁ NAS TUAS CONTAS: "conta_id" preenchido — a conta bancária já
- *     alimentava uma conta tua, e a ligação renovou-se sozinha (ou já
- *     tinha sido associada antes). "conta_nome" é o nome dessa conta;
+ *     alimentava uma conta tua, e o vínculo renovou-se sozinho (ou já
+ *     tinha sido vinculada antes). "conta_nome" é o nome dessa conta;
  *   - JÁ FOI UMA CONTA TUA, entretanto desvinculada: "conta_antiga"
- *     preenchido. Por agora entra como conta nova (religar à antiga
+ *     preenchido. Por agora entra como conta nova (vincular à antiga
  *     precisa de reconciliações, que ainda não existem);
  *   - NOVA: nenhum dos dois.
  */
-export type ContaLigada = {
+export type ContaBancaria = {
   id: string
-  // O banco desta conta (o mesmo para todas as contas de uma ligação) —
+  // O banco desta conta (o mesmo para todas as contas de uma autorização) —
   // mostrado, bloqueado, ao configurar a conta.
   banco: string
   iban: string | null
@@ -50,7 +55,7 @@ export type ContaLigada = {
   nome_titular: string | null
   conta_id: string | null
   conta_nome: string | null
-  // Até quando vale a ligação (ISO 8601) — «Ligação renovada até…».
+  // Até quando vale a autorização (data e hora ISO 8601).
   valido_ate: string
   // Sugestões para uma conta nova: o tipo (a partir do tipo de conta que
   // o banco envia) e um nome, mostrado como EXEMPLO no campo.
@@ -59,18 +64,20 @@ export type ContaLigada = {
   conta_antiga: { id: string; nome: string } | null
 }
 
+/** Os bancos suportados num país (por omissão, Portugal), com o prazo de autorização de cada um. */
 export function listarBancos(pais: string = 'PT'): Promise<Banco[]> {
   return pedido<Banco[]>(`/open-banking/bancos?pais=${encodeURIComponent(pais)}`)
 }
 
-export function listarContasLigadas(ligacaoId: string): Promise<ContaLigada[]> {
-  return pedido<ContaLigada[]>(`/open-banking/ligacoes/${ligacaoId}/contas-ligadas`)
+/** As contas bancárias que uma autorização trouxe — pedidas ao voltar do banco. */
+export function listarContasBancarias(autorizacaoId: string): Promise<ContaBancaria[]> {
+  return pedido<ContaBancaria[]>(`/open-banking/autorizacoes/${autorizacaoId}/contas-bancarias`)
 }
 
 /**
- * Inicia a ligação a um banco — SAI da SPA de propósito, em vez de fazer
- * um pedido "fetch" (ver a nota no topo do ficheiro). POST /open-banking/
- * ligar tem um efeito real do lado da Enable Banking (regista um pedido
+ * Inicia uma autorização num banco — SAI da aplicação de propósito, em
+ * vez de fazer um pedido "fetch" (ver a nota no topo do ficheiro). POST
+ * /open-banking/autorizar tem um efeito real do lado da Enable Banking (regista um pedido
  * de autorização) e devolve um REDIRECIONAMENTO para o ecrã de login do
  * banco escolhido — algo que só faz sentido como uma navegação a sério
  * do browser, nunca como uma resposta processada em JavaScript.
@@ -86,17 +93,17 @@ export function listarContasLigadas(ligacaoId: string): Promise<ContaLigada[]> {
  * vite.config.ts), não por "pedido()", porque este URL não é lido em
  * JavaScript nenhum: o browser é que o segue directamente.
  */
-export function iniciarLigacao(banco: string, pais: string = 'PT'): void {
+export function iniciarAutorizacao(banco: string, pais: string = 'PT'): void {
   const parametros = new URLSearchParams({ banco, pais })
   const formulario = document.createElement('form')
   formulario.method = 'POST'
-  formulario.action = `/api/open-banking/ligar?${parametros.toString()}`
+  formulario.action = `/api/open-banking/autorizar?${parametros.toString()}`
   document.body.appendChild(formulario)
   formulario.submit()
 }
 
-/** O que POST /open-banking/contas-ligadas/{id}/associar-nova-conta devolve. */
-export type ContaAssociada = {
+/** O que POST /open-banking/contas-bancarias/{id}/criar-conta devolve. */
+export type ContaCriadaDoBanco = {
   conta_id: string
   nome: string
   banco: string | null
@@ -116,41 +123,48 @@ export type ContaAssociada = {
  * por categorizar à mão, enquanto esta aplicação não tiver categorização
  * automática — por isso é uma escolha oferecida, não decidida sozinha.
  */
-export function associarNovaConta(
-  contaLigadaId: string,
+export function criarContaDoBanco(
+  contaBancariaId: string,
   nome: string,
   dataDe?: string,
   tipo?: string | null,
-): Promise<ContaAssociada> {
+): Promise<ContaCriadaDoBanco> {
   const parametros = new URLSearchParams({ nome })
   if (dataDe) parametros.set('data_de', dataDe)
   // "tipo" — o mesmo campo livre do formulário manual ("Conta corrente",
   // "Poupança"…); sem valor, a conta fica "sem tipo", como no manual.
   if (tipo) parametros.set('tipo', tipo)
-  return pedido<ContaAssociada>(
-    `/open-banking/contas-ligadas/${contaLigadaId}/associar-nova-conta?${parametros.toString()}`,
+  return pedido<ContaCriadaDoBanco>(
+    `/open-banking/contas-bancarias/${contaBancariaId}/criar-conta?${parametros.toString()}`,
     { method: 'POST' },
   )
 }
 
-export function desvincular(contaLigadaId: string): Promise<void> {
-  return pedido<void>(`/open-banking/contas-ligadas/${contaLigadaId}`, { method: 'DELETE' })
+/**
+ * Desfaz o vínculo de uma conta bancária: a conta deixa de sincronizar,
+ * mas ela e os movimentos já importados ficam (passa a ser uma conta
+ * manual). O caminho termina em "/vinculo" porque é o vínculo que se
+ * apaga, não a conta.
+ */
+export function desvincular(contaBancariaId: string): Promise<void> {
+  return pedido<void>(`/open-banking/contas-bancarias/${contaBancariaId}/vinculo`, { method: 'DELETE' })
 }
 
-/** O que POST /open-banking/contas-ligadas/{id}/sincronizar devolve. */
+/** O que POST /open-banking/contas-bancarias/{id}/sincronizar devolve. */
 export type ResultadoSincronizacao = {
   movimentos_importados: number
 }
 
 /**
- * Importa os movimentos NOVOS de uma conta JÁ ligada e já associada —
- * chamada pelo botão "Sincronizar agora" em ContaDetalhe.tsx. Nunca pede
+ * Importa os movimentos NOVOS de uma conta JÁ vinculada — chamada pelo
+ * botão "Sincronizar" no detalhe de uma conta (ContaDetalhe.tsx) e pelo
+ * menu da lista de contas, para todas de uma vez (Contas.tsx). Nunca pede
  * uma data: o backend calcula sozinho desde onde continuar (ver
- * sincronizar_movimentos, em app/services/importacao_movimentos.py).
+ * sincronizar_movimentos, em backend/app/services/importacao_movimentos.py).
  */
-export function sincronizar(contaLigadaId: string): Promise<ResultadoSincronizacao> {
+export function sincronizar(contaBancariaId: string): Promise<ResultadoSincronizacao> {
   return pedido<ResultadoSincronizacao>(
-    `/open-banking/contas-ligadas/${contaLigadaId}/sincronizar`,
+    `/open-banking/contas-bancarias/${contaBancariaId}/sincronizar`,
     { method: 'POST' },
   )
 }

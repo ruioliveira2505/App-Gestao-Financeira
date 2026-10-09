@@ -13,6 +13,7 @@ import { servidorMsw } from '../test/servidor-msw'
 import { AuthProvider } from '../auth/AuthProvider'
 import { ContaDetalhe } from './ContaDetalhe'
 import { ComConsultas } from '../test/consultas'
+import type { Conta } from '../lib/contas'
 
 // Todas as montagens deste ficheiro levam a cache dos dados do servidor à
 // volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
@@ -32,10 +33,13 @@ const CONTA = {
   saldo_ancora: '1000.00',
   saldo: '1000.00',
   saldo_convertido: null,
-  ligacao: null,
+  vinculo: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
-}
+  // "satisfies Conta" pede ao TypeScript que confirme que este exemplo tem
+  // a forma de uma Conta da API: se a API mudar um nome de campo, o
+  // exemplo deixa de compilar, em vez de o teste passar com dados errados.
+} satisfies Conta
 
 const UTILIZADOR = { id: 'u1', email: 'ana@exemplo.pt', moeda_principal: 'EUR' }
 
@@ -231,8 +235,12 @@ describe('Página de detalhe de uma conta', () => {
 
 const CONTA_LIGADA = {
   ...CONTA,
-  ligacao: { conta_ligada_id: 'cl-1', aspsp_nome: 'Caixa Geral de Depósitos' },
-}
+  vinculo: {
+    conta_bancaria_id: 'cl-1',
+    banco: 'Caixa Geral de Depósitos',
+    valido_ate: '2027-04-01T10:00:00Z',
+  },
+} satisfies Conta
 
 describe('Página de detalhe de uma conta — Open Banking', () => {
   it('conta manual não mostra a secção Open Banking', async () => {
@@ -255,7 +263,7 @@ describe('Página de detalhe de uma conta — Open Banking', () => {
   it('"Sincronizar agora" mostra quantos movimentos novos entraram', async () => {
     servidorMsw.use(
       http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
-      http.post('/api/open-banking/contas-ligadas/cl-1/sincronizar', () =>
+      http.post('/api/open-banking/contas-bancarias/cl-1/sincronizar', () =>
         HttpResponse.json({ movimentos_importados: 3 }),
       ),
     )
@@ -269,15 +277,15 @@ describe('Página de detalhe de uma conta — Open Banking', () => {
   it('"Sincronizar agora" mostra um erro se o pedido falhar', async () => {
     servidorMsw.use(
       http.get('/api/contas/c1', () => HttpResponse.json(CONTA_LIGADA)),
-      http.post('/api/open-banking/contas-ligadas/cl-1/sincronizar', () =>
-        HttpResponse.json({ detail: 'Sessão expirada, é preciso religar.' }, { status: 502 }),
+      http.post('/api/open-banking/contas-bancarias/cl-1/sincronizar', () =>
+        HttpResponse.json({ detail: 'A autorização deste banco já terminou. É preciso autorizá-lo outra vez.' }, { status: 409 }),
       ),
     )
     montar()
 
     await userEvent.click(await screen.findByRole('button', { name: 'Sincronizar agora' }))
 
-    expect(await screen.findByText('Sessão expirada, é preciso religar.')).toBeInTheDocument()
+    expect(await screen.findByText('A autorização deste banco já terminou. É preciso autorizá-lo outra vez.')).toBeInTheDocument()
   })
 
   it('"Desvincular" pede confirmação e, ao confirmar, remove a secção', async () => {
@@ -286,9 +294,9 @@ describe('Página de detalhe de uma conta — Open Banking', () => {
     let desvinculada = false
     servidorMsw.use(
       http.get('/api/contas/c1', () =>
-        HttpResponse.json(desvinculada ? { ...CONTA_LIGADA, ligacao: null } : CONTA_LIGADA),
+        HttpResponse.json(desvinculada ? { ...CONTA_LIGADA, vinculo: null } : CONTA_LIGADA),
       ),
-      http.delete('/api/open-banking/contas-ligadas/cl-1', () => {
+      http.delete('/api/open-banking/contas-bancarias/cl-1/vinculo', () => {
         desvinculada = true
         return new HttpResponse(null, { status: 204 })
       }),

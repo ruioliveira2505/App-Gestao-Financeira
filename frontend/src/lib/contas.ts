@@ -26,12 +26,13 @@ import { pedido } from './http'
  *     câmbio para converter (o backend nunca falha o pedido inteiro só
  *     por isso). Nunca a moeda da PRÓPRIA CONTA (essa é sempre "moeda",
  *     acima) — é a moeda em que se compara/soma valores ENTRE contas.
- *   - ligacao é "null" para uma conta manual (ou uma que já foi
- *     desvinculada — ver src/lib/openBanking.ts); quando presente, dá o
- *     necessário para "Sincronizar agora"/"Desvincular" no detalhe da
- *     conta (conta_ligada_id), o nome do banco a mostrar (aspsp_nome) e a
- *     validade do consentimento dado ao banco (valido_ate, data e hora
- *     ISO) — de onde sai o estado da ligação (ver estadoLigacao, abaixo).
+ *   - vinculo é "null" numa conta sem VÍNCULO (uma conta manual, que
+ *     nunca foi alimentada pelo banco ou já foi desvinculada). Quando
+ *     presente, descreve a conta bancária que alimenta esta conta: o seu
+ *     id (conta_bancaria_id, para sincronizar e desvincular), o nome do
+ *     banco (banco) e o prazo da autorização dada ao banco (valido_ate,
+ *     data e hora ISO), de onde sai o estado da autorização (ver
+ *     estadoAutorizacao, abaixo).
  */
 export type Conta = {
   id: string
@@ -43,36 +44,37 @@ export type Conta = {
   saldo_ancora: string
   saldo: string
   saldo_convertido: string | null
-  ligacao: { conta_ligada_id: string; aspsp_nome: string; valido_ate: string } | null
+  vinculo: { conta_bancaria_id: string; banco: string; valido_ate: string } | null
   created_at: string
   updated_at: string
 }
 
-// --- Estado da ligação ao banco ---
+// --- Estado da autorização ---
 //
-// Uma conta ligada recebe movimentos do banco através de um consentimento
-// dado pelo utilizador, que dura o máximo que o banco aceita: até 180
-// dias pela regra europeia (90 se o banco não o indicar). Passada a validade, o banco deixa de responder e os movimentos
+// Uma conta VINCULADA recebe movimentos do banco graças a uma AUTORIZAÇÃO:
+// o consentimento dado pelo utilizador ao banco, que dura o máximo que o
+// banco aceita (até 180 dias pela regra europeia, 90 se o banco não o
+// indicar). Passado o prazo, o banco deixa de responder e os movimentos
 // param de entrar sem aviso nenhum — por isso a interface mostra, ANTES
-// disso, que a ligação está prestes a expirar.
+// disso, que a autorização está prestes a expirar.
 
-/** Os três estados possíveis da ligação de uma conta ao banco. */
-export type EstadoLigacao = 'ligada' | 'a-expirar' | 'expirada'
+/** Os três estados possíveis da autorização que alimenta uma conta. */
+export type EstadoAutorizacao = 'ativa' | 'a-expirar' | 'expirada'
 
-/** Quantos dias antes do fim da validade a ligação passa a "a-expirar". */
+/** Quantos dias antes do fim do prazo a autorização passa a "a-expirar". */
 export const DIAS_AVISO_EXPIRACAO = 7
 
 /**
- * O estado da ligação a partir da validade do consentimento ("valido_ate",
+ * O estado da autorização a partir do seu prazo ("valido_ate",
  * data e hora ISO). "agora" é um parâmetro (e não lido aqui dentro) para
  * os testes poderem fixar o momento — sem isso, o resultado dependeria do
  * dia em que os testes correm.
  */
-export function estadoLigacao(validoAte: string, agora: Date = new Date()): EstadoLigacao {
+export function estadoAutorizacao(validoAte: string, agora: Date = new Date()): EstadoAutorizacao {
   const fim = new Date(validoAte).getTime()
   if (fim <= agora.getTime()) return 'expirada'
   const msPorDia = 24 * 60 * 60 * 1000
-  return fim - agora.getTime() <= DIAS_AVISO_EXPIRACAO * msPorDia ? 'a-expirar' : 'ligada'
+  return fim - agora.getTime() <= DIAS_AVISO_EXPIRACAO * msPorDia ? 'a-expirar' : 'ativa'
 }
 
 // --- Valores na moeda principal ---

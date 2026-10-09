@@ -11,7 +11,7 @@
  *     numa lista sem cartão. Cada título de secção ("Detalhes", "Open
  *     Banking", "Reconciliações") tem um traço fino por baixo (à largura
  *     do conteúdo, para funcionar igual em desktop e mobile).
- *   - "Open Banking": só aparece quando conta.ligacao existe (ver
+ *   - "Open Banking": só aparece quando conta.vinculo existe (ver
  *     src/lib/contas.ts) — "Sincronizar agora" (importa os movimentos
  *     NOVOS desde a última vez) e "Desvincular" (pára a ligação, mas
  *     nunca apaga a conta nem os movimentos já importados — protegido por
@@ -126,7 +126,7 @@ export function ContaDetalhe() {
   }, [aviso, localizacao.pathname, navegar])
 
   // Estado das acções "Sincronizar agora" e "Desvincular" (ver a secção
-  // "Open Banking", mais abaixo) — só usadas quando conta.ligacao existe.
+  // "Open Banking", mais abaixo) — só usadas quando conta.vinculo existe.
   const [aSincronizar, setASincronizar] = useState(false)
   const [mensagemSincronizar, setMensagemSincronizar] = useState<string | null>(null)
   const [erroSincronizar, setErroSincronizar] = useState<string | null>(null)
@@ -135,12 +135,12 @@ export function ContaDetalhe() {
   const [erroDesvincular, setErroDesvincular] = useState<string | null>(null)
 
   async function aoSincronizar() {
-    if (!conta?.ligacao) return
+    if (!conta?.vinculo) return
     setASincronizar(true)
     setMensagemSincronizar(null)
     setErroSincronizar(null)
     try {
-      const resultado = await sincronizar(conta.ligacao.conta_ligada_id)
+      const resultado = await sincronizar(conta.vinculo.conta_bancaria_id)
       // O saldo mostrado (conta.saldo/saldo_convertido) fica desactualizado
       // assim que entram movimentos novos — invalida as contas (esta e a
       // lista, por baixo) em vez de tentar recalcular isto no cliente. O
@@ -163,15 +163,15 @@ export function ContaDetalhe() {
   }
 
   async function aoDesvincular() {
-    if (!conta?.ligacao) return
+    if (!conta?.vinculo) return
     setADesvincular(true)
     try {
-      await desvincular(conta.ligacao.conta_ligada_id)
+      await desvincular(conta.vinculo.conta_bancaria_id)
       // Invalida as contas: esta deixa de mostrar a secção "Open Banking"
       // (e a lista, por baixo, deixa de mostrar o selo de ligada). Do lado
       // do backend, os seus movimentos já voltaram a ser totalmente
-      // editáveis (ver conta_esta_ligada, em
-      // backend/app/services/ligacoes_bancarias.py).
+      // editáveis (ver conta_tem_vinculo, em
+      // backend/app/services/contas_bancarias.py).
       await clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
       setAConfirmarDesvincular(false)
     } catch (erroApanhado) {
@@ -292,14 +292,14 @@ export function ContaDetalhe() {
                 </dl>
               </section>
 
-              {/* Só para uma conta ligada ao Open Banking (ver a nota
-                  CONTA LIGADA em backend/app/models/conta_ligada.py) —
-                  uma conta manual, ou já desvinculada, não mostra esta
-                  secção nenhuma. */}
-              {conta.ligacao && (
+              {/* Só para uma conta com VÍNCULO (alimentada por uma conta
+                  bancária através do Open Banking; ver
+                  backend/app/models/conta_bancaria.py) — uma conta
+                  manual, ou já desvinculada, não mostra esta secção. */}
+              {conta.vinculo && (
                 <section className={estilos.seccao}>
                   <h2 className={estilos.seccaoTitulo}>Open Banking</h2>
-                  <p className={estilos.nota}>Ligada a {conta.ligacao.aspsp_nome}.</p>
+                  <p className={estilos.nota}>Ligada a {conta.vinculo.banco}.</p>
                   <div className={estilos.acoesLigacao}>
                     <Botao
                       variante="secundario"
@@ -350,7 +350,7 @@ export function ContaDetalhe() {
         </div>
       )}
 
-      {aConfirmarDesvincular && conta?.ligacao && (
+      {aConfirmarDesvincular && conta?.vinculo && (
         <Confirmacao
           titulo="Desvincular conta"
           textoConfirmar="Sim, desvincular"
@@ -360,7 +360,7 @@ export function ContaDetalhe() {
         >
           <p>
             A conta e os movimentos importados mantêm-se, mas deixa de ser
-            possível sincronizar movimentos novos de {conta.ligacao.aspsp_nome}.
+            possível sincronizar movimentos novos de {conta.vinculo.banco}.
           </p>
         </Confirmacao>
       )}

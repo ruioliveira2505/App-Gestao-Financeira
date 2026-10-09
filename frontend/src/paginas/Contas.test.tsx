@@ -48,7 +48,7 @@ function conta(sobrepor: Record<string, unknown> = {}) {
     data_ancora: '2026-01-01',
     saldo_ancora: '100.00',
     saldo: '100.00',
-    ligacao: null,
+    vinculo: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     ...sobrepor,
@@ -62,7 +62,7 @@ function conta(sobrepor: Record<string, unknown> = {}) {
 // ligação (ligada / a expirar / expirada) depende da data de hoje.
 function ligacao(dias: number, id = 'cl1') {
   const validoAte = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString()
-  return { conta_ligada_id: id, aspsp_nome: 'BPI', valido_ate: validoAte }
+  return { conta_bancaria_id: id, banco: 'BPI', valido_ate: validoAte }
 }
 
 function montar() {
@@ -465,9 +465,9 @@ describe('Página Contas', () => {
       servidorMsw.use(
         http.get('/api/contas', () =>
           HttpResponse.json([
-            conta({ id: 'a', nome: 'Ativa', ligacao: ligacao(60, 'cl1') }),
-            conta({ id: 'b', nome: 'Quase', ligacao: ligacao(3, 'cl2') }),
-            conta({ id: 'c', nome: 'Antiga', ligacao: ligacao(-1, 'cl3') }),
+            conta({ id: 'a', nome: 'Ativa', vinculo: ligacao(60, 'cl1') }),
+            conta({ id: 'b', nome: 'Quase', vinculo: ligacao(3, 'cl2') }),
+            conta({ id: 'c', nome: 'Antiga', vinculo: ligacao(-1, 'cl3') }),
             conta({ id: 'd', nome: 'Manual' }),
           ]),
         ),
@@ -498,13 +498,13 @@ describe('Página Contas', () => {
       servidorMsw.use(
         http.get('/api/contas', () =>
           HttpResponse.json([
-            conta({ id: 'a', nome: 'Uma', ligacao: ligacao(60, 'cl1') }),
-            conta({ id: 'b', nome: 'Outra', ligacao: ligacao(3, 'cl2') }),
+            conta({ id: 'a', nome: 'Uma', vinculo: ligacao(60, 'cl1') }),
+            conta({ id: 'b', nome: 'Outra', vinculo: ligacao(3, 'cl2') }),
             // Expirada: o banco já não responde — não é pedida.
-            conta({ id: 'c', nome: 'Velha', ligacao: ligacao(-1, 'cl3') }),
+            conta({ id: 'c', nome: 'Velha', vinculo: ligacao(-1, 'cl3') }),
           ]),
         ),
-        http.post('/api/open-banking/contas-ligadas/:id/sincronizar', ({ params }) => {
+        http.post('/api/open-banking/contas-bancarias/:id/sincronizar', ({ params }) => {
           sincronizadas.push(String(params.id))
           return HttpResponse.json({ movimentos_importados: params.id === 'cl1' ? 2 : 1 })
         }),

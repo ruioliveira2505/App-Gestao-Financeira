@@ -19,7 +19,7 @@
  *
  * NOME: começa VAZIO, com a sugestão do backend como exemplo esbatido
  * ("Ex.: Conta à ordem CGD" — o tipo de conta mais o banco abreviado; ver
- * nome_sugerido, em backend/app/services/ligacoes_bancarias.py). Como no
+ * nome_sugerido, em backend/app/services/contas_bancarias.py). Como no
  * manual, o "✓" só fica ativo com o nome escrito: é o utilizador que dá o
  * nome às suas contas.
  *
@@ -66,7 +66,7 @@ import { IconeCadeado } from './icones'
 import { useContas } from '../hooks/useContas'
 import { sugestoes } from '../lib/contas'
 import { etiquetaMoeda } from '../lib/moedas'
-import type { ContaLigada } from '../lib/openBanking'
+import type { ContaBancaria } from '../lib/openBanking'
 // As MESMAS fichas do formulário manual (cartão, linhas, traço recuado,
 // rodapé) — importadas daqui e não copiadas, para as duas formas de criar
 // uma conta nunca poderem divergir visualmente.
@@ -81,7 +81,7 @@ export type DadosContasLigadas = {
 
 type Props = {
   // As contas a configurar (todas do mesmo banco).
-  contas: ContaLigada[]
+  contas: ContaBancaria[]
   idFormulario: string
   aoConfirmar: (dados: DadosContasLigadas) => void
   aoMudarValidez?: (valido: boolean) => void

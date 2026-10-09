@@ -18,6 +18,7 @@ import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { ContaNova } from './ContaNova'
 import { ComConsultas } from '../test/consultas'
+import type { ContaBancaria } from '../lib/openBanking'
 
 // Todas as montagens deste ficheiro levam a cache dos dados do servidor à
 // volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
@@ -68,7 +69,7 @@ const CONTA_EXISTENTE = {
   saldo_ancora: '0.00',
   saldo: '0.00',
   saldo_convertido: '0.00',
-  ligacao: null,
+  vinculo: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -717,7 +718,7 @@ describe('Página Nova conta — Open Banking', () => {
     expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
   })
 
-  describe('ao voltar do banco (?ligacao=)', () => {
+  describe('ao voltar do banco (?autorizacao=)', () => {
     const CGD = {
       id: 'cl-1',
       banco: 'Caixa Geral de Depósitos',
@@ -730,7 +731,10 @@ describe('Página Nova conta — Open Banking', () => {
       tipo_sugerido: 'Conta à ordem',
       nome_sugerido: 'Conta à ordem CGD',
       conta_antiga: null,
-    }
+      // "satisfies" pede ao TypeScript que confirme que o exemplo tem a
+      // forma da resposta da API, para uma mudança de nomes não passar
+      // despercebida.
+    } satisfies ContaBancaria
 
     function respostaCriada(contaId: string, movimentos: number) {
       return HttpResponse.json({
@@ -751,8 +755,8 @@ describe('Página Nova conta — Open Banking', () => {
       let dataDeRecebida: string | null = 'pedido-por-fazer'
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
-        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', ({ request }) => {
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-bancarias/cl-1/criar-conta', ({ request }) => {
           const parametros = new URL(request.url).searchParams
           nomeRecebido = parametros.get('nome')
           tipoRecebido = parametros.get('tipo')
@@ -760,7 +764,7 @@ describe('Página Nova conta — Open Banking', () => {
           return respostaCriada('nova-3', 5)
         }),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
 
       // O nome começa vazio, com a sugestão como exemplo; o tipo vem
       // preenchido; o que vem do banco está à vista, bloqueado (o IBAN
@@ -794,12 +798,12 @@ describe('Página Nova conta — Open Banking', () => {
       // como "desde" sugeriria um histórico que não existe.
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
-        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', () =>
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-bancarias/cl-1/criar-conta', () =>
           respostaCriada('nova-4', 0),
         ),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
 
       await userEvent.type(await screen.findByLabelText('Nome'), 'Ordenado')
       await userEvent.click(screen.getByRole('button', { name: 'Adicionar conta' }))
@@ -813,13 +817,13 @@ describe('Página Nova conta — Open Banking', () => {
       let dataDeRecebida: string | null = null
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
-        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', ({ request }) => {
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-bancarias/cl-1/criar-conta', ({ request }) => {
           dataDeRecebida = new URL(request.url).searchParams.get('data_de')
           return respostaCriada('nova-3', 2)
         }),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
       await userEvent.type(await screen.findByLabelText('Nome'), 'Ordenado')
 
       expect(screen.queryByRole('button', { name: /Desde/ })).not.toBeInTheDocument()
@@ -843,7 +847,7 @@ describe('Página Nova conta — Open Banking', () => {
       const criadas: string[] = []
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () =>
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () =>
           HttpResponse.json([
             { ...CGD, id: 'cl-1', iban: 'PT50000000000000000004021', moeda: 'EUR', tipo_sugerido: null },
             { ...CGD, id: 'cl-2', iban: 'PT50000000000000000007780', moeda: 'USD', tipo_sugerido: null },
@@ -852,12 +856,12 @@ describe('Página Nova conta — Open Banking', () => {
             { ...CGD, id: 'cl-3', conta_id: 'antiga', conta_nome: 'Ordenado' },
           ]),
         ),
-        http.post('/api/open-banking/contas-ligadas/:id/associar-nova-conta', ({ params }) => {
+        http.post('/api/open-banking/contas-bancarias/:id/criar-conta', ({ params }) => {
           criadas.push(String(params.id))
           return respostaCriada(`nova-${params.id}`, 7)
         }),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
 
       expect(await screen.findByText('3 contas encontradas')).toBeInTheDocument()
       expect(screen.getByText('Já nas tuas contas')).toBeInTheDocument()
@@ -879,18 +883,21 @@ describe('Página Nova conta — Open Banking', () => {
     it('se a criação falhar, diz o que falhou e deixa tentar outra vez', async () => {
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () => HttpResponse.json([CGD])),
-        http.post('/api/open-banking/contas-ligadas/cl-1/associar-nova-conta', () =>
-          HttpResponse.json({ detail: 'Sessão expirada.' }, { status: 502 }),
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () => HttpResponse.json([CGD])),
+        http.post('/api/open-banking/contas-bancarias/cl-1/criar-conta', () =>
+          HttpResponse.json(
+            { detail: 'O banco não aceitou o pedido. Tenta outra vez mais tarde.' },
+            { status: 502 },
+          ),
         ),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
       await userEvent.type(await screen.findByLabelText('Nome'), 'Ordenado')
 
       await userEvent.click(screen.getByRole('button', { name: 'Adicionar conta' }))
 
       expect(await screen.findByText('Não foi possível adicionar')).toBeInTheDocument()
-      expect(screen.getByText('Sessão expirada.')).toBeInTheDocument()
+      expect(screen.getByText('O banco não aceitou o pedido. Tenta outra vez mais tarde.')).toBeInTheDocument()
 
       await userEvent.click(screen.getByRole('button', { name: 'Tentar outra vez' }))
       expect(await screen.findByLabelText('Nome')).toBeInTheDocument()
@@ -899,14 +906,14 @@ describe('Página Nova conta — Open Banking', () => {
     it('uma conta que já foi tua (desvinculada) diz qual era', async () => {
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () =>
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () =>
           HttpResponse.json([
             { ...CGD, id: 'cl-1' },
             { ...CGD, id: 'cl-2', conta_antiga: { id: 'c-velha', nome: 'Cartão Caixa' } },
           ]),
         ),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
 
       expect(await screen.findByText('Já foi a «Cartão Caixa»')).toBeInTheDocument()
     })
@@ -914,11 +921,11 @@ describe('Página Nova conta — Open Banking', () => {
     it('se todas as contas já estão na app, diz isso e que a ligação se renovou', async () => {
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([])),
-        http.get('/api/open-banking/ligacoes/lig-1/contas-ligadas', () =>
+        http.get('/api/open-banking/autorizacoes/lig-1/contas-bancarias', () =>
           HttpResponse.json([{ ...CGD, conta_id: 'c-1', conta_nome: 'Ordenado' }]),
         ),
       )
-      montar('/contas/nova?ligacao=lig-1')
+      montar('/contas/nova?autorizacao=lig-1')
 
       expect(await screen.findByText('Já está tudo nas tuas contas')).toBeInTheDocument()
       expect(screen.getByText('Ligação renovada até 1 abr 2027.')).toBeInTheDocument()

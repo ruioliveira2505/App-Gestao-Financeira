@@ -396,7 +396,7 @@ export function IconeSincronizar(props: PropsIcone) {
   )
 }
 
-// Dois elos de corrente — uma conta ligada ao banco (ver EstadoLigacao, em
+// Dois elos de corrente — uma conta ligada ao banco (ver EstadoAutorizacao, em
 // src/lib/contas.ts).
 export function IconeLigacao(props: PropsIcone) {
   return (

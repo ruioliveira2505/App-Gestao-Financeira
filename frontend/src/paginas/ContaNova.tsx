@@ -22,7 +22,7 @@
  *         manualmente". Também é o que fica por trás da folha aninhada
  *         enquanto se preenche o manual ou se escolhe o banco.
  *       · "confirmar" — para onde o browser volta depois do banco: GET
- *         /open-banking/callback reencaminha para "/contas/nova?ligacao=
+ *         /open-banking/callback reencaminha para "/contas/nova?autorizacao=
  *         <id>". Tem as suas próprias "fases" (ver FASES, abaixo).
  *       · "erro" — o backend também pode reencaminhar para
  *         "/contas/nova?erro=<mensagem>" (autorização recusada, sessão
@@ -38,7 +38,7 @@
  *     lido, o que nunca é possível, quanto tempo dura o consentimento,
  *     como cancelar, quem é o responsável, e um botão largo "Continuar".
  *     Ao tocar, o mesmo ecrã passa a "A preparar a ligação…" e só então a
- *     app sai da SPA (iniciarLigacao, em src/lib/openBanking.ts) — primeiro
+ *     app sai da SPA (iniciarAutorizacao, em src/lib/openBanking.ts) — primeiro
  *     para a página da Enable Banking, depois para o site do banco.
  *
  *   Cada "‹" recua só um nível. Os "‹" só podem ter alcances diferentes
@@ -60,7 +60,7 @@
  *     importar). Com uma conta, é o conteúdo da própria folha de base;
  *     com várias, abre na folha aninhada, por cima da lista — o "‹" volta
  *     à escolha de contas.
- *   - "importar": cria as contas uma a uma (associarNovaConta — cada uma
+ *   - "importar": cria as contas uma a uma (criarContaDoBanco — cada uma
  *     já importa os seus movimentos no backend), mostrando o progresso.
  *   - "concluido": resumo (quantos movimentos entraram em cada conta), ou
  *     o que falhou.
@@ -77,7 +77,7 @@
  * tivesse recuado um passo em vez de fechar tudo. A folha de base em si
  * nunca fica dentro de um Provider — não tem nada por trás.
  *
- * O passo inicial lê-se da query string, uma vez, ao montar: "ligacao" e
+ * O passo inicial lê-se da query string, uma vez, ao montar: "autorizacao" e
  * "erro" (o regresso do banco, acima) ou "via=banco" / "via=manual" — a
  * entrada directa num dos dois caminhos, usada pelos botões do estado
  * "sem contas" da página Contas (a "escolha" fica por trás, e o "‹" recua
@@ -132,12 +132,12 @@ import { formatarData } from '../lib/datas'
 import { CHAVES } from '../lib/consultas'
 import { ErroApi } from '../lib/http'
 import {
-  associarNovaConta,
-  iniciarLigacao,
+  criarContaDoBanco,
+  iniciarAutorizacao,
   listarBancos,
-  listarContasLigadas,
+  listarContasBancarias,
   type Banco,
-  type ContaLigada,
+  type ContaBancaria,
 } from '../lib/openBanking'
 import estilos from './ContaNova.module.css'
 
@@ -159,7 +159,7 @@ type Passo =
   | { tipo: 'escolha' }
   | { tipo: 'manual' }
   | { tipo: 'banco' }
-  | { tipo: 'confirmar'; ligacaoId: string }
+  | { tipo: 'confirmar'; autorizacaoId: string }
   | { tipo: 'erro'; mensagem: string }
 
 type Fase = 'contas' | 'configurar' | 'importar' | 'concluido'
@@ -237,9 +237,9 @@ export function ContaNova() {
   const clienteConsultas = useQueryClient()
 
   const [passo, setPasso] = useState<Passo>(() => {
-    const ligacao = parametros.get('ligacao')
+    const autorizacao = parametros.get('autorizacao')
     const erro = parametros.get('erro')
-    if (ligacao) return { tipo: 'confirmar', ligacaoId: ligacao }
+    if (autorizacao) return { tipo: 'confirmar', autorizacaoId: autorizacao }
     if (erro) return { tipo: 'erro', mensagem: erro }
     const via = parametros.get('via')
     if (via === 'banco') return { tipo: 'banco' }
@@ -279,7 +279,7 @@ export function ContaNova() {
   const [aAbrirBanco, setAAbrirBanco] = useState(false)
 
   // --- Passo "confirmar" (ver FASES, no topo do ficheiro) ---
-  const [contasLigadas, setContasLigadas] = useState<ContaLigada[] | null>(null)
+  const [contasLigadas, setContasLigadas] = useState<ContaBancaria[] | null>(null)
   const [erroContasLigadas, setErroContasLigadas] = useState<string | null>(null)
   const [fase, setFase] = useState<Fase>('contas')
   // Por omissão, todas as contas descobertas vêm marcadas — guarda-se o
@@ -442,7 +442,7 @@ export function ContaNova() {
     setAAbrirBanco(true)
     // Um instante para o ecrã "A preparar a ligação…" chegar a ser pintado antes de o
     // browser começar a sair da app.
-    window.setTimeout(() => iniciarLigacao(banco, paisBanco), 60)
+    window.setTimeout(() => iniciarAutorizacao(banco, paisBanco), 60)
   }
 
   // Carrega as contas descobertas assim que se entra no passo "confirmar".
@@ -452,13 +452,13 @@ export function ContaNova() {
   // desenhá-lo, e o modo de desenvolvimento do React desenha-o duas
   // vezes de propósito), e cada vez dispararia outro pedido ao servidor.
   // O efeito só volta a correr se mudar a ligação a confirmar.
-  const ligacaoAConfirmar = passo.tipo === 'confirmar' ? passo.ligacaoId : null
+  const ligacaoAConfirmar = passo.tipo === 'confirmar' ? passo.autorizacaoId : null
   useEffect(() => {
     if (ligacaoAConfirmar === null) return
     // "activo" evita gravar a resposta de um pedido que já não interessa
     // (o utilizador saiu deste passo antes de ela chegar).
     let activo = true
-    listarContasLigadas(ligacaoAConfirmar)
+    listarContasBancarias(ligacaoAConfirmar)
       .then((contas) => {
         if (activo) setContasLigadas(contas)
       })
@@ -477,7 +477,7 @@ export function ContaNova() {
 
   // Ao voltar do banco: as contas ainda por associar (novas, ou que já
   // foram uma conta tua entretanto desvinculada) e as que já estão nas
-  // tuas contas (a ligação renovou-se sozinha — ver ContaLigada, em
+  // tuas contas (a ligação renovou-se sozinha — ver ContaBancaria, em
   // src/lib/openBanking.ts).
   const pendentes = (contasLigadas ?? []).filter((c) => c.conta_id === null)
   const renovadas = (contasLigadas ?? []).filter((c) => c.conta_id !== null)
@@ -496,14 +496,14 @@ export function ContaNova() {
     )
   }
 
-  // Cria as contas uma a uma — cada associarNovaConta já importa os
+  // Cria as contas uma a uma — cada criarContaDoBanco já importa os
   // movimentos no backend. Uma que falhe não impede as seguintes.
   async function importar(dados: DadosContasLigadas) {
     setFase('importar')
     setResultados(dados.contas.map((c) => ({ id: c.id, nome: c.nome, estado: 'a-importar' })))
     for (const c of dados.contas) {
       try {
-        const criada = await associarNovaConta(c.id, c.nome, dados.dataDe ?? undefined, c.tipo)
+        const criada = await criarContaDoBanco(c.id, c.nome, dados.dataDe ?? undefined, c.tipo)
         setResultados((atual) =>
           atual.map((r) =>
             r.id === c.id

@@ -15,7 +15,7 @@ import {
   apagarConta,
   criarConta,
   editarConta,
-  estadoLigacao,
+  estadoAutorizacao,
   listarContas,
   obterConta,
   valorParaComparar,
@@ -32,7 +32,7 @@ const CONTA = {
   saldo_ancora: '100.00',
   saldo: '100.00',
   saldo_convertido: null,
-  ligacao: null,
+  vinculo: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -103,22 +103,22 @@ describe('cliente da API de contas', () => {
 
 // --- Funções puras (sem rede) ---
 
-describe('estadoLigacao', () => {
+describe('estadoAutorizacao', () => {
   // Um momento fixo, para os testes não dependerem do dia em que correm.
   const AGORA = new Date('2026-10-01T12:00:00Z')
 
   it('com mais de 7 dias de validade, está ligada', () => {
-    expect(estadoLigacao('2026-12-30T12:00:00Z', AGORA)).toBe('ligada')
+    expect(estadoAutorizacao('2026-12-30T12:00:00Z', AGORA)).toBe('ativa')
   })
 
   it('a 7 dias ou menos do fim, está a expirar', () => {
-    expect(estadoLigacao('2026-10-08T12:00:00Z', AGORA)).toBe('a-expirar')
-    expect(estadoLigacao('2026-10-01T13:00:00Z', AGORA)).toBe('a-expirar')
+    expect(estadoAutorizacao('2026-10-08T12:00:00Z', AGORA)).toBe('a-expirar')
+    expect(estadoAutorizacao('2026-10-01T13:00:00Z', AGORA)).toBe('a-expirar')
   })
 
   it('com a validade ultrapassada, está expirada', () => {
-    expect(estadoLigacao('2026-09-30T12:00:00Z', AGORA)).toBe('expirada')
-    expect(estadoLigacao('2026-10-01T12:00:00Z', AGORA)).toBe('expirada')
+    expect(estadoAutorizacao('2026-09-30T12:00:00Z', AGORA)).toBe('expirada')
+    expect(estadoAutorizacao('2026-10-01T12:00:00Z', AGORA)).toBe('expirada')
   })
 })
 

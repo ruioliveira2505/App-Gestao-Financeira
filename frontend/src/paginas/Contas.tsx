@@ -75,10 +75,10 @@ import {
 import { LinkBotao } from '../componentes/LinkBotao'
 import { Menu, MenuItem, MenuSeparador } from '../componentes/Menu'
 import {
-  estadoLigacao,
+  estadoAutorizacao,
   valorParaComparar,
   type Conta,
-  type EstadoLigacao,
+  type EstadoAutorizacao,
 } from '../lib/contas'
 import { formatarDinheiro } from '../lib/moedas'
 import { ErroApi } from '../lib/http'
@@ -230,15 +230,15 @@ function Esqueleto() {
 
 /** O que o leitor de ecrã ouve sobre o estado da ligação de uma conta —
  *  o ícone (SeloLigacao) é só visual. */
-const DESCRICAO_LIGACAO: Record<EstadoLigacao, string> = {
-  ligada: 'ligada ao banco',
+const DESCRICAO_LIGACAO: Record<EstadoAutorizacao, string> = {
+  ativa: 'ligada ao banco',
   'a-expirar': 'ligação ao banco a expirar',
   expirada: 'ligação ao banco expirada',
 }
 
 /** O pequeno ícone sobre o monograma de uma conta ligada ao banco, com o
- *  estado da ligação (ver estadoLigacao, em src/lib/contas.ts):
- *  - "ligada": círculo escuro com dois elos de corrente;
+ *  estado da ligação (ver estadoAutorizacao, em src/lib/contas.ts):
+ *  - "ativa": círculo escuro com dois elos de corrente;
  *  - "a-expirar" (7 dias ou menos de validade): âmbar, com "!";
  *  - "expirada": vermelho, com a corrente partida.
  *  Só o ícone, sem texto na linha — decisão de desenho: a lista fica
@@ -246,15 +246,15 @@ const DESCRICAO_LIGACAO: Record<EstadoLigacao, string> = {
  *  com as mesmas cores e símbolos) explica o que significa. É decorativo
  *  para leitores de ecrã ("aria-hidden"): o estado vai, em texto, dentro
  *  da própria linha (ver CartaoConta). */
-function SeloLigacao({ estado }: { estado: EstadoLigacao }) {
+function SeloLigacao({ estado }: { estado: EstadoAutorizacao }) {
   const classe = {
-    ligada: estilos.seloLigada,
+    ativa: estilos.seloLigada,
     'a-expirar': estilos.seloAExpirar,
     expirada: estilos.seloExpirada,
   }[estado]
   return (
     <span className={`${estilos.selo} ${classe}`} aria-hidden="true">
-      {estado === 'ligada' && <IconeLigacao tamanho={10} traco={3} />}
+      {estado === 'ativa' && <IconeLigacao tamanho={10} traco={3} />}
       {estado === 'a-expirar' && <span className={estilos.seloExclamacao}>!</span>}
       {estado === 'expirada' && <IconeLigacaoPartida tamanho={10} traco={3} />}
     </span>
@@ -289,7 +289,7 @@ function CartaoConta({ conta }: { conta: Conta }) {
   const negativo = Number(conta.saldo) < 0
   const moedaPrincipal = utilizador?.moeda_principal ?? 'EUR'
   const mostraConversao = conta.moeda !== moedaPrincipal && conta.saldo_convertido !== null
-  const ligacao = conta.ligacao ? estadoLigacao(conta.ligacao.valido_ate) : null
+  const ligacao = conta.vinculo ? estadoAutorizacao(conta.vinculo.valido_ate) : null
 
   return (
     <Link to={`/contas/${conta.id}`} className={estilos.cartao}>
@@ -762,9 +762,9 @@ export function Contas() {
   // preciso voltar a autorizar o banco, em Nova conta › Ligar um banco, e
   // a ligação dessa conta renova-se sozinha).
   const contasLigadas =
-    estado.fase === 'pronto' ? estado.contas.filter((conta) => conta.ligacao !== null) : []
+    estado.fase === 'pronto' ? estado.contas.filter((conta) => conta.vinculo !== null) : []
   const contasSincronizaveis = contasLigadas.filter(
-    (conta) => conta.ligacao && estadoLigacao(conta.ligacao.valido_ate) !== 'expirada',
+    (conta) => conta.vinculo && estadoAutorizacao(conta.vinculo.valido_ate) !== 'expirada',
   )
   // A razão por que "Sincronizar agora" está indisponível, ou null.
   const semSincronizar =
@@ -793,7 +793,7 @@ export function Contas() {
     let falhas = 0
     for (const conta of contasSincronizaveis) {
       try {
-        const resultado = await sincronizar((conta.ligacao as NonNullable<Conta['ligacao']>).conta_ligada_id)
+        const resultado = await sincronizar((conta.vinculo as NonNullable<Conta['vinculo']>).conta_bancaria_id)
         novos += resultado.movimentos_importados
       } catch {
         falhas += 1
