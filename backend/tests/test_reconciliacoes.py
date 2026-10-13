@@ -119,15 +119,29 @@ async def test_reconciliacao_cria_o_acerto_pela_diferenca(cliente_autenticado, d
 
 
 @pytest.mark.asyncio
-async def test_reconciliacao_que_bate_certo_fica_confirmada_sem_acerto(cliente_autenticado, db_session):
+async def test_reconciliacao_sem_diferenca_e_recusada_ao_criar_e_ao_editar(cliente_autenticado, db_session):
+    """
+    Uma reconciliação só se cria (ou edita) quando há algo a acertar: se o
+    saldo afirmado já bate certo com o calculado, é recusada (regra R2).
+    """
     conta_id = await _conta(cliente_autenticado)
 
-    resposta = await cliente_autenticado.post(
+    criar = await cliente_autenticado.post(
         f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-02-10", "saldo": "100.00"}
     )
+    existente = (
+        await cliente_autenticado.post(
+            f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-02-10", "saldo": "90.00"}
+        )
+    ).json()
+    editar = await cliente_autenticado.patch(
+        f"/reconciliacoes/{existente['id']}", json={"data": "2026-02-10", "saldo": "100.00"}
+    )
 
-    assert resposta.json()["acerto"] == "0.00"
-    assert await _acerto_movimento(db_session, conta_id) is None
+    assert criar.status_code == editar.status_code == 400
+    assert criar.json()["detail"] == "O saldo já bate certo neste dia: não há nada a acertar."
+    reconciliacoes = (await cliente_autenticado.get(f"/contas/{conta_id}/reconciliacoes")).json()
+    assert [(r["saldo"], r["acerto"]) for r in reconciliacoes] == [("90.00", "-10.00")]
 
 
 @pytest.mark.asyncio
@@ -394,9 +408,16 @@ async def test_editar_a_ancora_recalcula_o_acerto_e_respeita_o_limite(cliente_au
 
 @pytest.mark.asyncio
 async def test_moeda_nao_muda_numa_conta_com_reconciliacoes(cliente_autenticado, db_session):
+    """
+    Uma conta sem movimentos, mas com uma reconciliação: criada com acerto
+    (−10) e que, depois de o saldo inicial passar a 90, ficou sem ele.
+    """
     conta_id = await _conta(cliente_autenticado)
     await cliente_autenticado.post(
-        f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-02-10", "saldo": "100.00"}
+        f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-02-10", "saldo": "90.00"}
+    )
+    await cliente_autenticado.patch(
+        f"/contas/{conta_id}/ancora", json={"data_ancora": "2026-01-01", "saldo_ancora": "90.00"}
     )
     conta = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()
 
@@ -447,11 +468,13 @@ async def _acerto(cliente, conta_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_acerto_que_passa_a_zero_desaparece(cliente_autenticado, db_session):
+async def test_acerto_que_passa_a_zero_fica_a_zero_e_a_reconciliacao_fica(cliente_autenticado, db_session):
     """
     Saldo inicial 100, o extrato diz 90 a 1 de fevereiro: acerto de −10. O
     utilizador lembra-se da compra de 10 a 15 de janeiro e regista-a: o
-    acerto deixa de ser preciso e o movimento de acerto sai; o saldo fica.
+    acerto deixa de ser preciso e o movimento de acerto sai, mas a
+    reconciliação fica, com acerto 0,00 € (continua a guardar o saldo
+    confirmado); o saldo fica.
     """
     conta_id = await _conta(cliente_autenticado)
     await _reconciliar(cliente_autenticado, conta_id, "2026-02-01", "90.00")
@@ -466,22 +489,22 @@ async def test_acerto_que_passa_a_zero_desaparece(cliente_autenticado, db_sessio
 @pytest.mark.asyncio
 async def test_acertos_recalculam_ao_mover_mudar_a_data_e_apagar_movimentos(cliente_autenticado, db_session):
     """
-    Duas contas, cada uma com uma reconciliação a 1 de março que bate certo
-    (acerto 0) e uma saída de 10 em A a 1 de fevereiro:
-      - mudar a data dessa saída para depois de 1 de março: o acerto de A
-        passa a −10 (a saída já não conta até ao dia reconciliado);
-      - movê-la de volta para antes, mas para a conta B: o acerto de A
-        continua −10 e o de B passa a +10;
-      - apagá-la: o acerto de B volta a 0 (o de A fica −10, porque a
-        saída já tinha saído de A);
-      - eliminar em lote outra saída antes de 1 de março em A: o acerto de
-        A recalcula.
+    Duas contas com saldo inicial 100, cada uma com uma reconciliação a 1 de
+    março: A diz 85 (com uma saída de 10 a 1 de fevereiro, acerto de −5); B
+    diz 95 (acerto de −5).
+      - a saída de A passa para depois de 1 de março: o acerto de A passa a
+        −15 (a saída já não conta até ao dia reconciliado);
+      - a saída volta para antes, mas para a conta B: A continua −15 e B
+        passa a +5;
+      - apagá-la: B volta a −5 (A fica −15);
+      - uma saída de 5 em A a 10 de fevereiro: A passa a −10; eliminá-la em
+        lote devolve-o a −15.
     """
     conta_a = await _conta(cliente_autenticado)
     conta_b = await _conta(cliente_autenticado)
     saida = await _movimento(cliente_autenticado, db_session, conta_a, "2026-02-01", "-10.00")
-    await _reconciliar(cliente_autenticado, conta_a, "2026-03-01", "90.00")
-    await _reconciliar(cliente_autenticado, conta_b, "2026-03-01", "100.00")
+    await _reconciliar(cliente_autenticado, conta_a, "2026-03-01", "85.00")
+    await _reconciliar(cliente_autenticado, conta_b, "2026-03-01", "95.00")
     campos = {k: saida[k] for k in ("categoria_id", "descricao", "valor")}
 
     await cliente_autenticado.patch(
@@ -498,11 +521,11 @@ async def test_acertos_recalculam_ao_mover_mudar_a_data_e_apagar_movimentos(clie
     antes_do_lote = await _acerto(cliente_autenticado, conta_a)
     await cliente_autenticado.post("/movimentos/eliminar-em-lote", json={"ids": [outra["id"]]})
 
-    assert depois_da_data == ("-10.00", "0.00")
-    assert depois_de_mover == ("-10.00", "10.00")
-    assert depois_de_apagar == ("-10.00", "0.00")
-    assert antes_do_lote == "-5.00"
-    assert await _acerto(cliente_autenticado, conta_a) == "-10.00"
+    assert depois_da_data == ("-15.00", "-5.00")
+    assert depois_de_mover == ("-15.00", "5.00")
+    assert depois_de_apagar == ("-15.00", "-5.00")
+    assert antes_do_lote == "-10.00"
+    assert await _acerto(cliente_autenticado, conta_a) == "-15.00"
 
 
 @pytest.mark.asyncio
@@ -678,3 +701,22 @@ async def test_com_outra_operacao_a_decorrer_na_conta_as_gravacoes_recebem_409(
 
     assert [r.status_code for r in respostas] == [409] * 4
     assert await _saldo(cliente_autenticado, conta_id) == "100.00"
+
+
+@pytest.mark.asyncio
+async def test_a_lista_de_movimentos_diz_quais_sao_acertos(cliente_autenticado, db_session):
+    """
+    Cada movimento diz de onde vem («manual», «banco» ou «acerto»); um acerto
+    diz também de que reconciliação nasceu. A interface usa-o para mostrar um
+    acerto de forma diferente e só para leitura.
+    """
+    conta_id = await _conta(cliente_autenticado)
+    await _movimento(cliente_autenticado, db_session, conta_id, "2026-02-01", "-30.00")
+    reconciliacao = await _reconciliar(cliente_autenticado, conta_id, "2026-02-10", "60.00")
+
+    movimentos = (await cliente_autenticado.get("/movimentos", params={"contas": conta_id})).json()
+
+    por_origem = {m["origem"]: m for m in movimentos}
+    assert sorted(por_origem) == ["acerto", "manual"]
+    assert por_origem["acerto"]["reconciliacao_id"] == reconciliacao["id"]
+    assert por_origem["manual"]["reconciliacao_id"] is None

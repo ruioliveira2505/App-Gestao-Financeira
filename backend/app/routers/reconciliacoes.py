@@ -52,6 +52,9 @@ def _para_saida(reconciliacao: Reconciliacao, acerto) -> ReconciliacaoOut:
         saldo=f"{reconciliacao.saldo:.2f}",
         origem=reconciliacao.origem,
         acerto=f"{acerto:.2f}",
+        # Só as do banco: uma que passou a ser do utilizador (ao desvincular
+        # a conta) guarda a leitura, mas já não é «do banco».
+        lido_em=reconciliacao.lido_em if reconciliacao.origem == "banco" else None,
     )
 
 

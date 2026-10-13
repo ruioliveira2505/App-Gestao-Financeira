@@ -17,7 +17,7 @@ perder cêntimos.
 """
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -48,9 +48,14 @@ class ReconciliacaoOut(BaseModel):
     saldo: str
     # "utilizador" ou "banco".
     origem: str
-    # O acerto que a reconciliação criou ("0.00" se o saldo calculado já
-    # batia certo — a reconciliação fica como "confirmado").
+    # O acerto da reconciliação. Cria-se sempre com acerto, mas pode passar
+    # a "0.00" mais tarde (quando se regista o movimento que explicava a
+    # diferença): a reconciliação fica, a guardar o saldo confirmado.
     acerto: str
+    # Só nas reconciliações do BANCO: o instante em que a aplicação leu o
+    # saldo ao banco. A interface mostra-o («Lido no banco: 12 ago, 14:32»).
+    # None numa reconciliação do utilizador.
+    lido_em: datetime | None = None
 
 
 class AcertoSimuladoOut(BaseModel):

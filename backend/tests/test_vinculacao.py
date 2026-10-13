@@ -1,6 +1,6 @@
 """
-TESTES DE VINCULAR UMA CONTA EXISTENTE, COMPARAR, ACERTAR E DESVINCULAR
-==========================================================================
+TESTES DE VINCULAR UMA CONTA EXISTENTE E DESVINCULAR
+======================================================
 
 Vocabulário: uma AUTORIZAÇÃO é o consentimento dado no banco; cada conta
 partilhada é uma CONTA BANCÁRIA; o VÍNCULO é o facto de uma conta bancária
@@ -262,7 +262,7 @@ async def test_vincular_em_substituir_troca_o_historico_pelo_do_banco(
     """
     conta_id, conta_bancaria = await _cenario(cliente_autenticado, db_session)
     await cliente_autenticado.post(
-        f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-03-30", "saldo": "70.00"}
+        f"/contas/{conta_id}/reconciliacoes", json={"data": "2026-03-30", "saldo": "75.00"}
     )
     _banco_falso(monkeypatch, "50.00", _TRANSACOES)
     simulacao = (
@@ -288,7 +288,7 @@ async def test_vincular_em_substituir_troca_o_historico_pelo_do_banco(
     assert vinculo.data_corte == date(2026, 3, 30)
 
 
-# --- Comparar, acertar, e o movimento atrasado ---
+# --- O movimento atrasado e a comparação interna com o banco ---
 
 
 async def _conta_vinculada(cliente, db_session, monkeypatch) -> tuple[str, ContaBancaria]:
@@ -300,65 +300,95 @@ async def _conta_vinculada(cliente, db_session, monkeypatch) -> tuple[str, Conta
 
 
 @pytest.mark.asyncio
-async def test_comparar_e_acertar_com_o_banco(cliente_autenticado, db_session, monkeypatch):
-    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
-    # O banco passou a dizer 40 (uma comissão que nunca chegou como transação).
-    _banco_falso(monkeypatch, "40.00", _TRANSACOES)
-
-    comparacao = (
-        await cliente_autenticado.get(f"/open-banking/contas-bancarias/{conta_bancaria.id}/comparar")
-    ).json()
-    acerto = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria.id}/acertar")
-
-    assert comparacao == {"saldo_banco": "40.00", "saldo_aplicacao": "50.00", "diferenca": "-10.00"}
-    assert acerto.json() == {"data": "2026-04-02", "acerto": "-10.00"}
-    assert await _saldo(cliente_autenticado, conta_id) == "40.00"
-
-
-@pytest.mark.asyncio
 async def test_movimento_atrasado_soma_se_ao_saldo_derivado_e_o_acerto_mantem_se(
     cliente_autenticado, db_session, monkeypatch
 ):
     """
-    Depois de acertar a 2 de abril (saldo 40), o banco lança uma compra de
-    6 com data de 1 de abril (atrasada). Não estava no saldo lido; ao
-    chegar, soma-se ao saldo derivado da reconciliação, que passa de 40
-    para 34, e o acerto não muda: a compra conta, sem acerto falso.
+    A reconciliação do banco de «continuar» (30 de março, saldo derivado 75,
+    acerto +5). Mais tarde chega um movimento do banco de −6 com data de 29
+    de março (atrasado: não estava no saldo lido). Ao recalcular, soma-se ao
+    saldo derivado (75 → 69) e o acerto não muda: o movimento conta, sem um
+    acerto falso. O movimento grava-se diretamente, porque a sincronização
+    nunca importa nada até ao dia de corte; o que se testa é o cálculo.
     """
-    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
-    _banco_falso(monkeypatch, "40.00", _TRANSACOES)
-    await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria.id}/acertar")
-    reconciliacao = await db_session.scalar(
-        select(Reconciliacao).where(Reconciliacao.data == date(2026, 4, 2))
-    )
-    # Num teste, tudo corre numa só transação, e o "agora" da base de dados
-    # fica fixo: a leitura do saldo e uma importação seguinte teriam a mesma
-    # hora. Na vida real são pedidos diferentes, em momentos diferentes.
-    # Para o simular, a leitura do saldo e os movimentos já importados
-    # recuam no tempo; a importação seguinte fica "depois" deles.
-    for lida in (
-        await db_session.scalars(select(Reconciliacao).where(Reconciliacao.conta_id == uuid.UUID(conta_id)))
-    ).all():
-        lida.lido_em = lida.lido_em - timedelta(minutes=30)
-    for movimento in (
-        await db_session.scalars(select(Movimento).where(Movimento.conta_id == uuid.UUID(conta_id)))
-    ).all():
-        movimento.created_at = movimento.created_at - timedelta(hours=1)
-    await db_session.commit()
-    _banco_falso(monkeypatch, "34.00", [*_TRANSACOES, _transacao("atrasada", "2026-04-01", "6.00")])
+    from app.services.reconciliacoes import recalcular_acertos
 
-    sincronizar = await cliente_autenticado.post(
-        f"/open-banking/contas-bancarias/{conta_bancaria.id}/sincronizar"
+    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
+    reconciliacao = await db_session.scalar(select(Reconciliacao).where(Reconciliacao.conta_id == uuid.UUID(conta_id)))
+    vinculo = await db_session.scalar(select(Vinculo).where(Vinculo.conta_id == uuid.UUID(conta_id)))
+    categoria = await _categoria(db_session)
+    db_session.add(
+        Movimento(
+            conta_id=uuid.UUID(conta_id),
+            categoria_id=categoria.id,
+            data=date(2026, 3, 29),
+            descricao="Banco atrasada",
+            valor=Decimal("-6.00"),
+            origem="banco",
+            id_transacao_externa="atrasada",
+            vinculo_id=vinculo.id,
+            created_at=reconciliacao.lido_em + timedelta(hours=1),
+        )
     )
+    await db_session.flush()
+
+    await recalcular_acertos(db_session, uuid.UUID(conta_id))
+    await db_session.commit()
     await db_session.refresh(reconciliacao)
 
-    assert sincronizar.json() == {"movimentos_importados": 1}
-    assert reconciliacao.saldo == Decimal("34.00")
-    acerto = await db_session.scalar(
-        select(Movimento.valor).where(Movimento.reconciliacao_id == reconciliacao.id)
-    )
-    assert acerto == Decimal("-10.00")
-    assert await _saldo(cliente_autenticado, conta_id) == "34.00"
+    assert reconciliacao.saldo == Decimal("69.00")
+    acerto = await db_session.scalar(select(Movimento.valor).where(Movimento.reconciliacao_id == reconciliacao.id))
+    assert acerto == Decimal("5.00")
+    assert await _saldo(cliente_autenticado, conta_id) == "44.00"
+
+
+@pytest.mark.asyncio
+async def test_continuar_sem_diferenca_nao_cria_reconciliacao(cliente_autenticado, db_session, monkeypatch):
+    """
+    Se o saldo do banco no dia de corte já bate com o da aplicação, não há
+    nada a acertar: vincula-se sem reconciliação (regra R2). O banco diz 45;
+    com −10 e −15 depois do corte, no fim de 30 de março eram 70, o mesmo
+    que a aplicação.
+    """
+    conta_id, conta_bancaria = await _cenario(cliente_autenticado, db_session)
+    _banco_falso(monkeypatch, "45.00", _TRANSACOES)
+
+    resposta = await _vincular(cliente_autenticado, conta_bancaria.id, conta_id)
+
+    assert resposta.json()["acerto"] == "0.00"
+    assert (await cliente_autenticado.get(f"/contas/{conta_id}/reconciliacoes")).json() == []
+    assert await _saldo(cliente_autenticado, conta_id) == "45.00"
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_compara_com_o_banco_e_so_regista_a_diferenca(
+    cliente_autenticado, db_session, monkeypatch, caplog
+):
+    """
+    Depois de sincronizar, a aplicação compara o seu saldo com o do banco
+    (regra R8, só interna). A bater certo, nada; a não bater, fica um aviso
+    no registo do servidor, e a sincronização corre bem na mesma: o
+    utilizador não vê nada e não se cria nenhum acerto.
+    """
+    import logging
+
+    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
+    url = f"/open-banking/contas-bancarias/{conta_bancaria.id}/sincronizar"
+    caplog.set_level(logging.INFO, logger="app.services.importacao_movimentos")
+
+    _banco_falso(monkeypatch, "50.00", _TRANSACOES)
+    a_bater = await cliente_autenticado.post(url)
+    avisos_a_bater = [r for r in caplog.records if "não bate" in r.getMessage()]
+    _banco_falso(monkeypatch, "40.00", _TRANSACOES)
+    sem_bater = await cliente_autenticado.post(url)
+    avisos = [r.getMessage() for r in caplog.records if "não bate" in r.getMessage()]
+
+    assert a_bater.status_code == sem_bater.status_code == 200
+    assert avisos_a_bater == []
+    assert len(avisos) == 1 and "diferença -10.00" in avisos[0]
+    reconciliacoes = (await cliente_autenticado.get(f"/contas/{conta_id}/reconciliacoes")).json()
+    assert len(reconciliacoes) == 1  # só a do vínculo; nenhum acerto novo
+    assert await _saldo(cliente_autenticado, conta_id) == "50.00"
 
 
 @pytest.mark.asyncio
@@ -460,32 +490,6 @@ async def _tudo_da_conta(db_session, conta_id: str):
         await db_session.scalars(select(Reconciliacao).where(Reconciliacao.conta_id == conta))
     ).all()
     return movimentos, reconciliacoes
-
-
-@pytest.mark.asyncio
-async def test_acertar_sincroniza_primeiro_e_nada_conta_duas_vezes(
-    cliente_autenticado, db_session, monkeypatch
-):
-    """
-    Depois de vincular (saldo 50), o banco lança uma compra de 8 a 5 de
-    abril e passa a dizer 42. "Acertar" sem sincronizar antes poria o
-    acerto a −8 a 2 de abril, e a compra, ao entrar depois, contaria uma
-    segunda vez (34). Sincronizando primeiro, a compra entra, não há nada
-    a acertar, e o saldo fica 42 mesmo depois de sincronizar outra vez.
-    """
-    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
-    _recuar_no_tempo(*await _tudo_da_conta(db_session, conta_id))
-    await db_session.commit()
-    _banco_falso(monkeypatch, "42.00", [*_TRANSACOES, _transacao("b3", "2026-04-05", "8.00")])
-
-    acertar = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria.id}/acertar")
-    sincronizar = await cliente_autenticado.post(
-        f"/open-banking/contas-bancarias/{conta_bancaria.id}/sincronizar"
-    )
-
-    assert acertar.json() == {"data": "2026-04-05", "acerto": "0.00"}
-    assert sincronizar.json() == {"movimentos_importados": 0}
-    assert await _saldo(cliente_autenticado, conta_id) == "42.00"
 
 
 @pytest.mark.asyncio
@@ -643,16 +647,6 @@ async def test_sincronizar_pede_ao_banco_desde_5_dias_antes_do_ultimo_do_banco(
 
 
 @pytest.mark.asyncio
-async def test_comparar_e_acertar_so_numa_conta_bancaria_vinculada(cliente_autenticado, db_session):
-    _, conta_bancaria = await _cenario(cliente_autenticado, db_session)
-
-    comparar = await cliente_autenticado.get(f"/open-banking/contas-bancarias/{conta_bancaria.id}/comparar")
-    acertar = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria.id}/acertar")
-
-    assert comparar.status_code == acertar.status_code == 409
-
-
-@pytest.mark.asyncio
 async def test_rotas_de_vincular_com_contas_de_outro_utilizador_nao_existem(
     cliente_autenticado, client, db_session, monkeypatch
 ):
@@ -674,17 +668,15 @@ async def test_rotas_de_vincular_com_contas_de_outro_utilizador_nao_existem(
     respostas = [
         await client.post(f"{base}/vincular/simular", json={"conta_id": conta_do_intruso}),
         await client.post(f"{base}/vincular", json={"conta_id": conta_do_intruso}),
-        await client.get(f"{base}/comparar"),
-        await client.post(f"{base}/acertar"),
     ]
 
-    assert [r.status_code for r in respostas] == [404, 404, 404, 404]
+    assert [r.status_code for r in respostas] == [404, 404]
     # E a Conta do dono continua manual.
     assert (await db_session.scalar(select(Vinculo).where(Vinculo.conta_id == uuid.UUID(conta_id)))) is None
 
 
 @pytest.mark.asyncio
-async def test_com_outra_operacao_a_decorrer_sincronizar_acertar_e_desvincular_recebem_409(
+async def test_com_outra_operacao_a_decorrer_sincronizar_e_desvincular_recebem_409(
     cliente_autenticado, db_session, monkeypatch
 ):
     """
@@ -743,10 +735,25 @@ async def test_com_outra_operacao_a_decorrer_sincronizar_acertar_e_desvincular_r
         assert conseguiu
         respostas = [
             await cliente_autenticado.post(f"{base}/sincronizar"),
-            await cliente_autenticado.post(f"{base}/acertar"),
             await cliente_autenticado.delete(f"{base}/vinculo"),
         ]
         await transacao.rollback()
 
-    assert [r.status_code for r in respostas] == [409] * 3
+    assert [r.status_code for r in respostas] == [409] * 2
     assert all("outra operação" in r.json()["detail"] for r in respostas)
+
+
+@pytest.mark.asyncio
+async def test_uma_reconciliacao_do_banco_diz_quando_foi_lida(cliente_autenticado, db_session, monkeypatch):
+    """
+    As do banco trazem o instante em que se leu o saldo ao banco («Lido no
+    banco»); as do utilizador não (None).
+    """
+    conta_id, conta_bancaria = await _conta_vinculada(cliente_autenticado, db_session, monkeypatch)
+
+    do_banco = (await cliente_autenticado.get(f"/contas/{conta_id}/reconciliacoes")).json()
+    await cliente_autenticado.delete(f"/open-banking/contas-bancarias/{conta_bancaria.id}/vinculo")
+    do_utilizador = (await cliente_autenticado.get(f"/contas/{conta_id}/reconciliacoes")).json()
+
+    assert [(r["origem"], r["lido_em"] is not None) for r in do_banco] == [("banco", True)]
+    assert [(r["origem"], r["lido_em"]) for r in do_utilizador] == [("utilizador", None)]

@@ -14,10 +14,16 @@ data:
                                   + acertos das reconciliações anteriores
     acerto = S − saldo calculado
 É o mesmo que partir do saldo da reconciliação anterior (que, com o seu
-acerto, é exatamente o afirmado) e somar os movimentos até D. Se o acerto
-for zero, não há movimento de acerto (a reconciliação fica como
-"confirmado"). O acerto fica na categoria reservada "Acerto de saldo" de
-entrada (se positivo) ou de saída (se negativo).
+acerto, é exatamente o afirmado) e somar os movimentos até D. O acerto fica
+na categoria reservada "Acerto de saldo" de entrada (se positivo) ou de
+saída (se negativo).
+
+SÓ SE CRIA COM ACERTO. Criar ou editar uma reconciliação cujo saldo já bate
+certo com o calculado é recusado: não haveria nada a acertar. Mas o acerto
+pode passar a zero DEPOIS (por exemplo, quando se regista o movimento que
+explicava a diferença): nesse caso a reconciliação fica, sem movimento de
+acerto (0,00 €). Continua a guardar o saldo confirmado, e se a diferença
+voltar, o acerto volta; eliminá-la é decisão do utilizador.
 
 RECONCILIAÇÕES DO BANCO (regra R7): o saldo afirmado não é fixo — deduz-se
 do saldo que o banco informou num instante T, corrigido pelos movimentos
@@ -251,6 +257,18 @@ async def simular_acerto(
     return (saldo - calculado).quantize(_DUAS_CASAS)
 
 
+async def _garantir_diferenca(
+    db: AsyncSession, conta: Conta, data: date, saldo: Decimal, ignorar_reconciliacao_id: uuid.UUID | None = None
+) -> None:
+    """
+    Uma reconciliação só se cria (ou edita) quando há diferença a acertar:
+    se o saldo afirmado já bate certo com o calculado, é recusada (regra R2).
+    """
+    acerto = await simular_acerto(db, conta, data, saldo.quantize(_DUAS_CASAS), ignorar_reconciliacao_id)
+    if acerto == 0:
+        raise RegraViolada("O saldo já bate certo neste dia: não há nada a acertar.")
+
+
 async def _garantir_conta_manual(db: AsyncSession, conta: Conta) -> None:
     """As reconciliações do utilizador só existem numa conta manual (sem vínculo ao banco)."""
     if await db.scalar(select(Vinculo.id).where(Vinculo.conta_id == conta.id)) is not None:
@@ -334,6 +352,7 @@ async def criar(db: AsyncSession, conta: Conta, data: date, saldo: Decimal) -> R
     await bloquear_conta(db, conta.id)
     await _garantir_conta_manual(db, conta)
     await _validar_data(db, conta, data)
+    await _garantir_diferenca(db, conta, data, saldo)
     reconciliacao = Reconciliacao(
         conta_id=conta.id, data=data, saldo=saldo.quantize(_DUAS_CASAS), origem="utilizador"
     )
@@ -362,6 +381,7 @@ async def editar(
         raise RegraViolada("Uma reconciliação do banco não se edita.")
     await _garantir_conta_manual(db, conta)
     await _validar_data(db, conta, data, reconciliacao)
+    await _garantir_diferenca(db, conta, data, saldo, reconciliacao.id)
     reconciliacao.data = data
     reconciliacao.saldo = saldo.quantize(_DUAS_CASAS)
     await db.flush()

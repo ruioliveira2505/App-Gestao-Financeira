@@ -70,15 +70,16 @@ surpreendeu vezes suficientes para não confiar cegamente nisso.
 """
 
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.erros import BancoIndisponivel, Conflito, DadosInvalidos
+from app.core.erros import BancoIndisponivel, Conflito, DadosInvalidos, ErroDeDominio
 from app.core.tempo import hoje
 from app.models.autorizacao import Autorizacao
 from app.models.categoria import Categoria
@@ -118,6 +119,9 @@ _LIMITE_PAGINAS = 50
 # id_transacao_externa garante que reimportar estes últimos dias nunca
 # duplica o que já lá estava.
 _MARGEM_SEGURANCA_DIAS = 5
+
+# O registo (log) deste ficheiro: mensagens para quem opera o servidor.
+_registo = logging.getLogger(__name__)
 
 
 async def _obter_todas_transacoes(
@@ -528,8 +532,7 @@ async def sincronizar_movimentos(
     Importa os movimentos NOVOS de uma Conta JÁ vinculada (ao contrário de
     criar_conta_a_partir_de_conta_bancaria, que trata da PRIMEIRA
     importação) — chamada através de sincronizar_conta_bancaria, abaixo,
-    quando o utilizador pede para sincronizar, e antes de "acertar" com o
-    banco. Devolve quantos movimentos novos foram gravados e a soma das
+    quando o utilizador pede para sincronizar. Devolve quantos movimentos novos foram gravados e a soma das
     transações de data futura que ficaram por importar.
 
     NUNCA MEXE EM saldo_ancora: a âncora já foi fixada na primeira
@@ -665,4 +668,41 @@ async def sincronizar_conta_bancaria(
         if conta_bancaria.indisponivel_em is not None:
             raise Conflito("O banco deixou de partilhar esta conta. Podes desvinculá-la.")
         raise Conflito("A autorização deste banco já terminou. É preciso autorizá-lo outra vez.")
-    return (await sincronizar_movimentos(db, conta, conta_bancaria, vinculo)).novos
+    sincronizacao = await sincronizar_movimentos(db, conta, conta_bancaria, vinculo)
+    await _comparar_com_o_banco(db, conta, conta_bancaria, sincronizacao.futuros)
+    return sincronizacao.novos
+
+
+async def _comparar_com_o_banco(
+    db: AsyncSession, conta: Conta, conta_bancaria: ContaBancaria, futuros: Decimal
+) -> None:
+    """
+    Compara o saldo da aplicação com o saldo contabilístico do banco, depois
+    de sincronizar (regra R8, só interna). Numa Conta vinculada, os dois são
+    iguais por construção (a âncora parte do saldo do banco e só entram
+    movimentos já lançados), descontadas as transações de data futura que o
+    banco já conta mas que ainda não se importam. Uma diferença é uma
+    anomalia de importação (um lançamento muito atrasado, um estorno, um
+    defeito) e fica no registo do servidor, para se investigar. O utilizador
+    não vê nada: não tem nada a fazer com ela, e a aplicação não cria
+    acertos sozinha.
+
+    Nunca faz a sincronização falhar: se o banco não responder ao pedido do
+    saldo, a comparação fica por fazer (e isso também fica registado).
+    """
+    try:
+        saldo_banco = await saldo_contabilistico(conta_bancaria.uid)
+    except ErroDeDominio as erro:
+        _registo.info("Comparação com o banco por fazer (conta %s): %s", conta.id, erro.mensagem)
+        return
+    soma = await db.scalar(
+        select(func.coalesce(func.sum(Movimento.valor), 0)).where(Movimento.conta_id == conta.id)
+    )
+    saldo_aplicacao = conta.saldo_ancora + Decimal(soma)
+    diferenca = (saldo_banco - futuros - saldo_aplicacao).quantize(Decimal("0.01"))
+    if diferenca != 0:
+        _registo.warning(
+            "O saldo da conta %s não bate com o do banco: banco %s (já sem %s de datas futuras), "
+            "aplicação %s, diferença %s.",
+            conta.id, saldo_banco, futuros, saldo_aplicacao, diferenca,
+        )

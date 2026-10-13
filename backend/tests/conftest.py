@@ -36,6 +36,26 @@ from app.db.session import Base, engine, get_db
 from app.main import app
 
 
+@pytest_asyncio.fixture(autouse=True)
+def sem_saldos_do_banco_real(monkeypatch):
+    """
+    Nenhum teste pede o saldo ao banco real. Depois de cada sincronização,
+    a aplicação pede o saldo ao banco para o comparar com o seu (regra R8);
+    muitos testes de sincronização só simulam os movimentos. Sem esta
+    proteção, esse pedido sairia para a rede de verdade. Por omissão, o
+    pedido do saldo responde «banco indisponível» (a comparação fica por
+    fazer, sem estragar a sincronização); os testes que precisam de um
+    saldo substituem-no pelo seu, com monkeypatch, depois desta preparação.
+    """
+    from app.core.erros import BancoIndisponivel
+    from app.services import importacao_movimentos
+
+    async def indisponivel(uid):
+        raise BancoIndisponivel("Nos testes, o banco real nunca é contactado.")
+
+    monkeypatch.setattr(importacao_movimentos, "obter_saldos", indisponivel)
+
+
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def preparar_base_de_dados():
     """

@@ -166,6 +166,8 @@ def _para_saida(movimento: Movimento, saldo_apos: Decimal | None = None) -> Movi
         valor=f"{movimento.valor:.2f}",
         created_at=movimento.created_at,
         updated_at=movimento.updated_at,
+        origem=movimento.origem,
+        reconciliacao_id=movimento.reconciliacao_id,
         saldo_apos=f"{saldo_apos:.2f}" if saldo_apos is not None else None,
     )
 

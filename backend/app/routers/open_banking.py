@@ -35,8 +35,17 @@ O FLUXO COMPLETO, pela ordem em que acontece:
    movimentos disponíveis.
 5. "/contas-bancarias/{id}/sincronizar": importa os movimentos NOVOS de
    uma conta bancária já vinculada.
-6. "/contas-bancarias/{id}/vinculo" (DELETE): desvincula, sem apagar nada
-   da Conta nem dos movimentos já importados.
+6. "/contas-bancarias/{id}/vinculo" (DELETE): desvincula, mantendo os
+   movimentos e as reconciliações do banco (modo "manter") ou tirando o que
+   veio do banco (modo "tirar").
+7. "/contas-bancarias/{id}/vincular/simular" e "/vincular" (POST): vincula
+   uma Conta manual que já existe, em "continuar" (com os pares e, se o
+   saldo não bater no dia de corte, uma reconciliação do banco) ou em
+   "substituir"; a primeira só mostra o efeito, sem gravar.
+
+Não há «comparar» nem «acertar» numa conta vinculada: o saldo da aplicação
+é o contabilístico do banco, e a comparação dos dois é só interna, a cada
+sincronização (uma diferença fica no registo do servidor).
 
 E A GESTÃO DAS AUTORIZAÇÕES:
   - "/autorizacoes" (GET): as autorizações, com o estado deduzido (ativa
@@ -59,10 +68,6 @@ bancária é reconhecida pela sua identificação estável (um código que não
 muda entre autorizações). Se a mesma conta real já alimenta uma Conta, o
 vínculo renova-se sozinho; se alimentou uma Conta entretanto desvinculada,
 aparece sem vínculo, com a indicação «Já foi a "X"».
-
-AINDA NÃO IMPLEMENTADO: vincular uma conta bancária a uma Conta que já
-existe (desvinculada, ou manual). Precisa de uma reconciliação de saldo
-para o período sem movimentos do banco, que a aplicação ainda não tem.
 
 IDENTIFICAÇÃO DO UTILIZADOR NO CALLBACK — O PROBLEMA E A SOLUÇÃO: o
 "/callback" chega SEM o cookie de sessão desta aplicação, porque o browser
@@ -138,8 +143,6 @@ from app.services.importacao_movimentos import (
     sincronizar_conta_bancaria,
 )
 from app.services.vinculacao import (
-    acertar,
-    comparar_saldos,
     simular_vinculacao,
     vincular_conta_existente,
 )
@@ -659,44 +662,3 @@ async def vincular_conta(
         raise
     await db.commit()
     return {**resultado, "acerto": _texto(resultado["acerto"])}
-
-
-@router.get("/contas-bancarias/{conta_bancaria_id}/comparar")
-async def comparar(
-    conta_bancaria_id: uuid.UUID,
-    utilizador: User = Depends(obter_utilizador_atual),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    O saldo do banco contra o da aplicação, e a diferença (regra R8) — por
-    exemplo, depois de sincronizar ou de renovar. Se não for zero, o
-    utilizador pode "Acertar".
-    """
-    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
-    try:
-        comparacao = await comparar_saldos(db, utilizador, conta_bancaria)
-    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
-        await _registar_resposta_do_banco(db, erro, conta_bancaria)
-        raise
-    return {chave: _texto(valor) for chave, valor in comparacao.items()}
-
-
-@router.post("/contas-bancarias/{conta_bancaria_id}/acertar")
-async def acertar_com_o_banco(
-    conta_bancaria_id: uuid.UUID,
-    utilizador: User = Depends(obter_utilizador_atual),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
-    """
-    Acerta o saldo da aplicação pelo do banco, com uma reconciliação do
-    banco no dia do movimento do banco mais recente (regra R8). Só quando o
-    utilizador pede: a aplicação nunca cria acertos em silêncio.
-    """
-    conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
-    try:
-        resultado = await acertar(db, utilizador, conta_bancaria)
-    except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
-        await _registar_resposta_do_banco(db, erro, conta_bancaria)
-        raise
-    await db.commit()
-    return {"data": resultado["data"].isoformat(), "acerto": _texto(resultado["acerto"])}

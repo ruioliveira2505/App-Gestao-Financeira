@@ -1,6 +1,6 @@
 """
-VINCULAR UMA CONTA EXISTENTE, COMPARAR SALDOS, ACERTAR, DESVINCULAR
-======================================================================
+VINCULAR UMA CONTA EXISTENTE E DESVINCULAR
+=============================================
 
 Vocabulário: uma AUTORIZAÇÃO é o consentimento dado no banco para a
 aplicação ler as contas partilhadas, durante um prazo; cada conta
@@ -17,8 +17,9 @@ Este serviço trata do que liga o histórico de uma Conta ao banco:
    - CONTINUAR (por omissão): os movimentos da Conta ficam. A DATA DE CORTE
      (o último dia cujos movimentos não vêm do banco) é o dia do último
      movimento ou reconciliação da Conta; os movimentos do banco entram a
-     partir do dia seguinte, e uma reconciliação do banco no dia de corte
-     acerta a diferença entre o saldo da aplicação e o do banco.
+     partir do dia seguinte, e, se o saldo da aplicação não bater com o do
+     banco nesse dia, uma reconciliação do banco no dia de corte acerta a
+     diferença (sem diferença, não se cria: não haveria nada a acertar).
      EMPARELHAR: uma compra registada à mão nos últimos dias antes do corte
      pode chegar do banco nos dias a seguir — e contaria duas vezes. A
      pré-visualização propõe pares (o mesmo valor, até 3 dias de cada lado
@@ -30,15 +31,13 @@ Este serviço trata do que liga o histórico de uma Conta ao banco:
    da aplicação, o do banco, o acerto que entraria, os pares propostos, ou
    quantos movimentos se perderiam.
 
-2. COMPARAR SALDOS (regra R8): o saldo contabilístico do banco contra o
-   saldo da aplicação no fim de hoje, ao cêntimo.
+NÃO HÁ «ACERTAR» COM O BANCO numa conta já vinculada (regra R8): o saldo
+da aplicação é, por construção, o saldo contabilístico do banco. A
+comparação dos dois é só interna, a cada sincronização (ver
+app/services/importacao_movimentos.py), e uma diferença regista-se no
+servidor.
 
-3. ACERTAR (regra R8): só se o utilizador pedir — a aplicação nunca cria
-   acertos em silêncio. Cria uma reconciliação do banco no dia do
-   movimento do banco mais recente (não hoje, para não ficar à frente de
-   movimentos de hoje que ainda não chegaram).
-
-4. DESVINCULAR (regras A5, R9), em dois modos:
+2. DESVINCULAR (regras A5, R9), em dois modos:
    - MANTER TUDO (por omissão): os movimentos do banco ficam (com origem
      "banco"), e as reconciliações do banco passam a ser do utilizador;
    - TIRAR O QUE VEIO DO BANCO: saem os movimentos e as reconciliações
@@ -57,7 +56,7 @@ instante T, e não fixo:
         + movimentos do banco com data até D, importados depois de T
         − transações de data futura que o banco já contava em T
 Por isso criam-se sempre na mesma transação que uma importação completa
-até T (em "acertar", uma sincronização feita logo antes), e T é o "agora"
+até T, e T é o "agora"
 da própria transação na base de dados (o mesmo que fica no created_at dos
 movimentos importados nela). As transações de data futura ainda não se
 podem importar (um movimento nunca fica no futuro): a sua soma guarda-se
@@ -86,7 +85,6 @@ from app.models.reconciliacao import Reconciliacao
 from app.models.user import User
 from app.models.vinculo import Vinculo
 from app.services.bloqueios import bloquear_conta
-from app.services.contas import obter_conta_do_utilizador
 from app.services.contas_bancarias import (
     garantir_que_se_pode_vincular,
     identificacao_bancaria,
@@ -94,7 +92,6 @@ from app.services.contas_bancarias import (
     vinculo_da_conta,
     vinculo_da_conta_bancaria,
 )
-from app.services.estados import estado_conta_bancaria
 from app.services.importacao_movimentos import (
     _categoria_refugio,
     _descricao,
@@ -105,7 +102,6 @@ from app.services.importacao_movimentos import (
     _valor_com_sinal,
     ancora_do_banco,
     saldo_contabilistico,
-    sincronizar_movimentos,
     soma_dos_futuros,
 )
 from app.services.reconciliacoes import recalcular_acertos
@@ -291,10 +287,13 @@ async def simular_vinculacao(
         )
     )
     if modo == "substituir":
+        # Os movimentos que se perdem são os do utilizador (e os do banco de
+        # vínculos anteriores): os acertos não contam, porque vão com as
+        # reconciliações, que se contam à parte.
         perdidos = (
             await db.execute(
                 select(func.count(), func.min(Movimento.data), func.max(Movimento.data)).where(
-                    Movimento.conta_id == conta.id
+                    Movimento.conta_id == conta.id, Movimento.origem != "acerto"
                 )
             )
         ).one()
@@ -443,17 +442,23 @@ async def vincular_conta_existente(
     await _atualizar_memoria(db, conta, conta_bancaria)
     vinculo = await vincular(db, utilizador.id, conta, conta_bancaria, plano.data_corte)
     importados = await _importar(db, conta, vinculo, plano.a_importar, categoria_por_identificador)
-    reconciliacao = await _reconciliacao_do_banco(
-        db,
-        conta,
-        vinculo,
-        plano.data_corte,
-        plano.saldo_banco,
-        lido_em,
-        soma_dos_futuros(plano.transacoes),
-    )
-    await recalcular_acertos(db, conta.id)
-    acerto = await _acerto_de(db, reconciliacao)
+    # A reconciliação do banco só se cria se houver diferença a acertar no
+    # dia de corte (regra R2): sem diferença, os saldos já batem certo.
+    acerto = Decimal("0.00")
+    if _acerto_previsto(plano, aceites) != 0:
+        reconciliacao = await _reconciliacao_do_banco(
+            db,
+            conta,
+            vinculo,
+            plano.data_corte,
+            plano.saldo_banco,
+            lido_em,
+            soma_dos_futuros(plano.transacoes),
+        )
+        await recalcular_acertos(db, conta.id)
+        acerto = await _acerto_de(db, reconciliacao)
+    else:
+        await recalcular_acertos(db, conta.id)
     return {"modo": "continuar", "movimentos_importados": importados, "acerto": acerto}
 
 
@@ -500,80 +505,6 @@ async def _acerto_de(db: AsyncSession, reconciliacao: Reconciliacao) -> Decimal:
         )
     )
     return Decimal(valor).quantize(_DUAS_CASAS)
-
-
-# --- Comparar e acertar ---
-
-
-async def _vinculada_e_a_funcionar(
-    db: AsyncSession, utilizador: User, conta_bancaria: ContaBancaria
-) -> tuple[Conta, Vinculo]:
-    """A Conta e o vínculo de uma conta bancária VINCULADA (não suspensa); Conflito caso contrário."""
-    vinculo = await vinculo_da_conta_bancaria(db, conta_bancaria.id)
-    if vinculo is None:
-        raise Conflito("Esta conta bancária ainda não está vinculada a nenhuma conta.")
-    autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
-    if estado_conta_bancaria(conta_bancaria, autorizacao, tem_vinculo=True) == "suspensa":
-        raise Conflito("A autorização deste banco já terminou. É preciso autorizá-lo outra vez.")
-    return await obter_conta_do_utilizador(db, utilizador, vinculo.conta_id), vinculo
-
-
-async def saldo_da_aplicacao(db: AsyncSession, conta: Conta) -> Decimal:
-    """O saldo atual da Conta na aplicação: o saldo inicial mais todos os movimentos."""
-    soma = await db.scalar(
-        select(func.coalesce(func.sum(Movimento.valor), 0)).where(Movimento.conta_id == conta.id)
-    )
-    return (conta.saldo_ancora + Decimal(soma)).quantize(_DUAS_CASAS)
-
-
-async def comparar_saldos(
-    db: AsyncSession, utilizador: User, conta_bancaria: ContaBancaria
-) -> dict:
-    """
-    O saldo contabilístico do banco contra o saldo da aplicação, e a
-    diferença (banco − aplicação), ao cêntimo (regra R8). Se não for zero, o
-    utilizador pode "Acertar".
-    """
-    conta, _ = await _vinculada_e_a_funcionar(db, utilizador, conta_bancaria)
-    banco = await saldo_contabilistico(conta_bancaria.uid)
-    aplicacao = await saldo_da_aplicacao(db, conta)
-    return {"saldo_banco": banco, "saldo_aplicacao": aplicacao, "diferenca": banco - aplicacao}
-
-
-async def acertar(db: AsyncSession, utilizador: User, conta_bancaria: ContaBancaria) -> dict:
-    """
-    Cria (ou atualiza) uma reconciliação do banco com o saldo lido agora,
-    no dia do movimento do banco mais recente (ou no dia de corte, se ainda
-    não houver nenhum), para o saldo da aplicação bater com o do banco
-    (regra R8). Só acontece quando o utilizador pede.
-
-    SINCRONIZA PRIMEIRO, na mesma transação: o saldo do banco já inclui
-    tudo o que o banco lançou até agora. Sem importar esses movimentos
-    antes, um movimento lançado depois da última sincronização ficaria
-    dentro do saldo afirmado e, quando entrasse mais tarde, contaria uma
-    segunda vez. O saldo lê-se antes de sincronizar, tal como em
-    "continuar".
-    """
-    conta, _ = await _vinculada_e_a_funcionar(db, utilizador, conta_bancaria)
-    # O bloqueio vem antes de tudo o resto, e a verificação repete-se
-    # depois dele: outra operação (desvincular, por exemplo) pode ter mudado
-    # o vínculo entretanto.
-    await bloquear_conta(db, conta.id)
-    conta, vinculo = await _vinculada_e_a_funcionar(db, utilizador, conta_bancaria)
-    saldo_banco = await saldo_contabilistico(conta_bancaria.uid)
-    lido_em = await _agora_na_base_de_dados(db)
-    sincronizacao = await sincronizar_movimentos(db, conta, conta_bancaria, vinculo)
-    ultimo_do_banco = await db.scalar(
-        select(func.max(Movimento.data)).where(
-            Movimento.conta_id == conta.id, Movimento.origem == "banco"
-        )
-    )
-    dia = max(d for d in (ultimo_do_banco, vinculo.data_corte) if d is not None)
-    reconciliacao = await _reconciliacao_do_banco(
-        db, conta, vinculo, dia, saldo_banco, lido_em, sincronizacao.futuros
-    )
-    await recalcular_acertos(db, conta.id)
-    return {"data": dia, "acerto": await _acerto_de(db, reconciliacao)}
 
 
 # --- Desvincular ---

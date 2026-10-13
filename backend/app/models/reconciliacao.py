@@ -15,8 +15,9 @@ ACERTO pela diferença, no dia D, que fecha a conta: a partir de D, o
 saldo é sempre o afirmado. O acerto é um movimento como os outros (entra
 no saldo e nas análises), com a origem "acerto", na categoria reservada
 "Acerto de saldo" de entrada ou de saída, e aponta para a sua
-reconciliação (Movimento.reconciliacao_id). Se a diferença for zero, não
-há acerto, mas a reconciliação fica (como "confirmado").
+reconciliação (Movimento.reconciliacao_id). Uma reconciliação só se cria
+com diferença (com algo a acertar); se mais tarde a diferença passar a zero,
+fica, sem movimento de acerto (0,00 €), a guardar o saldo confirmado.
 
 O acerto RECALCULA-SE SOZINHO sempre que muda alguma coisa de que depende:
 a data ou o saldo inicial da conta, um movimento entre a reconciliação
@@ -26,9 +27,8 @@ ORIGEM:
   - "utilizador": criada pelo utilizador, numa conta manual. Edita-se e
     apaga-se;
   - "banco": criada pela aplicação a partir do saldo que o banco informa,
-    sempre com a confirmação do utilizador (ao vincular uma conta que já
-    tem histórico, ou quando o utilizador aceita "Acertar" depois de
-    comparar o saldo da aplicação com o do banco). Não se edita nem se
+    sempre com a confirmação do utilizador, ao vincular uma conta que já
+    tem histórico, se o saldo não bater no dia de corte. Não se edita nem se
     apaga enquanto houver vínculo; ao desvincular, ou sai ("tirar o que
     veio do banco") ou passa a "utilizador" ("manter tudo").
 

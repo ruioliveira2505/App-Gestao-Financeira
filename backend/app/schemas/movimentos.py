@@ -121,6 +121,15 @@ class MovimentoOut(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # De onde vem o movimento: "manual" (escrito pelo utilizador), "banco"
+    # (importado do banco) ou "acerto" (criado por uma reconciliação, pela
+    # diferença entre o saldo afirmado e o calculado). A interface usa-o
+    # para mostrar um acerto de forma diferente e só para leitura.
+    origem: str
+
+    # Só num acerto: a reconciliação de que nasceu (None nos outros).
+    reconciliacao_id: uuid.UUID | None = None
+
     # Saldo da conta IMEDIATAMENTE APÓS este movimento (saldo de abertura da
     # conta + soma de todos os movimentos até este, por ordem cronológica).
     # Só GET /movimentos (a listagem) o calcula — ver a nota no topo deste
