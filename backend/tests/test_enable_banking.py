@@ -294,3 +294,87 @@ async def test_classificacao_de_nao_encontrado(monkeypatch, estado, corpo, esper
     # type() e não isinstance(): InexistenteNoBanco também é um
     # BancoIndisponivel, e aqui interessa a classe exata.
     assert type(erro.value) is esperado
+
+
+# --- O utilizador presente (cabeçalhos PSU) ---
+#
+# A PSD2 limita a 4 por dia os acessos a uma conta SEM o utilizador
+# presente. Quando é ele a pedir (sincronizar, criar uma conta, vincular),
+# os pedidos às contas levam cabeçalhos "Psu-*" com o IP e o navegador
+# dele, e não contam para esse limite.
+
+
+class _PedidoFalso:
+    """Imita o que se usa do pedido do FastAPI (Request): o IP e os cabeçalhos."""
+
+    def __init__(self, ip: str, cabecalhos: dict):
+        self.client = type("Cliente", (), {"host": ip})()
+        self.headers = cabecalhos
+
+
+@pytest.mark.asyncio
+async def test_com_o_utilizador_presente_os_pedidos_as_contas_levam_os_cabecalhos_psu(monkeypatch):
+    recebidos = []
+
+    def responder(pedido):
+        recebidos.append(pedido)
+        return httpx.Response(200, json={"aspsps": [], "transactions": []})
+
+    _simular_rede(monkeypatch, responder)
+    pedido = _PedidoFalso("85.240.10.20", {"user-agent": "Safari", "accept-language": "pt-PT"})
+
+    with enable_banking.com_o_utilizador_presente(pedido):
+        assert enable_banking.utilizador_presente()
+        await enable_banking.obter_movimentos("uid-1")
+        await enable_banking.listar_bancos("PT")
+    await enable_banking.obter_movimentos("uid-1")
+
+    contas, bancos, depois = recebidos
+    assert contas.headers["Psu-Ip-Address"] == "85.240.10.20"
+    assert contas.headers["Psu-User-Agent"] == "Safari"
+    assert contas.headers["Psu-Accept-Language"] == "pt-PT"
+    # Só nos pedidos às contas; e só enquanto o utilizador está presente.
+    assert "Psu-Ip-Address" not in bancos.headers
+    assert "Psu-Ip-Address" not in depois.headers
+    assert not enable_banking.utilizador_presente()
+
+
+@pytest.mark.asyncio
+async def test_se_o_banco_exigir_um_cabecalho_psu_que_nao_temos_repete_sem_eles(monkeypatch):
+    """
+    Ou se mandam todos os cabeçalhos PSU que o banco exige, ou nenhum: se
+    faltar algum, a Enable Banking recusa (PSU_HEADER_NOT_PROVIDED) antes de
+    chegar ao banco. A app repete uma vez sem eles, e funciona como antes.
+    """
+    recebidos = []
+
+    def responder(pedido):
+        recebidos.append(pedido)
+        if "Psu-Ip-Address" in pedido.headers:
+            return httpx.Response(400, json={"error": "PSU_HEADER_NOT_PROVIDED", "message": "Psu-Geo-Location"})
+        return httpx.Response(200, json={"transactions": []})
+
+    _simular_rede(monkeypatch, responder)
+
+    with enable_banking.com_o_utilizador_presente(_PedidoFalso("85.240.10.20", {"user-agent": "Safari"})):
+        resposta = await enable_banking.obter_movimentos("uid-1")
+
+    assert resposta == {"transactions": []}
+    assert len(recebidos) == 2
+    assert "Psu-Ip-Address" not in recebidos[1].headers
+
+
+def test_ip_publico_do_utilizador():
+    """
+    Um IP local (o próprio computador, ou a rede de casa) não diz nada ao
+    banco: em desenvolvimento, usa-se o IP público da rede, que é o do
+    utilizador (o servidor corre na mesma máquina). Um IPv4 escrito como
+    IPv6 ("::ffff:…") volta à forma normal.
+    """
+    assert enable_banking._ip_do_utilizador("85.240.10.20", lambda: "1.1.1.1") == "85.240.10.20"
+    assert enable_banking._ip_do_utilizador("::ffff:85.240.10.20", lambda: "1.1.1.1") == "85.240.10.20"
+    assert enable_banking._ip_do_utilizador("127.0.0.1", lambda: "93.108.1.2") == "93.108.1.2"
+    assert enable_banking._ip_do_utilizador("::1", lambda: "93.108.1.2") == "93.108.1.2"
+    assert enable_banking._ip_do_utilizador("192.168.1.30", lambda: "93.108.1.2") == "93.108.1.2"
+    # Sem forma de saber o IP público: sem IP (e sem cabeçalhos PSU).
+    assert enable_banking._ip_do_utilizador("127.0.0.1", lambda: None) is None

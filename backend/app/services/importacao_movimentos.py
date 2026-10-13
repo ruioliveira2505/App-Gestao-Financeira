@@ -100,7 +100,7 @@ from app.services.contas_bancarias import (
 )
 from app.services.estados import estado_conta_bancaria
 from app.services.reconciliacoes import recalcular_acertos
-from app.services.enable_banking import obter_movimentos, obter_saldos
+from app.services.enable_banking import obter_movimentos, obter_saldos, utilizador_presente
 
 # Número máximo de páginas seguidas antes de desistir com um erro claro
 # (ver a nota PAGINAÇÃO COMPLETA, no topo do ficheiro) — generoso para
@@ -696,7 +696,15 @@ async def _comparar_com_o_banco(
 
     Nunca faz a sincronização falhar: se o banco não responder ao pedido do
     saldo, a comparação fica por fazer (e isso também fica registado).
+
+    SÓ COM O UTILIZADOR PRESENTE: o pedido do saldo é mais um acesso à conta;
+    com o utilizador presente não conta para o limite diário da PSD2 (ver
+    enable_banking.py), mas sem ele (uma futura sincronização automática)
+    gastaria um dos poucos acessos do dia só para uma verificação interna.
     """
+    if not utilizador_presente():
+        _registo.info("Comparação com o banco por fazer (conta %s): utilizador ausente.", conta.id)
+        return
     try:
         saldo_banco = await saldo_contabilistico(conta_bancaria.uid)
     except ErroDeDominio as erro:

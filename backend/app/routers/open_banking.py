@@ -140,6 +140,7 @@ from app.services.contas_bancarias import (
     vinculada_noutra_linha,
 )
 from app.services.enable_banking import (
+    com_o_utilizador_presente,
     dias_de_validade,
     iniciar_autorizacao,
     listar_bancos,
@@ -513,6 +514,7 @@ async def contas_bancarias(
 @router.post("/contas-bancarias/{conta_bancaria_id}/criar-conta")
 async def criar_conta(
     conta_bancaria_id: uuid.UUID,
+    request: Request,
     # O mesmo limite da coluna Conta.nome (120 caracteres) e do formulário
     # manual. Validar logo à entrada é importante: sem isto, um nome
     # demasiado longo só falhava ao gravar, DEPOIS de já se terem feito os
@@ -543,9 +545,12 @@ async def criar_conta(
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
     try:
-        conta = await criar_conta_a_partir_de_conta_bancaria(
-            db, utilizador.id, conta_bancaria, nome, data_de, tipo
-        )
+        # O utilizador está presente: os pedidos ao banco levam os cabeçalhos
+        # PSU e não contam para o limite diário (ver enable_banking.py).
+        with com_o_utilizador_presente(request):
+            conta = await criar_conta_a_partir_de_conta_bancaria(
+                db, utilizador.id, conta_bancaria, nome, data_de, tipo
+            )
     except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
         await _registar_resposta_do_banco(db, erro, conta_bancaria)
         raise
@@ -570,6 +575,7 @@ async def criar_conta(
 @router.post("/contas-bancarias/{conta_bancaria_id}/sincronizar")
 async def sincronizar(
     conta_bancaria_id: uuid.UUID,
+    request: Request,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -589,7 +595,10 @@ async def sincronizar(
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
     try:
-        total_novos = await sincronizar_conta_bancaria(db, utilizador, conta_bancaria)
+        # Foi o utilizador a pedir: os pedidos ao banco levam os cabeçalhos
+        # PSU e não contam para o limite diário (ver enable_banking.py).
+        with com_o_utilizador_presente(request):
+            total_novos = await sincronizar_conta_bancaria(db, utilizador, conta_bancaria)
     except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
         await _registar_resposta_do_banco(db, erro, conta_bancaria)
         raise
@@ -639,6 +648,7 @@ def _texto(valor) -> str | None:
 async def simular_vinculacao_de_conta(
     conta_bancaria_id: uuid.UUID,
     dados: VincularSimular,
+    request: Request,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -651,7 +661,8 @@ async def simular_vinculacao_de_conta(
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
     try:
-        efeito = await simular_vinculacao(db, utilizador, conta, conta_bancaria, dados.modo)
+        with com_o_utilizador_presente(request):
+            efeito = await simular_vinculacao(db, utilizador, conta, conta_bancaria, dados.modo)
     except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
         await _registar_resposta_do_banco(db, erro, conta_bancaria)
         raise
@@ -666,6 +677,7 @@ async def simular_vinculacao_de_conta(
 async def vincular_conta(
     conta_bancaria_id: uuid.UUID,
     dados: VincularConfirmar,
+    request: Request,
     utilizador: User = Depends(obter_utilizador_atual),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
@@ -677,9 +689,10 @@ async def vincular_conta(
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
     conta = await obter_conta_do_utilizador(db, utilizador, dados.conta_id)
     try:
-        resultado = await vincular_conta_existente(
-            db, utilizador, conta, conta_bancaria, dados.modo, dados.pares_aceites
-        )
+        with com_o_utilizador_presente(request):
+            resultado = await vincular_conta_existente(
+                db, utilizador, conta, conta_bancaria, dados.modo, dados.pares_aceites
+            )
     except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
         await _registar_resposta_do_banco(db, erro, conta_bancaria)
         raise

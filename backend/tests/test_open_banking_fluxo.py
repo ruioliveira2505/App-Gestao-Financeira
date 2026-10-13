@@ -801,3 +801,72 @@ async def test_uma_operacao_de_cada_vez_por_conta():
         await primeira.rollback()  # o fim da transação larga o bloqueio
         await bloquear_conta(segunda, conta_id)
         await segunda.rollback()
+
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_e_criar_conta_fazem_os_pedidos_com_o_utilizador_presente(
+    cliente_autenticado, db_session, monkeypatch
+):
+    """
+    Foi o utilizador a pedir: os pedidos ao banco correm marcados como «com
+    o utilizador presente» (levam os cabeçalhos PSU e não contam para o
+    limite diário — ver enable_banking.py). Fora de um pedido, não.
+    """
+    from app.services import enable_banking
+
+    presencas = []
+
+    async def movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        presencas.append(enable_banking.utilizador_presente())
+        return {"transactions": []}
+
+    async def saldos_falso(uid):
+        presencas.append(enable_banking.utilizador_presente())
+        return {"balances": [{"balance_type": "CLBD", "balance_amount": {"amount": "0.00"}}]}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", movimentos_falso)
+    monkeypatch.setattr(importacao_movimentos, "obter_saldos", saldos_falso)
+
+    livre = await _conta_bancaria(db_session)
+    criada = await cliente_autenticado.post(
+        f"/open-banking/contas-bancarias/{livre.id}/criar-conta", params={"nome": "Presente"}
+    )
+    assert criada.status_code == 200
+    sincronizada = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{livre.id}/sincronizar")
+    assert sincronizada.status_code == 200
+
+    assert presencas and all(presencas)
+    assert not enable_banking.utilizador_presente()
+
+
+@pytest.mark.asyncio
+async def test_sem_o_utilizador_presente_a_sincronizacao_nao_pede_o_saldo(
+    cliente_autenticado, db_session, monkeypatch
+):
+    """
+    Sem o utilizador presente (uma futura sincronização automática), não se
+    gasta um acesso ao banco só para comparar o saldo: pedem-se só os
+    movimentos.
+    """
+    pedidos = []
+
+    async def movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        pedidos.append("movimentos")
+        return {"transactions": []}
+
+    async def saldos_falso(uid):
+        pedidos.append("saldo")
+        return {"balances": []}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", movimentos_falso)
+    monkeypatch.setattr(importacao_movimentos, "obter_saldos", saldos_falso)
+    utilizador = await _utilizador(db_session)
+    conta = Conta(user_id=utilizador.id, nome="Ausente", moeda="EUR", data_ancora=date(2026, 1, 1), saldo_ancora=Decimal("0"))
+    db_session.add(conta)
+    await db_session.flush()
+    conta_bancaria = await _conta_bancaria(db_session, conta.id)
+
+    await importacao_movimentos.sincronizar_conta_bancaria(db_session, utilizador, conta_bancaria)
+
+    assert pedidos == ["movimentos"]

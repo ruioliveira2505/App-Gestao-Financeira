@@ -37,6 +37,15 @@ import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+# contextvars guarda um valor "do pedido em curso" (aqui, os dados do
+# utilizador presente), visível em todas as funções chamadas a partir dele
+# sem ter de ser passado de mão em mão — e separado entre pedidos que
+# correm ao mesmo tempo. ipaddress sabe se um IP é local ou público.
+import ipaddress
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 # httpx é o cliente HTTP já usado neste projecto (é dependência do
 # FastAPI para os seus próprios testes) — reaproveitado aqui para fazer
 # pedidos a um serviço externo, agora pela primeira vez fora de testes.
@@ -100,7 +109,167 @@ _URL_BASE = "https://api.enablebanking.com"
 _TEMPO_LIMITE = httpx.Timeout(30.0, connect=10.0)
 
 
+# --- O UTILIZADOR PRESENTE (cabeçalhos PSU) ---
+#
+# A PSD2 (a diretiva europeia dos pagamentos) limita a 4 por dia os acessos
+# a uma conta SEM o utilizador presente — por conta, por tipo de pedido e
+# por consentimento. Esse limite NÃO se aplica quando é o próprio
+# utilizador (o "PSU", Payment Service User) a pedir, desde que o pedido o
+# identifique: a Enable Banking aceita, nos pedidos às contas (saldos e
+# movimentos), cabeçalhos "Psu-*" com o IP e o navegador dele.
+#
+# As rotas em que o utilizador age (sincronizar, criar uma conta a partir
+# do banco, vincular) marcam o pedido com com_o_utilizador_presente(...); a
+# partir daí, todos os pedidos às contas feitos nesse pedido levam os
+# cabeçalhos. Fora disso (uma futura sincronização automática), não levam:
+# aí o utilizador não está mesmo presente.
+#
+# "Ou todos, ou nenhum": cada banco exige um conjunto de cabeçalhos PSU, e
+# se faltar algum a Enable Banking recusa o pedido (PSU_HEADER_NOT_PROVIDED)
+# antes de chegar ao banco. Nesse caso repete-se uma vez sem eles (ver
+# _pedido) — funciona como antes, e não gasta um acesso a mais.
+
+# Os dados do utilizador presente, no pedido em curso (None: não está).
+_utilizador_presente: ContextVar[dict | None] = ContextVar("utilizador_presente", default=None)
+
+# Os cabeçalhos do navegador que se passam ao banco, com o nome PSU.
+_CABECALHOS_DO_NAVEGADOR = {
+    "user-agent": "Psu-User-Agent",
+    "accept": "Psu-Accept",
+    "accept-language": "Psu-Accept-Language",
+    "accept-encoding": "Psu-Accept-Encoding",
+    "referer": "Psu-Referer",
+}
+
+
+@contextmanager
+def com_o_utilizador_presente(pedido) -> Iterator[None]:
+    """
+    Marca o pedido em curso como feito COM o utilizador presente: dentro
+    deste bloco "with", os pedidos às contas levam os cabeçalhos PSU, com o
+    IP e o navegador de quem fez "pedido" (o Request do FastAPI). O IP é o
+    que o servidor vê (request.client.host): atrás de um proxy de confiança
+    (o do Vite, em desenvolvimento), o uvicorn já o troca pelo verdadeiro,
+    lido do cabeçalho X-Forwarded-For.
+    """
+    dados = {"ip": pedido.client.host if pedido.client else None}
+    for nome, nome_psu in _CABECALHOS_DO_NAVEGADOR.items():
+        valor = pedido.headers.get(nome)
+        if valor:
+            dados[nome_psu] = valor
+    marca = _utilizador_presente.set(dados)
+    try:
+        yield
+    finally:
+        _utilizador_presente.reset(marca)
+
+
+def utilizador_presente() -> bool:
+    """Se o pedido em curso foi marcado como feito com o utilizador presente."""
+    return _utilizador_presente.get() is not None
+
+
+def _ip_do_utilizador(ip: str | None, ip_publico: Callable[[], str | None]) -> str | None:
+    """
+    O IP a dar ao banco como o do utilizador. Um IPv4 escrito à maneira do
+    IPv6 ("::ffff:85.240.10.20") volta à forma normal (há bancos que só
+    aceitam IPv4). Um IP LOCAL (o próprio computador, 127.0.0.1, ou a rede
+    de casa, 192.168.…) não diz nada ao banco: em desenvolvimento, o
+    servidor corre na máquina do utilizador, por isso o IP público da rede
+    ("ip_publico") é o dele. Sem forma de o saber, None (e o pedido segue
+    sem cabeçalhos PSU, como antes).
+    """
+    if not ip:
+        return None
+    try:
+        endereco = ipaddress.ip_address(ip)
+    except ValueError:
+        return None
+    if isinstance(endereco, ipaddress.IPv6Address) and endereco.ipv4_mapped:
+        endereco = endereco.ipv4_mapped
+    if endereco.is_global:
+        return str(endereco)
+    return ip_publico()
+
+
+# O IP público da rede onde corre o servidor, descoberto uma vez (só usado
+# quando o IP do utilizador é local, em desenvolvimento).
+_ip_publico_da_rede: str | None = None
+
+
+async def _descobrir_ip_publico() -> str | None:
+    """
+    Pergunta a um serviço público (ipify) o IP público desta rede, uma vez
+    por arranque do servidor. Se falhar, None: os pedidos seguem sem
+    cabeçalhos PSU.
+    """
+    global _ip_publico_da_rede
+    if _ip_publico_da_rede is None:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(5.0)) as cliente:
+                resposta = await cliente.get("https://api.ipify.org", params={"format": "json"})
+                _ip_publico_da_rede = resposta.json().get("ip")
+        except (httpx.HTTPError, ValueError):
+            _registo.info("Não foi possível descobrir o IP público: pedidos sem cabeçalhos PSU.")
+            return None
+    return _ip_publico_da_rede
+
+
+async def _cabecalhos_psu(caminho: str) -> dict[str, str]:
+    """
+    Os cabeçalhos PSU a juntar a um pedido: só nos pedidos às contas
+    ("/accounts/…"), só com o utilizador presente, e só se se souber o IP
+    dele (sem IP, nenhum — «ou todos, ou nenhum»).
+    """
+    dados = _utilizador_presente.get()
+    if dados is None or not caminho.startswith("/accounts/"):
+        return {}
+    ip_bruto = dados.get("ip")
+    publico = None
+    if ip_bruto:
+        try:
+            local = not ipaddress.ip_address(ip_bruto).is_global
+        except ValueError:
+            local = False
+        if local:
+            publico = await _descobrir_ip_publico()
+    ip = _ip_do_utilizador(ip_bruto, lambda: publico)
+    if ip is None:
+        return {}
+    return {"Psu-Ip-Address": ip, **{nome: valor for nome, valor in dados.items() if nome != "ip"}}
+
+
 async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
+    """
+    Faz UM pedido à Enable Banking (ver _enviar, abaixo), com os cabeçalhos
+    PSU quando o utilizador está presente (ver «O UTILIZADOR PRESENTE»,
+    acima). Se a Enable Banking os recusar (um erro "PSU_…": o banco exige
+    um cabeçalho que não temos), repete uma vez SEM eles: essa recusa
+    acontece antes de chegar ao banco, por isso não gasta um acesso.
+    """
+    psu = await _cabecalhos_psu(caminho)
+    if not psu:
+        return await _enviar(metodo, caminho, {}, **opcoes)
+    _registo.info("Pedido ao banco com o utilizador presente (cabeçalhos PSU): %s %s", metodo, caminho)
+    try:
+        return await _enviar(metodo, caminho, psu, **opcoes)
+    except _RecusaPsu as recusa:
+        _registo.warning(
+            "A Enable Banking recusou os cabeçalhos PSU (%s); repete-se sem eles: %s %s",
+            recusa.codigo, metodo, caminho,
+        )
+        return await _enviar(metodo, caminho, {}, **opcoes)
+
+
+class _RecusaPsu(Exception):
+    """A Enable Banking recusou os cabeçalhos PSU (um erro "PSU_…")."""
+
+    def __init__(self, codigo: str) -> None:
+        super().__init__(codigo)
+        self.codigo = codigo
+
+
+async def _enviar(metodo: str, caminho: str, psu: dict[str, str], **opcoes) -> httpx.Response:
     """
     Faz UM pedido à API da Enable Banking — o único sítio deste ficheiro
     que fala com a rede. Todas as funções públicas abaixo passam por aqui,
@@ -138,7 +307,7 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
             resposta = await cliente.request(
                 metodo,
                 f"{_URL_BASE}{caminho}",
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **psu},
                 **opcoes,
             )
     # A ordem importa: TimeoutException é um caso particular de HTTPError,
@@ -151,9 +320,25 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
         )
 
     if resposta.status_code >= 400:
+        # Uma recusa dos cabeçalhos PSU (só quando se mandaram): quem chama
+        # repete sem eles. Qualquer outro erro segue o caminho de sempre.
+        if psu:
+            codigo = _codigo_de_erro(resposta)
+            if codigo and codigo.startswith("PSU_"):
+                raise _RecusaPsu(codigo)
         raise _erro_da_resposta(resposta)
 
     return resposta
+
+
+def _codigo_de_erro(resposta: httpx.Response) -> str | None:
+    """O código de erro da Enable Banking ("error"), se houver e for texto."""
+    try:
+        corpo = resposta.json()
+    except ValueError:
+        return None
+    codigo = corpo.get("error") if isinstance(corpo, dict) else None
+    return codigo if isinstance(codigo, str) else None
 
 
 def _erro_da_resposta(
