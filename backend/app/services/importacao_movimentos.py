@@ -604,7 +604,14 @@ async def sincronizar_movimentos(
         for transacao, identificador in zip(transacoes, _identificadores(transacoes))
         if identificador not in ids_existentes
     ]
+    # A sincronização correu bem (mesmo sem nada de novo): fica registada no
+    # vínculo, para a página da conta dizer quando foi a última, e uma falha
+    # anterior deixa de valer.
+    vinculo.sincronizado_em = func.now()
+    vinculo.falha_em = None
+    vinculo.falha_motivo = None
     if not novas:
+        await db.flush()
         return Sincronizacao(novos=0, futuros=futuros)
 
     categoria_entrada = await _categoria_refugio(db, conta.user_id, "entrada")

@@ -30,6 +30,8 @@ códigos usados:
   - 409 Conflict: o pedido choca com o estado atual (um nome repetido,
     uma conta bancária já vinculada, uma autorização que já terminou);
   - 422 Unprocessable Content: os dados enviados são inválidos;
+  - 429 Too Many Requests: o banco recusou porque se atingiu o limite de
+    acessos por dia (LimiteDoBanco: só amanhã);
   - 502 Bad Gateway: um serviço de que dependemos (o banco) falhou;
   - 504 Gateway Timeout: um serviço de que dependemos não respondeu a
     tempo.
@@ -118,6 +120,20 @@ class InexistenteNoBanco(BancoIndisponivel):
     indisponível, ou dar como feita a revogação de uma sessão que já não
     existia.
     """
+
+
+class LimiteDoBanco(BancoIndisponivel):
+    """
+    O banco recusou o pedido porque se atingiu o LIMITE DE ACESSOS por dia
+    que a PSD2 (a diretiva europeia dos pagamentos) permite sem o
+    utilizador presente. Responde 429 ("Too Many Requests", demasiados
+    pedidos), o código HTTP feito para isto, em vez do 502 de uma falha
+    qualquer: a interface reconhece-o pelo código e diz «limite do banco»,
+    e o utilizador sabe que tentar outra vez já não adianta (só amanhã).
+    Continua a ser um BancoIndisponivel, para quem já apanhava esse tipo.
+    """
+
+    estado_http = 429
 
 
 class BancoLento(ErroDeDominio):

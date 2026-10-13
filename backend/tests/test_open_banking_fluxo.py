@@ -329,6 +329,8 @@ async def test_criar_conta_com_sucesso_grava_conta_vinculo_e_movimentos(
     # data inicial: tudo vem do banco.
     assert vinculo.data_corte == date(2026, 1, 31)
     assert len((await db_session.scalars(select(Movimento).where(Movimento.conta_id == conta.id))).all()) == 1
+    # A primeira importação conta como a primeira sincronização.
+    assert vinculo.sincronizado_em is not None
 
 
 # --- sincronizar ---
@@ -392,6 +394,10 @@ async def test_sincronizar_importa_so_o_que_e_novo_lancado_e_depois_da_ancora(
 
     assert resposta.status_code == 200
     assert resposta.json() == {"movimentos_importados": 1}
+    # A sincronização fica registada no vínculo: a página da conta diz
+    # «Sincronizada · agora» (e depois «há 2 horas»…).
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+    assert vinculo["sincronizado_em"] is not None
     referencias = set(
         (
             await db_session.scalars(
@@ -522,6 +528,111 @@ async def test_sincronizar_ignora_valor_zero_e_datas_futuras(
     )
 
     assert resposta.json() == {"movimentos_importados": 1}
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_sem_nada_de_novo_marca_a_sincronizacao(cliente_autenticado, db_session, monkeypatch):
+    """Sem movimentos novos, a sincronização correu bem na mesma: fica registada no vínculo."""
+    conta_id = uuid.UUID(
+        (
+            await cliente_autenticado.post(
+                "/contas",
+                json={"nome": "Nada novo", "moeda": "EUR", "data_ancora": "2026-01-01", "saldo_ancora": "0"},
+            )
+        ).json()["id"]
+    )
+    conta_bancaria = await _conta_bancaria(db_session, conta_id)
+    conta_bancaria_id = conta_bancaria.id
+
+    async def movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        return {"transactions": []}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", movimentos_falso)
+
+    resposta = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria_id}/sincronizar")
+    await db_session.rollback()
+
+    assert resposta.json() == {"movimentos_importados": 0}
+    vinculo = await db_session.scalar(select(Vinculo).where(Vinculo.conta_bancaria_id == conta_bancaria_id))
+    assert vinculo.sincronizado_em is not None
+
+
+@pytest.mark.asyncio
+async def test_sincronizar_que_falha_nao_mexe_na_ultima_sincronizacao(cliente_autenticado, db_session, monkeypatch):
+    """O banco falha (limite diário): a última sincronização que correu bem fica como estava."""
+    from app.core.erros import LimiteDoBanco
+
+    conta_id = uuid.UUID(
+        (
+            await cliente_autenticado.post(
+                "/contas",
+                json={"nome": "Falha", "moeda": "EUR", "data_ancora": "2026-01-01", "saldo_ancora": "0"},
+            )
+        ).json()["id"]
+    )
+    conta_bancaria = await _conta_bancaria(db_session, conta_id)
+    conta_bancaria_id = conta_bancaria.id
+
+    async def movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        raise LimiteDoBanco("Tenta outra vez amanhã.")
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", movimentos_falso)
+
+    resposta = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria_id}/sincronizar")
+    await db_session.rollback()
+
+    assert resposta.status_code == 429
+    vinculo = await db_session.scalar(select(Vinculo).where(Vinculo.conta_bancaria_id == conta_bancaria_id))
+    # O vínculo de teste começa sem nenhuma sincronização, e continua assim.
+    assert vinculo.sincronizado_em is None
+    # Mas a falha fica guardada, com o motivo: a página da conta continua a
+    # dizer «Falhou · limite do banco» ao ser reaberta.
+    assert vinculo.falha_em is not None
+    assert vinculo.falha_motivo == "limite"
+
+
+@pytest.mark.asyncio
+async def test_falha_sem_ligacao_fica_guardada_e_uma_sincronizacao_boa_apaga_a(
+    cliente_autenticado, db_session, monkeypatch
+):
+    """
+    O banco falha (502): fica guardado «sem-ligacao» e a API devolve-o no
+    vínculo. Uma sincronização que corre bem a seguir apaga a falha.
+    """
+    from app.core.erros import BancoIndisponivel
+
+    conta_id = uuid.UUID(
+        (
+            await cliente_autenticado.post(
+                "/contas",
+                json={"nome": "Volta", "moeda": "EUR", "data_ancora": "2026-01-01", "saldo_ancora": "0"},
+            )
+        ).json()["id"]
+    )
+    conta_bancaria = await _conta_bancaria(db_session, conta_id)
+    conta_bancaria_id = conta_bancaria.id
+    falhar = True
+
+    async def movimentos_falso(uid, data_de=None, continuation_key=None, estrategia=None):
+        if falhar:
+            raise BancoIndisponivel("O banco não respondeu.")
+        return {"transactions": []}
+
+    monkeypatch.setattr(importacao_movimentos, "obter_movimentos", movimentos_falso)
+
+    resposta = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria_id}/sincronizar")
+    assert resposta.status_code == 502
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+    assert vinculo["falha_motivo"] == "sem-ligacao"
+    assert vinculo["falha_em"] is not None
+
+    falhar = False
+    resposta = await cliente_autenticado.post(f"/open-banking/contas-bancarias/{conta_bancaria_id}/sincronizar")
+    assert resposta.status_code == 200
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+    assert vinculo["falha_motivo"] is None
+    assert vinculo["falha_em"] is None
+    assert vinculo["sincronizado_em"] is not None
 
 
 # --- O vínculo (F2): data de corte, origem, impressão digital, bloqueio ---

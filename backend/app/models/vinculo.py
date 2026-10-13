@@ -103,6 +103,26 @@ class Vinculo(Base):
     # data inicial (tudo vem do banco).
     data_corte: Mapped[date] = mapped_column(Date, nullable=False)
 
+    # A ÚLTIMA SINCRONIZAÇÃO que correu bem: o momento em que se importaram
+    # (ou se confirmou que não havia) movimentos novos do banco. A página da
+    # conta mostra-a («Sincronizada · há 2 horas»). Fica no vínculo, e não
+    # na conta bancária, porque ao renovar uma autorização o vínculo é o
+    # mesmo (só passa para a conta bancária da autorização nova), e a data
+    # não se deve perder. Vazia enquanto não houver nenhuma («Ainda não
+    # sincronizada»).
+    sincronizado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # A ÚLTIMA FALHA de sincronização POR CAUSA DO BANCO, e o motivo:
+    # "sem-ligacao" (o banco falhou, não respondeu ou demorou demasiado) ou
+    # "limite" (o banco recusou: atingiu-se o limite de acessos do dia).
+    # Guardam-se para a página da conta continuar a dizer «Falhou · …» ao
+    # ser reaberta, e não só na visita em que aconteceu. Uma sincronização
+    # que corra bem apaga-as. Não se guardam as recusas que não são do banco
+    # (uma conta suspensa, outra operação a decorrer na conta): essas
+    # explicam-se de outra maneira, ou passam sozinhas.
+    falha_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    falha_motivo: Mapped[str | None] = mapped_column(String(12), nullable=True)
+
     # Momento de criação da linha, preenchido pela própria base de dados.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

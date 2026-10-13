@@ -43,7 +43,7 @@ conta que o banco envia; nome_sugerido junta-lhe o nome do banco (ex.:
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.erros import Conflito, NaoEncontrado
@@ -304,6 +304,10 @@ async def vincular(
         conta_bancaria_id=conta_bancaria.id,
         identificacao=identificacao,
         data_corte=data_corte,
+        # Quem vincula importa logo os movimentos, na mesma transação (criar
+        # a conta a partir do banco, ou vincular uma que já existe): o
+        # momento do vínculo é também o da primeira sincronização.
+        sincronizado_em=func.now(),
     )
     db.add(vinculo)
     await db.flush()
@@ -429,21 +433,6 @@ async def listar_contas_bancarias(
     return list(resultado.scalars().all())
 
 
-async def obter_conta_bancaria_de_conta(
-    db: AsyncSession, conta_id: uuid.UUID
-) -> ContaBancaria | None:
-    """
-    A conta bancária que alimenta esta Conta, se houver (através do
-    vínculo). Usada, por exemplo, para mostrar no detalhe de uma Conta de
-    que banco vem e até quando vale a autorização.
-    """
-    return await db.scalar(
-        select(ContaBancaria)
-        .join(Vinculo, Vinculo.conta_bancaria_id == ContaBancaria.id)
-        .where(Vinculo.conta_id == conta_id)
-    )
-
-
 async def obter_conta_bancaria_do_utilizador(
     db: AsyncSession, user_id: uuid.UUID, conta_bancaria_id: uuid.UUID
 ) -> ContaBancaria:
@@ -462,3 +451,41 @@ async def obter_conta_bancaria_do_utilizador(
     if conta_bancaria is None:
         raise NaoEncontrado("Conta bancária não encontrada.")
     return conta_bancaria
+
+
+async def registar_falha_de_sincronizacao(
+    db: AsyncSession, conta_bancaria_id: uuid.UUID, motivo: str
+) -> None:
+    """
+    Guarda no vínculo da conta bancária a falha de uma sincronização por
+    causa do banco ("sem-ligacao" ou "limite") e quando aconteceu, para a
+    página da conta a continuar a mostrar ao ser reaberta. Quem chama faz
+    rollback antes (para não gravar o que o pedido deixou a meio) e commit
+    depois. Sem vínculo (entretanto desvinculada), não há onde guardar.
+    """
+    vinculo = await vinculo_da_conta_bancaria(db, conta_bancaria_id)
+    if vinculo is None:
+        return
+    vinculo.falha_em = func.now()
+    vinculo.falha_motivo = motivo
+
+
+async def vinculos_das_contas(
+    db: AsyncSession, conta_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, tuple[Vinculo, ContaBancaria, Autorizacao]]:
+    """
+    Os vínculos de várias Contas de uma só vez: para cada Conta com vínculo,
+    o vínculo, a conta bancária que a alimenta e a autorização dessa conta
+    bancária. Uma só consulta (três tabelas juntas), em vez de três por
+    Conta — a lista de contas pede-os para todas. As Contas sem vínculo
+    (manuais) não aparecem no dicionário.
+    """
+    if not conta_ids:
+        return {}
+    linhas = await db.execute(
+        select(Vinculo, ContaBancaria, Autorizacao)
+        .join(ContaBancaria, ContaBancaria.id == Vinculo.conta_bancaria_id)
+        .join(Autorizacao, Autorizacao.id == ContaBancaria.autorizacao_id)
+        .where(Vinculo.conta_id.in_(conta_ids))
+    )
+    return {vinculo.conta_id: (vinculo, conta_bancaria, autorizacao) for vinculo, conta_bancaria, autorizacao in linhas}

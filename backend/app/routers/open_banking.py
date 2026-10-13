@@ -99,7 +99,14 @@ from fastapi.responses import RedirectResponse
 
 from app.core.config import settings
 from app.core.deps import obter_utilizador_atual
-from app.core.erros import AutorizacaoTerminadaNoBanco, ErroDeDominio, InexistenteNoBanco
+from app.core.erros import (
+    AutorizacaoTerminadaNoBanco,
+    BancoIndisponivel,
+    BancoLento,
+    ErroDeDominio,
+    InexistenteNoBanco,
+    LimiteDoBanco,
+)
 from app.db.session import get_db
 from app.models.autorizacao import Autorizacao
 from app.models.autorizacao_pendente import AutorizacaoPendente
@@ -128,6 +135,7 @@ from app.services.contas_bancarias import (
     listar_contas_bancarias,
     nome_sugerido,
     obter_conta_bancaria_do_utilizador,
+    registar_falha_de_sincronizacao,
     tipo_sugerido,
     vinculada_noutra_linha,
 )
@@ -572,12 +580,27 @@ async def sincronizar(
 
     409 se a conta bancária ainda não tiver vínculo: não há para onde
     sincronizar (a regra vive no serviço).
+
+    Uma falha POR CAUSA DO BANCO (não respondeu, demorou demasiado, ou o
+    limite de acessos do dia) fica guardada no vínculo, com o motivo, para
+    a página da conta a continuar a mostrar ao ser reaberta — mesmo que o
+    pedido falhe (desfaz-se o que ficou a meio, grava-se só a falha, e o
+    erro segue para o cliente como antes).
     """
     conta_bancaria = await obter_conta_bancaria_do_utilizador(db, utilizador.id, conta_bancaria_id)
     try:
         total_novos = await sincronizar_conta_bancaria(db, utilizador, conta_bancaria)
     except (AutorizacaoTerminadaNoBanco, InexistenteNoBanco) as erro:
         await _registar_resposta_do_banco(db, erro, conta_bancaria)
+        raise
+    except (BancoIndisponivel, BancoLento) as erro:
+        # O id guarda-se antes do rollback: depois dele, o objeto em memória
+        # fica desatualizado.
+        conta_bancaria_id = conta_bancaria.id
+        await db.rollback()
+        motivo = "limite" if isinstance(erro, LimiteDoBanco) else "sem-ligacao"
+        await registar_falha_de_sincronizacao(db, conta_bancaria_id, motivo)
+        await db.commit()
         raise
     await db.commit()
     return {"movimentos_importados": total_novos}

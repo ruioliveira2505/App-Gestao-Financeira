@@ -31,6 +31,8 @@ from app.db.session import get_db
 from app.models.conta import Conta
 from app.models.user import User
 from app.models.autorizacao import Autorizacao
+from app.models.vinculo import Vinculo
+from app.models.conta_bancaria import ContaBancaria
 from app.schemas.contas import AncoraEditar, AncoraSimuladaOut, ContaCriar, ContaEditar, ContaOut, VinculoOut
 from app.services.cambio import SemTaxaCambio, converter
 from app.services.contas import (
@@ -43,8 +45,8 @@ from app.services.contas import (
     soma_movimentos,
     somas_de_movimentos,
 )
-from app.services.contas_bancarias import obter_conta_bancaria_de_conta
-from app.services.estados import estado_conta, motivo_do_fim
+from app.services.contas_bancarias import vinculos_das_contas
+from app.services.estados import estado_autorizacao, estado_conta, motivo_do_fim
 
 # prefix="/contas": todas as rotas aqui ficam sob "/contas". tags=["contas"]
 # agrupa-as com esse nome na documentação automática do FastAPI.
@@ -56,7 +58,11 @@ _DUAS_CASAS = Decimal("0.01")
 
 
 async def _para_saida(
-    db: AsyncSession, conta: Conta, soma: Decimal, moeda_principal: str
+    db: AsyncSession,
+    conta: Conta,
+    soma: Decimal,
+    moeda_principal: str,
+    vinculos: dict[uuid.UUID, tuple[Vinculo, ContaBancaria, Autorizacao]] | None = None,
 ) -> ContaOut:
     """
     Converte uma linha da tabela "contas" na forma devolvida pela API.
@@ -93,23 +99,57 @@ async def _para_saida(
 
     # Se uma conta bancária alimentar esta Conta (se tiver VÍNCULO), o
     # frontend precisa do id da conta bancária (para sincronizar e
-    # desvincular), do nome do banco, do prazo da autorização e do ESTADO
+    # desvincular), do nome do banco e do titular, do prazo da autorização e do ESTADO
     # da Conta (vinculada ou suspensa), deduzido dos factos.
+    #
+    # "vinculos": os vínculos já lidos de várias contas de uma vez (a lista
+    # passa-os, para não fazer três consultas por conta — ver
+    # vinculos_das_contas); sem eles (uma só conta), lêem-se aqui.
     vinculo_out = None
-    conta_bancaria = await obter_conta_bancaria_de_conta(db, conta.id)
-    if conta_bancaria is not None:
-        autorizacao = await db.get(Autorizacao, conta_bancaria.autorizacao_id)
+    if vinculos is None:
+        vinculos = await vinculos_das_contas(db, [conta.id])
+    dados_vinculo = vinculos.get(conta.id)
+    if dados_vinculo is not None:
+        vinculo, conta_bancaria, autorizacao = dados_vinculo
         estado = estado_conta(conta_bancaria, autorizacao)
+        # Quando terminou a AUTORIZAÇÃO (None se ainda está ativa): o que
+        # chegar primeiro, o fim antecipado (revogada, ou o banco deu-a por
+        # terminada — pode ser registado já depois do prazo) ou o fim do
+        # prazo. Vai à parte do estado da Conta: uma Conta suspensa porque o
+        # banco deixou de partilhar a conta pode ter a autorização ativa ou
+        # já terminada, e a interface tem de saber qual.
+        autorizacao_terminada_em = None
+        if estado_autorizacao(autorizacao) == "terminada":
+            autorizacao_terminada_em = (
+                min(autorizacao.terminada_em, autorizacao.valido_ate)
+                if autorizacao.terminada_em is not None
+                else autorizacao.valido_ate
+            )
         motivo = None
+        suspensa_desde = None
         if estado == "suspensa":
             motivo = (
                 "indisponivel"
                 if conta_bancaria.indisponivel_em is not None
                 else motivo_do_fim(autorizacao)
             )
+            # Desde quando: o banco deixou de partilhar a conta, ou a
+            # autorização terminou.
+            suspensa_desde = (
+                conta_bancaria.indisponivel_em if motivo == "indisponivel" else autorizacao_terminada_em
+            )
         vinculo_out = VinculoOut(
             conta_bancaria_id=conta_bancaria.id,
             banco=autorizacao.banco,
+            titular=conta_bancaria.nome_titular,
+            iban=conta_bancaria.iban,
+            sincronizado_em=vinculo.sincronizado_em,
+            suspensa_desde=suspensa_desde,
+            autorizacao_terminada_em=autorizacao_terminada_em,
+            # Uma sincronização boa apaga a falha, por isso a que está guardada
+            # é sempre mais recente do que a última que correu bem.
+            falha_em=vinculo.falha_em,
+            falha_motivo=vinculo.falha_motivo,
             valido_ate=autorizacao.valido_ate,
             autorizacao_id=autorizacao.id,
             estado=estado,
@@ -172,8 +212,10 @@ async def listar_contas(
     )
     contas = list(resultado.scalars())
     somas = await somas_de_movimentos(db, [conta.id for conta in contas])
+    # Os vínculos de todas as contas numa só consulta (ver vinculos_das_contas).
+    vinculos = await vinculos_das_contas(db, [conta.id for conta in contas])
     return [
-        await _para_saida(db, conta, somas.get(conta.id, Decimal(0)), utilizador.moeda_principal)
+        await _para_saida(db, conta, somas.get(conta.id, Decimal(0)), utilizador.moeda_principal, vinculos)
         for conta in contas
     ]
 

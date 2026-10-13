@@ -200,6 +200,10 @@ async def test_conta_com_autorizacao_terminada_fica_suspensa_e_nao_sincroniza(
     assert conta["vinculo"]["motivo"] == "expirada"
     assert sincronizar.status_code == 409
     assert "autorizá-lo outra vez" in sincronizar.json()["detail"]
+    # Uma conta suspensa não sincroniza, mas isso não é uma falha do banco:
+    # não fica guardada como tal (a página diz «Suspensa · desde …»).
+    depois = (await cliente_autenticado.get(f"/contas/{conta['id']}")).json()["vinculo"]
+    assert depois["falha_motivo"] is None
 
 
 @pytest.mark.asyncio

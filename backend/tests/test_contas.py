@@ -8,7 +8,7 @@ utilizador (um utilizador nunca vê contas de outro).
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -53,7 +53,16 @@ async def _categoria_id(db_session, email: str, direcao: str) -> str:
     return str(categoria.id)
 
 
-async def _vincular_conta(db_session, conta_id: str, valido_ate: datetime | None = None) -> None:
+async def _vincular_conta(
+    db_session,
+    conta_id: str,
+    valido_ate: datetime | None = None,
+    nome_titular: str | None = None,
+    iban: str | None = None,
+    terminada_em: datetime | None = None,
+    motivo: str | None = None,
+    indisponivel_em: datetime | None = None,
+) -> None:
     """
     Cria uma Autorizacao e uma ContaBancaria mínimas, já vinculadas a
     "conta_id" — simula uma conta vinculada sem chamar a Enable Banking
@@ -63,6 +72,10 @@ async def _vincular_conta(db_session, conta_id: str, valido_ate: datetime | None
 
     "valido_ate" é a validade do consentimento; sem ela, usa-se o momento
     actual (o valor exacto não importa aos testes que não a verificam).
+    "nome_titular" é o nome do titular, tal como o banco o enviaria (por
+    omissão, nenhum: há bancos que não o enviam). "terminada_em" e
+    "motivo" terminam a autorização antes do prazo (ex.: revogada);
+    "indisponivel_em" marca a conta bancária como deixada de partilhar.
     """
     utilizador = await db_session.scalar(select(User).where(User.email == "teste@example.com"))
     autorizacao = Autorizacao(
@@ -71,10 +84,19 @@ async def _vincular_conta(db_session, conta_id: str, valido_ate: datetime | None
         banco="Banco Teste",
         pais="PT",
         valido_ate=valido_ate or datetime.now(timezone.utc),
+        terminada_em=terminada_em,
+        motivo=motivo,
     )
     db_session.add(autorizacao)
     await db_session.flush()
-    conta_bancaria = ContaBancaria(autorizacao_id=autorizacao.id, uid=str(uuid.uuid4()), moeda="EUR")
+    conta_bancaria = ContaBancaria(
+        autorizacao_id=autorizacao.id,
+        uid=str(uuid.uuid4()),
+        moeda="EUR",
+        nome_titular=nome_titular,
+        iban=iban,
+        indisponivel_em=indisponivel_em,
+    )
     db_session.add(conta_bancaria)
     await db_session.flush()
     # O vínculo: o facto de esta conta bancária alimentar a Conta.
@@ -675,7 +697,7 @@ async def test_editar_conta_vinculada_permite_mudar_nome_e_tipo(cliente_autentic
 async def test_obter_conta_vinculada_devolve_o_vinculo(cliente_autenticado, db_session):
     conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
     validade = datetime(2026, 12, 30, 10, 0, tzinfo=timezone.utc)
-    await _vincular_conta(db_session, conta_id, valido_ate=validade)
+    await _vincular_conta(db_session, conta_id, valido_ate=validade, nome_titular="Rui Oliveira")
 
     resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
 
@@ -687,6 +709,124 @@ async def test_obter_conta_vinculada_devolve_o_vinculo(cliente_autenticado, db_s
     # O prazo da autorização segue tal e qual — é dele que o frontend tira
     # o estado da autorização (ativa, a expirar, expirada).
     assert datetime.fromisoformat(vinculo["valido_ate"]) == validade
+    # O titular, tal como o banco o enviou: uma autorização é um banco com
+    # um titular, e a lista de contas mostra os dois em cada aviso.
+    assert vinculo["titular"] == "Rui Oliveira"
+
+
+@pytest.mark.asyncio
+async def test_obter_conta_vinculada_sem_titular_devolve_titular_none(cliente_autenticado, db_session):
+    """Há bancos que não enviam o nome do titular: o campo vem a None, sem erro."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _vincular_conta(db_session, conta_id)
+
+    resposta = await cliente_autenticado.get(f"/contas/{conta_id}")
+
+    assert resposta.status_code == 200
+    assert resposta.json()["vinculo"]["titular"] is None
+
+
+@pytest.mark.asyncio
+async def test_obter_conta_vinculada_devolve_iban_e_ultima_sincronizacao(cliente_autenticado, db_session):
+    """
+    O IBAN (para a página da conta o mostrar, com copiar) e a última
+    sincronização: um vínculo criado à parte, sem nunca ter sincronizado,
+    vem com sincronizado_em a None («Ainda não sincronizada»). Ativa, não
+    está suspensa: suspensa_desde a None.
+    """
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    validade = datetime.now(timezone.utc) + timedelta(days=60)
+    await _vincular_conta(db_session, conta_id, valido_ate=validade, iban="PT50000201231234567890154")
+
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+
+    assert vinculo["iban"] == "PT50000201231234567890154"
+    assert vinculo["sincronizado_em"] is None
+    assert vinculo["suspensa_desde"] is None
+    assert vinculo["autorizacao_terminada_em"] is None
+
+
+@pytest.mark.asyncio
+async def test_conta_suspensa_por_o_prazo_ter_passado_diz_desde_quando(cliente_autenticado, db_session):
+    """Suspensa porque a autorização expirou: está suspensa desde o fim do prazo («Suspensa · desde 2 set»)."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    fim = datetime(2026, 9, 2, 10, 0, tzinfo=timezone.utc)
+    await _vincular_conta(db_session, conta_id, valido_ate=fim)
+
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+
+    assert vinculo["estado"] == "suspensa"
+    assert datetime.fromisoformat(vinculo["suspensa_desde"]) == fim
+    # A autorização terminou no fim do prazo.
+    assert datetime.fromisoformat(vinculo["autorizacao_terminada_em"]) == fim
+
+
+@pytest.mark.asyncio
+async def test_autorizacao_revogada_antes_do_prazo_conta_desde_que_foi_revogada(cliente_autenticado, db_session):
+    """Revogada antes do prazo: suspensa desde a revogação (terminada_em), não desde o fim do prazo."""
+    conta_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    revogada = datetime(2026, 8, 20, 9, 0, tzinfo=timezone.utc)
+    prazo = datetime(2026, 12, 30, 9, 0, tzinfo=timezone.utc)
+    await _vincular_conta(db_session, conta_id, valido_ate=prazo, terminada_em=revogada, motivo="revogada")
+
+    vinculo = (await cliente_autenticado.get(f"/contas/{conta_id}")).json()["vinculo"]
+
+    assert vinculo["motivo"] == "revogada"
+    assert datetime.fromisoformat(vinculo["suspensa_desde"]) == revogada
+    assert datetime.fromisoformat(vinculo["autorizacao_terminada_em"]) == revogada
+
+
+@pytest.mark.asyncio
+async def test_conta_indisponivel_com_autorizacao_ativa_e_com_ela_terminada(cliente_autenticado, db_session):
+    """
+    O banco deixou de partilhar a conta: suspensa desde então (indisponivel_em).
+    O estado da AUTORIZAÇÃO vem à parte (autorizacao_terminada_em): ainda
+    ativa, None; se o prazo também passou, a data do fim — para a página
+    não dizer «Ativa» de uma autorização que já terminou.
+    """
+    sem_partilha = datetime(2026, 9, 10, 9, 0, tzinfo=timezone.utc)
+    ativa_id = (await cliente_autenticado.post("/contas", json=CONTA_VALIDA)).json()["id"]
+    await _vincular_conta(
+        db_session,
+        ativa_id,
+        valido_ate=datetime.now(timezone.utc) + timedelta(days=60),
+        indisponivel_em=sem_partilha,
+    )
+    fim = datetime(2026, 9, 20, 9, 0, tzinfo=timezone.utc)
+    terminada_id = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Outra"})).json()["id"]
+    await _vincular_conta(db_session, terminada_id, valido_ate=fim, indisponivel_em=sem_partilha)
+
+    ativa = (await cliente_autenticado.get(f"/contas/{ativa_id}")).json()["vinculo"]
+    terminada = (await cliente_autenticado.get(f"/contas/{terminada_id}")).json()["vinculo"]
+
+    assert ativa["motivo"] == "indisponivel"
+    assert datetime.fromisoformat(ativa["suspensa_desde"]) == sem_partilha
+    assert ativa["autorizacao_terminada_em"] is None
+    assert terminada["motivo"] == "indisponivel"
+    assert datetime.fromisoformat(terminada["autorizacao_terminada_em"]) == fim
+
+
+@pytest.mark.asyncio
+async def test_listar_contas_traz_o_vinculo_certo_a_cada_conta(cliente_autenticado, db_session):
+    """
+    A lista vai buscar os vínculos de todas as contas de uma vez (uma só
+    consulta, em vez de três por conta): cada conta tem de receber o SEU
+    vínculo, e uma conta manual nenhum.
+    """
+    a_id = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "A"})).json()["id"]
+    b_id = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "B"})).json()["id"]
+    m_id = (await cliente_autenticado.post("/contas", json={**CONTA_VALIDA, "nome": "Manual"})).json()["id"]
+    futuro = datetime.now(timezone.utc) + timedelta(days=60)
+    await _vincular_conta(db_session, a_id, valido_ate=futuro, nome_titular="Titular A", iban="PT50AAAA")
+    await _vincular_conta(db_session, b_id, valido_ate=futuro, nome_titular="Titular B", iban="PT50BBBB")
+
+    contas = {c["id"]: c for c in (await cliente_autenticado.get("/contas")).json()}
+
+    assert contas[a_id]["vinculo"]["titular"] == "Titular A"
+    assert contas[a_id]["vinculo"]["iban"] == "PT50AAAA"
+    assert contas[b_id]["vinculo"]["titular"] == "Titular B"
+    assert contas[b_id]["vinculo"]["iban"] == "PT50BBBB"
+    assert contas[m_id]["vinculo"] is None
 
 
 @pytest.mark.asyncio

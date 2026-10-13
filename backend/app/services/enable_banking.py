@@ -48,7 +48,13 @@ import httpx
 import jwt
 
 from app.core.config import settings
-from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento, InexistenteNoBanco
+from app.core.erros import (
+    AutorizacaoTerminadaNoBanco,
+    BancoIndisponivel,
+    BancoLento,
+    InexistenteNoBanco,
+    LimiteDoBanco,
+)
 
 # O registo (log) deste ficheiro: mensagens para quem opera o servidor, não
 # para o utilizador. logging.getLogger(__name__) cria um registo com o nome
@@ -152,7 +158,7 @@ async def _pedido(metodo: str, caminho: str, **opcoes) -> httpx.Response:
 
 def _erro_da_resposta(
     resposta: httpx.Response,
-) -> AutorizacaoTerminadaNoBanco | InexistenteNoBanco | BancoIndisponivel:
+) -> AutorizacaoTerminadaNoBanco | InexistenteNoBanco | LimiteDoBanco | BancoIndisponivel:
     """
     O erro de domínio que corresponde a uma resposta de erro da Enable
     Banking.
@@ -174,8 +180,8 @@ def _erro_da_resposta(
         existe;
       - o código HTTP 429 ("Too Many Requests", demasiados pedidos) → o
         limite diário de acessos que a PSD2 permite a uma conta foi
-        atingido. É dito ao utilizador, para não tentar repetidamente e
-        gastar ainda mais acessos;
+        atingido → LimiteDoBanco (429). É dito ao utilizador, para não
+        tentar repetidamente e gastar ainda mais acessos;
       - qualquer outro → BancoIndisponivel (502): o banco recusou ou falhou.
 
     O CORPO DA RESPOSTA PODE TER QUALQUER FORMA: um objeto JSON com o campo
@@ -217,7 +223,7 @@ def _erro_da_resposta(
     if codigo == _ERRO_CONTA_INEXISTENTE:
         return InexistenteNoBanco("O banco já não tem esta conta.")
     if resposta.status_code == 429:
-        return BancoIndisponivel(
+        return LimiteDoBanco(
             "Atingiste o limite de acessos que o banco permite por dia. Tenta outra vez amanhã."
         )
     return BancoIndisponivel("O banco não aceitou o pedido. Tenta outra vez mais tarde.")

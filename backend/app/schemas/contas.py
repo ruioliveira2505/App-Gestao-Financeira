@@ -135,6 +135,12 @@ class VinculoOut(BaseModel):
     conta_bancaria_id: uuid.UUID
     # O nome do banco da autorização que trouxe a conta bancária.
     banco: str
+    # O nome do TITULAR da conta bancária, tal como o banco o envia (None se
+    # o banco não o enviar). Uma autorização é um banco com um titular: com
+    # o banco, identifica a autorização para quem a lê (por exemplo, nos
+    # avisos da lista de contas, quando a mesma pessoa tem duas autorizações
+    # no mesmo banco, a sua e a de um familiar).
+    titular: str | None = None
     # Até quando vale a AUTORIZAÇÃO (o consentimento dado pelo utilizador
     # ao banco): o máximo que o banco aceita, até 180 dias depois da
     # autenticação pela regra europeia (90 se o banco não o indicar).
@@ -145,6 +151,29 @@ class VinculoOut(BaseModel):
     valido_ate: datetime
     # A autorização da conta bancária (para a renovar, por exemplo).
     autorizacao_id: uuid.UUID
+    # O IBAN da conta bancária, tal como o banco o envia (None se não o
+    # enviar: um cartão, por exemplo). A página da conta mostra-o, com um
+    # botão para o copiar.
+    iban: str | None = None
+    # A última sincronização que correu bem (None se ainda não houve
+    # nenhuma): «Sincronizada · há 2 horas».
+    sincronizado_em: datetime | None = None
+    # Desde quando a Conta está suspensa (None se estiver vinculada): o fim
+    # do prazo, o momento em que a autorização terminou, ou em que o banco
+    # deixou de partilhar a conta. «Suspensa · desde 2 set».
+    suspensa_desde: datetime | None = None
+    # Quando terminou a AUTORIZAÇÃO (None se ainda está ativa): o fim
+    # antecipado ou o fim do prazo, o que chegar primeiro. À parte do
+    # estado da Conta, porque uma Conta suspensa por o banco ter deixado de
+    # partilhar a conta («indisponivel») pode ter a autorização ativa ou já
+    # terminada — e a interface mostra o estado da autorização.
+    autorizacao_terminada_em: datetime | None = None
+    # A última falha de sincronização POR CAUSA DO BANCO, se for mais
+    # recente do que a última que correu bem (senão, ambas None): quando, e
+    # o motivo — "sem-ligacao" ou "limite". A página da conta mostra
+    # «Falhou · sem ligação» / «Falhou · limite do banco».
+    falha_em: datetime | None = None
+    falha_motivo: str | None = None
     # O ESTADO da Conta, deduzido (nunca guardado): "vinculada" (sincroniza)
     # ou "suspensa" (a autorização terminou, ou o banco deixou de partilhar
     # a conta: continua bloqueada, mas não sincroniza).

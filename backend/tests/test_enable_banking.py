@@ -26,7 +26,13 @@ durante um teste e o repõe no fim):
 import httpx
 import pytest
 
-from app.core.erros import AutorizacaoTerminadaNoBanco, BancoIndisponivel, BancoLento, InexistenteNoBanco
+from app.core.erros import (
+    AutorizacaoTerminadaNoBanco,
+    BancoIndisponivel,
+    BancoLento,
+    InexistenteNoBanco,
+    LimiteDoBanco,
+)
 
 from app.services import enable_banking
 
@@ -194,10 +200,15 @@ async def test_pedido_com_limite_diario_atingido_diz_para_tentar_amanha(monkeypa
 
     _simular_rede(monkeypatch, responder)
 
-    with pytest.raises(BancoIndisponivel) as erro:
+    with pytest.raises(LimiteDoBanco) as erro:
         await enable_banking._pedido("GET", "/accounts/uid-1/transactions")
 
     assert "amanhã" in erro.value.mensagem
+    # Responde 429 (e não o 502 de uma falha qualquer): o frontend reconhece
+    # assim o limite, sem depender do texto, e diz «limite do banco».
+    assert erro.value.estado_http == 429
+    # Continua a ser um BancoIndisponivel: quem já o apanhava, apanha-o.
+    assert isinstance(erro.value, BancoIndisponivel)
 
 
 @pytest.mark.asyncio
