@@ -29,14 +29,15 @@
  * TEXTOS DE ESTADO, sempre «Estado · detalhe» (o mesmo padrão dos avisos
  * em baixo): a autorização diz só o estado; a sincronização diz também
  * quando — «Sincronizada · há 2 horas», «Sincronizada · agora», «Ainda não
- * sincronizada», «A sincronizar…», «Falhou · sem ligação», «Falhou · limite
- * do banco» e, numa conta suspensa, «Suspensa · desde 2 set» (sem "↻").
+ * sincronizada», «A sincronizar…», «Falhou · sem ligação», «Falhou · tenta
+ * mais tarde» e, numa conta suspensa, «Suspensa · desde 2 set» (sem "↻").
+ * Uma falha continua a ver-se ao reabrir a página (o backend guarda-a),
+ * até uma sincronização correr bem. O "↻" nunca fica desativado: os
+ * pedidos ao banco feitos pelo utilizador não têm limite diário.
  *
  * POR AGORA (fatias seguintes): a linha «Autorização» só se lê (abrirá
  * Perfil › Autorizações, ainda por fazer); o painel das reconciliações só
- * se lê (o «+» e a lista completa chegam com a página Reconciliar); e uma
- * falha de sincronização só se vê na visita em que aconteceu (ao voltar,
- * mostra-se a última sincronização que correu bem).
+ * se lê (o «+» e a lista completa chegam com a página Reconciliar).
  *
  * <PaginaDeslizante>: em mobile, entra a deslizar da direita e sai a
  * deslizar de volta para lá, ao estilo do "push"/"pop" do iOS (ver a nota
@@ -64,7 +65,7 @@ import { LinkBotao } from '../componentes/LinkBotao'
 import { LinkVoltar } from '../componentes/LinkVoltar'
 import { PaginaDeslizante } from '../componentes/PaginaDeslizante'
 import { estadoDaAutorizacaoDoVinculo, type Conta, type Vinculo } from '../lib/contas'
-import { diaCurto, formatarData, mesmoDia, tempoDecorrido } from '../lib/datas'
+import { diaCurto, formatarData, tempoDecorrido } from '../lib/datas'
 import { escutarAvisos } from '../lib/avisoPendente'
 import { ErroApi } from '../lib/http'
 import { etiquetaMoeda, formatarDinheiro } from '../lib/moedas'
@@ -115,12 +116,23 @@ function linhaAutorizacao(vinculo: Vinculo): { texto: string; tom: Tom } {
   return { texto: 'Ativa', tom: 'ok' }
 }
 
-/** Uma falha de sincronização nesta visita: sem ligação (o banco não
- *  respondeu; pode tentar-se outra vez), o limite de acessos do banco (só
- *  amanhã), ou um conflito (409: outra operação na conta, ou a autorização
- *  terminou no banco — nesse caso, a conta passa a suspensa e é isso que a
- *  linha mostra, ao voltar a pedir a conta). */
-type Falha = 'sem-ligacao' | 'limite' | 'conflito'
+/** Uma falha de sincronização, em dois casos: SEM LIGAÇÃO (o banco não
+ *  respondeu, ou demorou demasiado) e TENTA MAIS TARDE — um conflito (409:
+ *  outra operação na conta, ou a autorização terminou no banco; nesse caso
+ *  a conta passa a suspensa, e é isso que a linha mostra ao voltar a pedir
+ *  a conta) ou o banco a recusar por excesso de pedidos (429). O excesso
+ *  de pedidos não devia acontecer: o backend diz ao banco que o utilizador
+ *  está presente, e aí não há limite diário. Se acontecer, «tenta mais
+ *  tarde» é o que há a fazer. */
+type Falha = 'sem-ligacao' | 'mais-tarde'
+
+/** A falha que o backend guardou ("sem-ligacao" ou "limite") como se diz
+ *  nesta página. */
+function falhaDoMotivo(motivo: Vinculo['falha_motivo']): Falha | null {
+  if (motivo === 'sem-ligacao') return 'sem-ligacao'
+  if (motivo === 'limite') return 'mais-tarde'
+  return null
+}
 
 /** O estado da SINCRONIZAÇÃO, como se diz na linha: «Estado · detalhe». */
 function linhaSincronizacao(
@@ -134,8 +146,7 @@ function linhaSincronizacao(
   }
   if (aSincronizar) return { texto: 'A sincronizar…', tom: 'neutro' }
   if (falha === 'sem-ligacao') return { texto: 'Falhou · sem ligação', tom: 'negativo' }
-  if (falha === 'limite') return { texto: 'Falhou · limite do banco', tom: 'aviso' }
-  if (falha === 'conflito') return { texto: 'Falhou · tenta mais tarde', tom: 'negativo' }
+  if (falha === 'mais-tarde') return { texto: 'Falhou · tenta mais tarde', tom: 'negativo' }
   if (!vinculo.sincronizado_em) return { texto: 'Ainda não sincronizada', tom: 'neutro' }
   const quando = tempoDecorrido(vinculo.sincronizado_em)
   return { texto: quando ? `Sincronizada · ${quando}` : 'Sincronizada', tom: 'ok' }
@@ -232,17 +243,10 @@ export function ContaDetalhe() {
   // guardou (a última falha por causa do banco, se for mais recente do que
   // a última sincronização boa) — assim «Falhou · …» continua ao reabrir.
   const vinculoAtual = conta?.vinculo ?? null
-  const falhaGuardada: Falha | null = vinculoAtual?.falha_motivo ?? null
-  const falhaVisivel: Falha | null = falha ?? falhaGuardada
-  // O limite de acessos do banco volta a zero no dia seguinte: o ↻ só fica
-  // desativado se o limite foi atingido HOJE (nesta visita, ou guardado com
-  // a data de hoje).
-  const bloqueadoPeloLimite =
-    falha === 'limite' ||
-    (falha === null && falhaGuardada === 'limite' && !!vinculoAtual?.falha_em && mesmoDia(vinculoAtual.falha_em))
+  const falhaVisivel: Falha | null = falha ?? falhaDoMotivo(vinculoAtual?.falha_motivo ?? null)
 
   async function aoSincronizar() {
-    if (!conta?.vinculo || aSincronizar || bloqueadoPeloLimite) return
+    if (!conta?.vinculo || aSincronizar) return
     setASincronizar(true)
     setFalha(null)
     try {
@@ -261,19 +265,12 @@ export function ContaDetalhe() {
         'ok',
       )
     } catch (erro) {
-      // O limite de acessos do banco responde 429: tentar outra vez hoje
-      // já não adianta, por isso o "↻" fica desativado.
+      // Um conflito (409) ou excesso de pedidos (429): tenta-se mais tarde.
+      // O resto é falta de ligação (sem rede, o banco não respondeu).
       const estadoHttp = erro instanceof ErroApi ? erro.estado : null
-      const motivo: Falha = estadoHttp === 429 ? 'limite' : estadoHttp === 409 ? 'conflito' : 'sem-ligacao'
+      const motivo: Falha = estadoHttp === 409 || estadoHttp === 429 ? 'mais-tarde' : 'sem-ligacao'
       setFalha(motivo)
-      avisar(
-        motivo === 'limite'
-          ? 'Não atualizado · limite do banco'
-          : motivo === 'conflito'
-            ? 'Não atualizado · tenta mais tarde'
-            : 'Não atualizado · sem ligação',
-        'alerta',
-      )
+      avisar(motivo === 'mais-tarde' ? 'Não atualizado · tenta mais tarde' : 'Não atualizado · sem ligação', 'alerta')
       // Uma autorização que o banco deu por terminada (409) muda o estado
       // da conta (passa a suspensa): volta a pedir a conta.
       void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
@@ -373,7 +370,6 @@ export function ContaDetalhe() {
                     vinculo={conta.vinculo}
                     aSincronizar={aSincronizar}
                     falha={falhaVisivel}
-                    bloqueadoPeloLimite={bloqueadoPeloLimite}
                     aoSincronizar={aoSincronizar}
                   />
                 )}
@@ -481,22 +477,17 @@ function PainelBanco({
   vinculo,
   aSincronizar,
   falha,
-  bloqueadoPeloLimite,
   aoSincronizar,
 }: {
   vinculo: Vinculo
   aSincronizar: boolean
   falha: Falha | null
-  // O limite de acessos do banco ainda vale (foi hoje): o ↻ fica desativado.
-  bloqueadoPeloLimite: boolean
   aoSincronizar: () => void
 }) {
   const autorizacao = linhaAutorizacao(vinculo)
   const sincronizacao = linhaSincronizacao(vinculo, aSincronizar, falha)
-  // O "↻" só existe numa conta vinculada (uma suspensa não sincroniza), e
-  // fica desativado com o limite do banco (só amanhã).
+  // O "↻" só existe numa conta vinculada (uma suspensa não sincroniza).
   const podeSincronizar = vinculo.estado === 'vinculada'
-  const limite = bloqueadoPeloLimite
   return (
     <section className={`${estilos.seccao} ${estilos.seccaoBanco}`} aria-label="Banco">
       <div className={estilos.painel}>
@@ -524,9 +515,8 @@ function PainelBanco({
             <button
               type="button"
               className={estilos.icone}
-              aria-label={falha && falha !== 'limite' ? 'Tentar sincronizar outra vez' : 'Sincronizar agora'}
+              aria-label={falha ? 'Tentar sincronizar outra vez' : 'Sincronizar agora'}
               aria-busy={aSincronizar}
-              aria-disabled={limite || undefined}
               onClick={aoSincronizar}
             >
               {aSincronizar ? <span className={estilos.roda} aria-hidden="true" /> : <IconeSincronizar tamanho={19} />}

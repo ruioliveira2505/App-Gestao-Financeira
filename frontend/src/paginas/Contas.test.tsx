@@ -638,23 +638,23 @@ describe('Página Contas', () => {
       expect(await screen.findByText('Não atualizado · tenta mais tarde')).toBeInTheDocument()
     })
 
-    it('"Sincronizar agora" sem nenhuma conta atualizada distingue o limite do banco da falta de ligação', async () => {
+    it('"Sincronizar agora" sem nenhuma conta atualizada distingue «tenta mais tarde» (excesso de pedidos) da falta de ligação', async () => {
       let resposta = 429
       servidorMsw.use(
         http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(60, 'cl1') })])),
         http.post('/api/open-banking/contas-bancarias/:id/sincronizar', () =>
-          HttpResponse.json({ detail: 'Limite.' }, { status: resposta }),
+          HttpResponse.json({ detail: 'Demasiados pedidos.' }, { status: resposta }),
         ),
       )
 
       montar()
       await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
       await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
-      const aviso = await screen.findByText('Não atualizado · limite do banco')
+      const aviso = await screen.findByText('Não atualizado · tenta mais tarde')
 
       // Tocar no aviso fecha-o.
       await userEvent.click(aviso)
-      expect(screen.queryByText('Não atualizado · limite do banco')).not.toBeInTheDocument()
+      expect(screen.queryByText('Não atualizado · tenta mais tarde')).not.toBeInTheDocument()
 
       resposta = 502
       await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))

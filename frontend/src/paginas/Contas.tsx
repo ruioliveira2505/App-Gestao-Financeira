@@ -54,7 +54,7 @@
  * "Sincronizar agora" dá o resultado num aviso no fundo do ecrã (ver
  * AvisoEmBaixo), sempre na forma «Estado · detalhe»: «A sincronizar · 2
  * contas», depois «Atualizado · 3 movimentos novos», «Atualizado · 1 conta
- * falhou», «Não atualizado · limite do banco» ou «Não atualizado · sem
+ * falhou», «Não atualizado · tenta mais tarde» ou «Não atualizado · sem
  * ligação».
  *
  * Desenho decidido no canvas de design de Contas («1 · Contas»).
@@ -850,20 +850,20 @@ export function Contas() {
     let novos = 0
     let falhas = 0
     // Porque falharam, para o aviso dizer o motivo quando nenhuma
-    // sincronizou: o LIMITE DE ACESSOS do banco (429: tentar hoje já não
-    // adianta); um CONFLITO (409: a autorização terminou no banco, ou outra
-    // operação na conta — tenta-se mais tarde); o resto é falta de ligação
-    // (sem rede, o banco não respondeu ou demorou demasiado).
-    let limite = false
-    let conflitos = 0
+    // sincronizou: um CONFLITO (409: a autorização terminou no banco, ou
+    // outra operação na conta) ou EXCESSO DE PEDIDOS (429: não devia
+    // acontecer, porque o backend diz ao banco que o utilizador está
+    // presente, e aí não há limite diário) — nos dois, tenta-se mais tarde;
+    // o resto é falta de ligação (sem rede, o banco não respondeu ou
+    // demorou demasiado).
+    let maisTarde = 0
     for (const conta of contasSincronizaveis) {
       try {
         const resultado = await sincronizar((conta.vinculo as NonNullable<Conta['vinculo']>).conta_bancaria_id)
         novos += resultado.movimentos_importados
       } catch (erro) {
         falhas += 1
-        if (erro instanceof ErroApi && erro.estado === 429) limite = true
-        if (erro instanceof ErroApi && erro.estado === 409) conflitos += 1
+        if (erro instanceof ErroApi && (erro.estado === 409 || erro.estado === 429)) maisTarde += 1
       }
     }
     aSincronizarRef.current = false
@@ -877,11 +877,9 @@ export function Contas() {
             ? falhas === 1
               ? 'Atualizado · 1 conta falhou'
               : `Atualizado · ${falhas} contas falharam`
-            : limite
-              ? 'Não atualizado · limite do banco'
-              : conflitos === falhas
-                ? 'Não atualizado · tenta mais tarde'
-                : 'Não atualizado · sem ligação',
+            : maisTarde === falhas
+              ? 'Não atualizado · tenta mais tarde'
+              : 'Não atualizado · sem ligação',
       tipo: falhas === 0 ? 'ok' : 'alerta',
       chave: (anterior?.chave ?? 0) + 1,
     }))

@@ -229,16 +229,6 @@
   background: var(--cor-superficie);
 }
 
-/* Indisponível (o limite do banco: só amanhã): esbatido, e não reage. */
-.icone[aria-disabled='true'] {
-  color: var(--cor-texto-3);
-  cursor: default;
-}
-
-.icone[aria-disabled='true']:active {
-  background: none;
-}
-
 /* A roda que substitui o "↻" enquanto sincroniza. */
 .roda {
   width: 18px;

@@ -326,15 +326,10 @@ describe('Ver conta — o painel do banco', () => {
     expect(screen.getByRole('button', { name: 'Tentar sincronizar outra vez' })).not.toHaveAttribute('aria-disabled')
   })
 
-  it('o limite do banco guardado hoje desativa o ↻; guardado ontem, já não', async () => {
-    const { unmount } = montar({ ...CONTA, vinculo: vinculo({ falha_em: new Date().toISOString(), falha_motivo: 'limite' }) })
-    expect(await screen.findByText('Falhou · limite do banco')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sincronizar agora' })).toHaveAttribute('aria-disabled', 'true')
-    unmount()
-
-    montar({ ...CONTA, vinculo: vinculo({ falha_em: new Date(Date.now() - 2 * DIA).toISOString(), falha_motivo: 'limite' }) })
-    expect(await screen.findByText('Falhou · limite do banco')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sincronizar agora' })).not.toHaveAttribute('aria-disabled')
+  it('um excesso de pedidos guardado (motivo "limite") diz «tenta mais tarde», e o ↻ continua a funcionar', async () => {
+    montar({ ...CONTA, vinculo: vinculo({ falha_em: new Date().toISOString(), falha_motivo: 'limite' }) })
+    expect(await screen.findByText('Falhou · tenta mais tarde')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar sincronizar outra vez' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('o ↻ sincroniza e diz o resultado num aviso em baixo', async () => {
@@ -365,7 +360,7 @@ describe('Ver conta — o painel do banco', () => {
     expect(screen.getByRole('button', { name: 'Tentar sincronizar outra vez' })).not.toHaveAttribute('aria-disabled')
   })
 
-  it('limite do banco: «Falhou · limite do banco» e o ↻ fica desativado', async () => {
+  it('excesso de pedidos (429): «Falhou · tenta mais tarde», e o ↻ continua a funcionar', async () => {
     servidorMsw.use(
       http.post('/api/open-banking/contas-bancarias/cb-1/sincronizar', () =>
         HttpResponse.json({ detail: 'Tenta outra vez amanhã.' }, { status: 429 }),
@@ -375,9 +370,9 @@ describe('Ver conta — o painel do banco', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Sincronizar agora' }))
 
-    expect(await screen.findByText('Falhou · limite do banco')).toBeInTheDocument()
-    expect(screen.getByText('Não atualizado · limite do banco')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Sincronizar agora' })).toHaveAttribute('aria-disabled', 'true')
+    expect(await screen.findByText('Falhou · tenta mais tarde')).toBeInTheDocument()
+    expect(screen.getByText('Não atualizado · tenta mais tarde')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Tentar sincronizar outra vez' })).not.toHaveAttribute('aria-disabled')
   })
 
   it('copiar o IBAN copia-o sem espaços e confirma com um aviso', async () => {

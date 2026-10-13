@@ -100,6 +100,16 @@ export default defineConfig({
         // confundir lógica que dependa desse cabeçalho.
         changeOrigin: true,
 
+        // xfwd: true acrescenta ao pedido reencaminhado o cabeçalho
+        // "X-Forwarded-For", com o endereço IP de quem fez o pedido
+        // original (o browser). Sem ele, o FastAPI veria sempre o IP do
+        // próprio proxy (127.0.0.1) como sendo o do utilizador. O backend
+        // precisa desse IP para dizer ao banco que o utilizador está
+        // presente quando pede uma sincronização (ver o README do
+        // backend); o servidor do FastAPI (Uvicorn) só aceita este
+        // cabeçalho de quem está em 127.0.0.1, que é o caso deste proxy.
+        xfwd: true,
+
         // As rotas do backend não têm o prefixo "/api" (são "/auth/login",
         // "/auth/me", etc.). Este "rewrite" remove o "/api" do início do
         // caminho antes de reencaminhar: o browser pede

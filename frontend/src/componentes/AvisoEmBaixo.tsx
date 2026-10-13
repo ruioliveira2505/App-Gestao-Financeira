@@ -8,7 +8,7 @@
  * resultado soar e parecer igual em todo o lado.
  *
  * O texto segue sempre a forma «Estado · detalhe» («Atualizado · 3
- * movimentos novos», «Não atualizado · limite do banco»): quem lê
+ * movimentos novos», «Não atualizado · sem ligação»): quem lê
  * reconhece o estado logo no início da frase. Tem um de três TIPOS, com um
  * ícone e uma duração próprios:
  *   - "ok" (✓): correu bem; desaparece ao fim de 4 segundos;
