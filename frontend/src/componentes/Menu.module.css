@@ -210,6 +210,8 @@
   color: var(--cor-texto-3);
 }
 
+
+
 /* Item de acção destrutiva ("Remover") — rótulo na cor negativa. */
 .itemPerigo {
   color: var(--cor-negativo);

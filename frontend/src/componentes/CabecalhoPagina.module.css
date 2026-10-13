@@ -39,6 +39,20 @@
   color: var(--cor-texto-2);
 }
 
+/* A linha do título: o <h1> à esquerda e, se houver, o elemento de
+   "aoLadoDoTitulo" encostado à direita (margin-left: auto, abaixo), ao
+   centro na vertical. Sem esse elemento, fica só o título, como antes. */
+.linhaTitulo {
+  display: flex;
+  align-items: center;
+  gap: var(--espaco-3);
+}
+
+.linhaTitulo > :not(h1) {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .acao {
   display: flex;
   align-items: center;

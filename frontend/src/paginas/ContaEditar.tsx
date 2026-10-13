@@ -23,6 +23,12 @@
  * vive no ecrã de edição (à maneira do iOS), num cartão a vermelho e
  * protegida por um "action sheet" de confirmação. Ao eliminar, volta-se à
  * lista de contas.
+ *
+ * DESVINCULAR (só numa conta com vínculo ao banco): também aqui, num cartão
+ * igual, por cima do "Eliminar conta" — a página da conta (Ver conta) é só
+ * de leitura. Desvincular não apaga nada: a conta e os movimentos já
+ * importados ficam, e a conta passa a manual (deixa de receber movimentos
+ * do banco). Também pede confirmação.
  */
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -38,6 +44,8 @@ import { Folha } from '../componentes/Folha'
 import { IconeCheck, IconeFechar } from '../componentes/icones'
 import { useConta } from '../hooks/useContas'
 import { apagarConta, editarConta, type Conta } from '../lib/contas'
+import { deixarAviso } from '../lib/avisoPendente'
+import { desvincular } from '../lib/openBanking'
 import { CHAVES } from '../lib/consultas'
 import { ErroApi } from '../lib/http'
 import estilos from './ContaEditar.module.css'
@@ -82,6 +90,10 @@ export function ContaEditar() {
   // inteiro só porque o pedido de eliminação falhou. Este mostra-se, em
   // vez disso, junto ao próprio botão "Eliminar conta".
   const [erroEliminar, setErroEliminar] = useState<string | null>(null)
+  // O mesmo para "Desvincular" (só numa conta com vínculo).
+  const [aConfirmarDesvincular, setAConfirmarDesvincular] = useState(false)
+  const [aDesvincular, setADesvincular] = useState(false)
+  const [erroDesvincular, setErroDesvincular] = useState<string | null>(null)
 
   // Coordenação com a folha de um seletor (moeda/banco/tipo) aberto por
   // cima desta: enquanto é arrastado para baixo, "espelhoY" espelha o seu
@@ -122,6 +134,10 @@ export function ContaEditar() {
     // Invalida as contas: o detalhe por baixo e a lista de Contas passam a
     // mostrar o nome/banco/tipo novos.
     void clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
+    // A página da conta, por baixo, mostra «Alterações guardadas» quando
+    // voltar a ser a de cima (ver lib/avisoPendente.ts: um recuo no
+    // histórico não leva "state" de navegação).
+    deixarAviso(id, 'Alterações guardadas')
     // "fechar" anima a saída da folha e só depois "aoDispensar" navega.
     fechar()
   }
@@ -159,6 +175,26 @@ export function ContaEditar() {
           ? erroApanhado.message
           : 'Não foi possível eliminar a conta.',
       )
+    }
+  }
+
+  async function desvincularConta() {
+    if (!conta?.vinculo) return
+    setADesvincular(true)
+    try {
+      await desvincular(conta.vinculo.conta_bancaria_id)
+      // A conta passou a manual: invalida as contas (esta folha, o detalhe
+      // por baixo e a lista deixam de a mostrar vinculada; o banco e a
+      // moeda voltam a poder mudar-se aqui).
+      await clienteConsultas.invalidateQueries({ queryKey: CHAVES.contas })
+      setAConfirmarDesvincular(false)
+    } catch (erroApanhado) {
+      setAConfirmarDesvincular(false)
+      setErroDesvincular(
+        erroApanhado instanceof ErroApi ? erroApanhado.message : 'Não foi possível desvincular a conta.',
+      )
+    } finally {
+      setADesvincular(false)
     }
   }
 
@@ -208,6 +244,23 @@ export function ContaEditar() {
                 aoMudarSubmissao={setASubmeter}
                 aoMudarValidez={setValido}
               />
+              {conta.vinculo && (
+                <>
+                  <div className={estilos.cartaoEliminar}>
+                    <button
+                      type="button"
+                      className={estilos.linhaEliminar}
+                      onClick={() => {
+                        setErroDesvincular(null)
+                        setAConfirmarDesvincular(true)
+                      }}
+                    >
+                      Desvincular
+                    </button>
+                  </div>
+                  {erroDesvincular !== null && <CaixaErro>{erroDesvincular}</CaixaErro>}
+                </>
+              )}
               <div className={estilos.cartaoEliminar}>
                 <button
                   type="button"
@@ -225,6 +278,21 @@ export function ContaEditar() {
           )}
         </Folha>
       </ContextoFolha.Provider>
+
+      {aConfirmarDesvincular && conta.vinculo && (
+        <Confirmacao
+          titulo="Desvincular conta"
+          textoConfirmar="Desvincular"
+          aConfirmar={aDesvincular}
+          aoConfirmar={desvincularConta}
+          aoCancelar={() => setAConfirmarDesvincular(false)}
+        >
+          <p>
+            A conta e os movimentos já importados ficam, mas deixa de receber movimentos de{' '}
+            {conta.vinculo.banco}.
+          </p>
+        </Confirmacao>
+      )}
 
       {aConfirmarEliminar && (
         <Confirmacao

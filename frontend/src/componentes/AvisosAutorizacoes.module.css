@@ -1,0 +1,267 @@
+/* Estilos de AvisosAutorizacoes.tsx: a pílula (na linha do título de
+   Contas) e o carrossel de cartões (por baixo do título). As cores são as
+   das caixas de aviso da app: "--cor-negativo-*" para uma autorização que
+   terminou, "--cor-aviso-*" para uma que está a terminar. */
+
+/* --- A pílula --- */
+
+/* Um botão de 32px de altura, totalmente redondo, com o ícone e o número.
+   A área de toque é maior do que o desenho (ver "::before"): 44px, o
+   mínimo confortável para um dedo, sem a pílula parecer grande. */
+.pilula {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px 0 9px;
+  border-radius: 999px;
+  border: 1px solid;
+  font: inherit;
+  font-size: var(--texto-ui);
+  line-height: 20px;
+  font-weight: 600;
+  /* Algarismos todos com a mesma largura: o número não "dança" se mudar. */
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background-color var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+/* A área de toque invisível: 6px para cima e para baixo, 32 + 12 = 44px. */
+.pilula::before {
+  content: '';
+  position: absolute;
+  inset: -6px -4px;
+}
+
+.pilula:active {
+  filter: brightness(0.97);
+}
+
+/* Recolhida: fundo claro do caso. Aberta: o fundo passa à cor da borda,
+   mais cheio — mostra que está "carregada". */
+.pilulaUrgente {
+  background: var(--cor-negativo-bg);
+  border-color: var(--cor-negativo-border);
+  color: var(--cor-negativo-text);
+}
+
+.pilulaUrgente.pilulaAberta {
+  background: var(--cor-negativo-border);
+}
+
+.pilulaAviso {
+  background: var(--cor-aviso-bg);
+  border-color: var(--cor-aviso-border);
+  color: var(--cor-aviso-text);
+}
+
+.pilulaAviso.pilulaAberta {
+  background: var(--cor-aviso-border);
+}
+
+/* --- O carrossel --- */
+
+/* Recolher e abrir sem medir alturas: uma grelha com uma linha que passa
+   de "0fr" (altura zero) a "1fr" (a altura do conteúdo) — o browser
+   consegue animar essa passagem, ao contrário de "height: auto". */
+.envolvente {
+  /* De margem a margem do ecrã (como a lista de contas, ver ".lista" em
+     Contas.module.css): a margem negativa fica AQUI, e não na fila, porque
+     o recorte (".interior", overflow hidden) cortaria os cartões 16px antes
+     da borda. */
+  margin-left: calc(-1 * var(--espaco-4));
+  margin-right: calc(-1 * var(--espaco-4));
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  margin-top: 0;
+  transition:
+    grid-template-rows var(--movimento-deslocar) var(--curva-deslocar),
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    margin-top var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.envolventeAberto {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  margin-top: var(--espaco-3);
+}
+
+/* "min-height: 0" deixa a linha da grelha encolher até zero; o "overflow"
+   esconde o que fica de fora durante a animação. */
+.interior {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* A fila: os cartões começam alinhados com o texto da página (o padding de
+   16px), e "scroll-snap" faz o deslize parar sempre num cartão. */
+.fila {
+  display: flex;
+  gap: 12px;
+  padding: 6px var(--espaco-4) 8px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-padding-left: var(--espaco-4);
+  /* Sem barra de deslocamento visível: o indicador de pontos faz esse
+     papel, e o cartão seguinte a espreitar convida a deslizar. */
+  scrollbar-width: none;
+}
+
+.fila::-webkit-scrollbar {
+  display: none;
+}
+
+/* Um cartão: 300px, cantos de 12px, contorno fino e sem sombra, com uma
+   pincelada da cor do caso a descer do topo e a desvanecer para o fundo. */
+.cartao {
+  /* 300px, ou a largura toda num ecrã mais estreito do que isso (320px). */
+  flex: 0 0 min(300px, 100%);
+  scroll-snap-align: start;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 14px 0;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  /* Entrada: cada cartão chega da direita, com um atraso escalonado (o
+     "transition-delay" vem do componente). Recolhido: todos saem já. */
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--movimento-aparecer) var(--curva-aparecer),
+    transform var(--movimento-deslocar) var(--curva-deslocar);
+}
+
+.envolvente:not(.envolventeAberto) .cartao {
+  opacity: 0;
+  transform: translateX(28px) scale(0.95);
+}
+
+.cartaoUrgente {
+  background: linear-gradient(180deg, var(--cor-negativo-bg) 0, var(--cor-fundo) 72px);
+}
+
+.cartaoAviso {
+  background: linear-gradient(180deg, var(--cor-aviso-bg) 0, var(--cor-fundo) 72px);
+}
+
+.cartaoTopo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* O banco e o titular: cortam-se com reticências, numa só linha cada, para
+   a etiqueta do caso nunca ser empurrada para fora do cartão. */
+.cartaoTextos {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cartaoBanco {
+  font-size: var(--texto-base);
+  line-height: 22px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cartaoTitular {
+  font-size: var(--texto-sm);
+  line-height: 18px;
+  color: var(--cor-texto-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.etiqueta {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.etiquetaUrgente {
+  background: var(--cor-negativo-bg);
+  border-color: var(--cor-negativo-border);
+  color: var(--cor-negativo-text);
+}
+
+.etiquetaAviso {
+  background: var(--cor-aviso-bg);
+  border-color: var(--cor-aviso-border);
+  color: var(--cor-aviso-text);
+}
+
+/* A linha "Renovar →": a toda a largura do cartão, separada por um traço,
+   com 48px de altura — a linha inteira é o botão. As margens negativas
+   levam-na até às bordas laterais do cartão (que tem 14px de padding). */
+.renovar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 48px;
+  margin: 0 -14px;
+  padding: 0 14px;
+  border: 0;
+  border-top: 1px solid var(--cor-borda-leve);
+  background: none;
+  color: var(--cor-texto);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0 0 var(--raio-lg) var(--raio-lg);
+}
+
+.renovar:active {
+  background: var(--cor-superficie);
+}
+
+/* --- O indicador de página --- */
+
+.pontos {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  height: 10px;
+  padding-bottom: 4px;
+}
+
+/* Pontos de 6px; o do cartão atual estica-se numa barra de 18px. */
+.ponto {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  /* Cinzento que se vê nos dois temas (o da borda quase não se distinguia). */
+  background: var(--cor-texto-3);
+  transition:
+    width var(--movimento-aparecer) var(--curva-aparecer),
+    background-color var(--movimento-aparecer) var(--curva-aparecer);
+}
+
+.pontoAtivo {
+  width: 18px;
+  background: var(--cor-texto);
+}
+
+/* Com «reduzir movimento», a regra global de index.css encurta as
+   transições, mas não o atraso escalonado de cada cartão (vem do
+   componente): sem isto, os cartões ainda apareceriam um a um. */
+@media (prefers-reduced-motion: reduce) {
+  .cartao {
+    transition-delay: 0s !important;
+  }
+}

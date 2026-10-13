@@ -95,7 +95,25 @@ export function listarContasBancarias(autorizacaoId: string): Promise<ContaBanca
  * JavaScript nenhum: o browser é que o segue directamente.
  */
 export function iniciarAutorizacao(banco: string, pais: string = 'PT'): void {
-  const parametros = new URLSearchParams({ banco, pais })
+  irAoBanco(new URLSearchParams({ banco, pais }))
+}
+
+/**
+ * Renova uma autorização: o mesmo caminho até ao banco (e pelas mesmas
+ * razões: sai da aplicação de propósito, com um formulário POST), mas
+ * indicando a autorização a renovar ("renova") em vez do banco — o banco e
+ * o país vêm dessa autorização, do lado do backend. No regresso, a
+ * aplicação abre "Nova conta" com a autorização nova, onde as contas
+ * reconhecidas aparecem já renovadas.
+ */
+export function renovarAutorizacao(autorizacaoId: string): void {
+  irAoBanco(new URLSearchParams({ renova: autorizacaoId }))
+}
+
+/** Cria e submete o formulário POST para /open-banking/autorizar, com os
+ *  parâmetros dados — partilhado por iniciarAutorizacao e
+ *  renovarAutorizacao. */
+function irAoBanco(parametros: URLSearchParams): void {
   const formulario = document.createElement('form')
   formulario.method = 'POST'
   formulario.action = `/api/open-banking/autorizar?${parametros.toString()}`

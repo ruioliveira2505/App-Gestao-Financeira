@@ -23,7 +23,7 @@
  * árvore, mas o LayoutApp em si não o consome — só o fornece.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 import { Outlet, useLocation } from 'react-router-dom'
 
@@ -100,7 +100,15 @@ export function LayoutApp() {
 
   return (
     <CabecalhoProvider>
-      <div className={estilos.layout}>
+      {/* "--largura-barra-lateral": a largura da barra lateral em ecrã largo
+          (220px, ou 72px recolhida), para quem flutua sobre o conteúdo se
+          centrar na coluna e não na janela (ex.: o aviso em baixo, ver
+          AvisoEmBaixo.module.css). Em telemóvel a barra não ocupa espaço, e
+          quem a usa só o faz dentro de um @media de ecrã largo. */}
+      <div
+        className={estilos.layout}
+        style={{ '--largura-barra-lateral': recolhida ? '72px' : '220px' } as CSSProperties}
+      >
         <BarraLateral recolhida={recolhida} aoAlternarRecolher={alternarRecolher} />
 
         <div className={estilos.painel}>

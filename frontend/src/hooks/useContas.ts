@@ -24,6 +24,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { listarContas, obterConta } from '../lib/contas'
+import { listarReconciliacoes } from '../lib/reconciliacoes'
 import { CHAVES } from '../lib/consultas'
 
 /** A lista de contas do utilizador. */
@@ -38,5 +39,15 @@ export function useConta(id: string | undefined) {
     queryKey: CHAVES.conta(id ?? ''),
     queryFn: () => obterConta(id as string),
     enabled: id !== undefined,
+  })
+}
+
+/** As reconciliações de uma conta (por ordem de data). "contaId" pode
+ *  faltar: aí não se pede nada. */
+export function useReconciliacoes(contaId: string | undefined) {
+  return useQuery({
+    queryKey: CHAVES.reconciliacoes(contaId ?? ''),
+    queryFn: () => listarReconciliacoes(contaId as string),
+    enabled: contaId !== undefined,
   })
 }

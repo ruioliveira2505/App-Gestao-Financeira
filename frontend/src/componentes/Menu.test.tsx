@@ -72,7 +72,7 @@ describe('Menu', () => {
           </button>
         )}
       >
-        <MenuItem onClick={aoEscolher} desativado descricao="Nenhuma conta ligada">
+        <MenuItem onClick={aoEscolher} desativado descricao="Nenhuma conta vinculada">
           Sincronizar agora
         </MenuItem>
       </Menu>,
@@ -81,7 +81,7 @@ describe('Menu', () => {
 
     const item = screen.getByRole('menuitem', { name: /Sincronizar agora/ })
     expect(item).toHaveAttribute('aria-disabled', 'true')
-    expect(item).toHaveTextContent('Nenhuma conta ligada')
+    expect(item).toHaveTextContent('Nenhuma conta vinculada')
 
     await userEvent.click(item)
     expect(aoEscolher).not.toHaveBeenCalled()

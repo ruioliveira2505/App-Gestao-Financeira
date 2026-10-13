@@ -114,3 +114,55 @@ export function rotuloDiaRelativo(iso: string): string {
     data.getFullYear() !== hoje.getFullYear() ? ` ${data.getFullYear()}` : ''
   return `${prefixo} · ${diaEMesCurto(data)}${sufixoAno}`
 }
+
+/**
+ * Um instante (data e hora ISO) como data curta: "2 set", ou "30 dez 2025"
+ * se não for do ano atual. Sem ponto no mês abreviado (o Intl escreveria
+ * "set." em algumas versões) — fica mais limpo numa linha de estado como
+ * «Suspensa · desde 2 set». "agora" é um parâmetro para os testes.
+ */
+export function diaCurto(isoInstante: string, agora: Date = new Date()): string {
+  const data = new Date(isoInstante)
+  const mes = data.toLocaleDateString('pt-PT', { month: 'short' }).replace('.', '')
+  const ano = data.getFullYear() === agora.getFullYear() ? '' : ` ${data.getFullYear()}`
+  return `${data.getDate()} ${mes}${ano}`
+}
+
+/**
+ * Há quanto tempo foi um instante, em português curto, para o detalhe de
+ * uma linha de estado («Sincronizada · há 2 horas»): "agora" (menos de um
+ * minuto), "há 5 min", "há 1 hora" / "há 3 horas", "há 1 dia" / "há 3
+ * dias"; a partir de uma semana, a data ("a 2 set"), que se lê melhor do
+ * que "há 41 dias". "agora" é um parâmetro para os testes poderem fixar o
+ * momento.
+ */
+export function tempoDecorrido(isoInstante: string, agora: Date = new Date()): string {
+  const instante = new Date(isoInstante).getTime()
+  // Uma data inválida não diz nada: texto vazio, e quem chama não mostra o
+  // detalhe (em vez de «a NaN Invalid Date»).
+  if (Number.isNaN(instante)) return ''
+  // Uma data no futuro (relógios desacertados) conta como «agora».
+  const ms = agora.getTime() - instante
+  const minutos = Math.floor(ms / 60000)
+  if (minutos < 1) return 'agora'
+  if (minutos < 60) return `há ${minutos} min`
+  const horas = Math.floor(minutos / 60)
+  if (horas < 24) return horas === 1 ? 'há 1 hora' : `há ${horas} horas`
+  const dias = Math.floor(horas / 24)
+  if (dias < 7) return dias === 1 ? 'há 1 dia' : `há ${dias} dias`
+  return `a ${diaCurto(isoInstante, agora)}`
+}
+
+/**
+ * Se um instante (data e hora ISO) foi no mesmo dia que "agora", no fuso
+ * do aparelho. Serve, por exemplo, para saber se o limite de acessos do
+ * banco ainda vale (volta a zero no dia seguinte).
+ */
+export function mesmoDia(isoInstante: string, agora: Date = new Date()): boolean {
+  const data = new Date(isoInstante)
+  return (
+    data.getFullYear() === agora.getFullYear() &&
+    data.getMonth() === agora.getMonth() &&
+    data.getDate() === agora.getDate()
+  )
+}

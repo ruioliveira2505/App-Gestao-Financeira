@@ -410,8 +410,10 @@ describe('Moldura da aplicação', () => {
     expect(tituloCompacto).toHaveAttribute('aria-hidden', 'true')
 
     // A sentinela é o único filho invisível (aria-hidden) do bloco do
-    // título grande — sai do ecrã ao rolar para além dele.
-    const sentinela = tituloGrande.parentElement?.querySelector(
+    // título grande — sai do ecrã ao rolar para além dele. O <h1> está
+    // dentro da "linha do título" (que pode ter ao lado, por exemplo, a
+    // pílula dos avisos), por isso o bloco é o avô do <h1>, não o pai.
+    const sentinela = tituloGrande.parentElement?.parentElement?.querySelector(
       'div[aria-hidden="true"]',
     ) as HTMLElement
     expect(sentinela).toBeTruthy()

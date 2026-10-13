@@ -3,7 +3,8 @@
  * ==============================
  *
  * Cobre o carregamento do formulário preenchido e — o que é próprio desta
- * página — a acção "Eliminar conta" no fim (com diálogo de confirmação).
+ * página — as acções no fim: "Desvincular" (numa conta com vínculo ao
+ * banco) e "Eliminar conta", cada uma com diálogo de confirmação.
  */
 
 import { fireEvent, render as renderBase, screen, waitFor, within } from '@testing-library/react'
@@ -17,6 +18,7 @@ import { servidorMsw } from '../test/servidor-msw'
 import { definirEcraMobile } from '../test/setup'
 import { ContaEditar } from './ContaEditar'
 import { ComConsultas } from '../test/consultas'
+import { escutarAvisos } from '../lib/avisoPendente'
 
 // Todas as montagens deste ficheiro levam a cache dos dados do servidor à
 // volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
@@ -84,6 +86,10 @@ describe('Página Editar conta', () => {
 
     expect(await screen.findByText('detalhe da conta')).toBeInTheDocument()
     expect(corpoRecebido).toMatchObject({ nome: 'Conta renomeada' })
+    // E deixou à página da conta o aviso «Alterações guardadas».
+    const recebidos: string[] = []
+    escutarAvisos('c1', (texto) => recebidos.push(texto))()
+    expect(recebidos).toEqual(['Alterações guardadas'])
   })
 
   it('em mobile, arrastar o seletor de moeda para baixo abandona a edição', async () => {
@@ -289,5 +295,73 @@ describe('Página Editar conta', () => {
     expect(screen.queryByRole('dialog', { name: 'Eliminar conta' })).not.toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Editar conta' })).toBeInTheDocument()
     expect(screen.getByLabelText('Nome')).toBeInTheDocument()
+  })
+
+  describe('desvincular', () => {
+    const VINCULO = {
+      conta_bancaria_id: 'cb-1',
+      banco: 'Caixa Geral de Depósitos',
+      titular: 'Rui Oliveira',
+      valido_ate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      autorizacao_id: 'a-1',
+      iban: null,
+      sincronizado_em: null,
+      suspensa_desde: null,
+      autorizacao_terminada_em: null,
+      falha_em: null,
+      falha_motivo: null,
+      estado: 'vinculada',
+      motivo: null,
+    }
+
+    it('numa conta manual não há «Desvincular»', async () => {
+      servidorMsw.use(http.get('/api/contas/c1', () => HttpResponse.json(CONTA)))
+
+      montar()
+
+      await screen.findByRole('button', { name: 'Eliminar conta' })
+      expect(screen.queryByRole('button', { name: 'Desvincular' })).not.toBeInTheDocument()
+    })
+
+    it('numa conta vinculada, «Desvincular» pede confirmação e só depois desvincula', async () => {
+      let vinculada = true
+      servidorMsw.use(
+        http.get('/api/contas/c1', () => HttpResponse.json({ ...CONTA, vinculo: vinculada ? VINCULO : null })),
+        http.delete('/api/open-banking/contas-bancarias/cb-1/vinculo', () => {
+          vinculada = false
+          return new HttpResponse(null, { status: 204 })
+        }),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Desvincular' }))
+      expect(vinculada).toBe(true)
+
+      const dialogo = await screen.findByRole('dialog', { name: 'Desvincular conta' })
+      expect(dialogo).toHaveTextContent('Caixa Geral de Depósitos')
+      await userEvent.click(within(dialogo).getByRole('button', { name: 'Desvincular' }))
+
+      // A conta passou a manual: o botão desaparece da folha.
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Desvincular' })).not.toBeInTheDocument())
+      expect(vinculada).toBe(false)
+    })
+
+    it('se desvincular falhar, mostra o erro junto ao botão, que continua lá', async () => {
+      servidorMsw.use(
+        http.get('/api/contas/c1', () => HttpResponse.json({ ...CONTA, vinculo: VINCULO })),
+        http.delete('/api/open-banking/contas-bancarias/cb-1/vinculo', () =>
+          HttpResponse.json({ detail: 'Outra operação a decorrer nesta conta.' }, { status: 409 }),
+        ),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Desvincular' }))
+      const dialogo = await screen.findByRole('dialog', { name: 'Desvincular conta' })
+      await userEvent.click(within(dialogo).getByRole('button', { name: 'Desvincular' }))
+
+      expect(await screen.findByText('Outra operação a decorrer nesta conta.')).toBeInTheDocument()
+      expect(screen.queryByRole('dialog', { name: 'Desvincular conta' })).not.toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Desvincular' })).toBeInTheDocument()
+    })
   })
 })

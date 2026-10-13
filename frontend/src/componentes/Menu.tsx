@@ -34,6 +34,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { DURACAO_APARECER_MS } from '../lib/movimento'
 import { IconeCheck } from './icones'
+import { ApenasLeitor } from './ApenasLeitor'
 import estilos from './Menu.module.css'
 
 type PropsGatilho = {
@@ -172,8 +173,12 @@ type PropsItem = {
   // um item cinzento sem explicação deixa a pessoa a adivinhar.
   desativado?: boolean
   // Segunda linha, mais pequena, por baixo do rótulo (ex.: "Nenhuma conta
-  // ligada", a razão de um item desativado).
+  // vinculada", a razão de um item desativado).
   descricao?: ReactNode
+  // Com "true", a descrição não se vê: fica só para leitores de ecrã. Para
+  // quando o item cinzento já se explica pelo contexto e uma segunda linha
+  // só carregaria o menu (ex.: "Sincronizar agora" sem contas vinculadas).
+  descricaoOculta?: boolean
 }
 
 export function MenuItem({
@@ -186,6 +191,7 @@ export function MenuItem({
   icone,
   desativado,
   descricao,
+  descricaoOculta,
 }: PropsItem) {
   const classes = [estilos.item, perigo && estilos.itemPerigo, desativado && estilos.itemDesativado]
     .filter(Boolean)
@@ -224,7 +230,14 @@ export function MenuItem({
       {descricao ? (
         <span className={estilos.itemTextos}>
           <span className={estilos.itemRotulo}>{children}</span>
-          <span className={estilos.itemDescricao}>{descricao}</span>
+          {descricaoOculta ? (
+            // Oculta, junta-se ao nome do item: um ponto antes, para o leitor
+            // de ecrã fazer a pausa («Sincronizar agora. Nenhuma conta
+            // vinculada»), em vez de colar as duas frases.
+            <ApenasLeitor>. {descricao}</ApenasLeitor>
+          ) : (
+            <span className={estilos.itemDescricao}>{descricao}</span>
+          )}
         </span>
       ) : (
         <span className={estilos.itemRotulo}>{children}</span>

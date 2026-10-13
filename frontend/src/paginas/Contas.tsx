@@ -15,8 +15,16 @@
  * separadas por um traço fino. Cada linha tem o monograma do banco à
  * esquerda, o nome da conta e o saldo à direita; sem chevron — a linha
  * inteira é tocável. Tocar numa linha abre o detalhe (/contas/:id), onde
- * se edita ou apaga. Uma conta ligada ao banco tem, sobre o monograma, um
- * pequeno ícone com o ESTADO da ligação (ver SeloLigacao, abaixo).
+ * se edita ou apaga. Uma conta vinculada ao banco tem, sobre o monograma, um
+ * pequeno ícone com o ESTADO da conta (ver SeloVinculo, abaixo).
+ *
+ * AVISOS DAS AUTORIZAÇÕES: quando uma autorização dada ao banco terminou
+ * (as contas dela ficaram suspensas) ou termina em 7 dias ou menos, aparece
+ * uma PÍLULA na linha do título, com o número de autorizações a verificar,
+ * e por baixo do título um CARROSSEL de cartões, um por autorização, cada
+ * um com "Renovar →". A pílula abre e recolhe o carrossel; recolhido, a
+ * escolha fica guardada no browser até o conjunto de avisos mudar (ver
+ * src/componentes/AvisosAutorizacoes.tsx).
  *
  * A procura filtra por nome, banco ou tipo. O menu "⋯" abre ao estilo do
  * menu da app Notas do iOS: primeiro mostra duas linhas — "Ordenar por" e
@@ -27,8 +35,9 @@
  * · por banco (o cabeçalho de cada grupo mostra só o nome do grupo).
  * Escolher uma opção fecha o menu. As escolhas ficam guardadas no browser
  * (localStorage). Por baixo, separado por uma linha, "Sincronizar agora"
- * pede ao banco os movimentos novos de todas as contas com a ligação ainda
- * válida (desativado, com a razão por baixo, quando não há nenhuma).
+ * pede ao banco os movimentos novos de todas as contas vinculadas (não às
+ * suspensas; desativado quando não há nenhuma, com a razão só para
+ * leitores de ecrã).
  *
  * MODO DE PESQUISA (só em telemóvel): ao tocar no campo de procura, o
  * título e a barra de topo (☰, ⋯, +) saem de cena e o campo SOBE até ao
@@ -37,16 +46,22 @@
  * resultados. Ver ModoPesquisa, mais abaixo, e a nota no componente.
  *
  * Estados: a carregar (esqueleto), erro (com "Tentar outra vez"), sem
- * contas (estado vazio, com os dois caminhos de "Nova conta"), sem
- * resultados de pesquisa (com "Ver todas as contas"), e a lista. Os três
- * estados com mensagem partilham a mesma forma: um ícone num círculo, um
- * título, um texto e os botões da aplicação (Botao/LinkBotao).
+ * contas (só o título e "Adicionar conta"), sem resultados de pesquisa
+ * (com "Ver todas as contas"), e a lista. Os três estados com mensagem
+ * partilham a mesma forma: um ícone num círculo, um título, um texto
+ * (quando é preciso) e os botões da aplicação (Botao/LinkBotao).
+ *
+ * "Sincronizar agora" dá o resultado num aviso no fundo do ecrã (ver
+ * AvisoEmBaixo), sempre na forma «Estado · detalhe»: «A sincronizar · 2
+ * contas», depois «Atualizado · 3 movimentos novos», «Atualizado · 1 conta
+ * falhou», «Não atualizado · limite do banco» ou «Não atualizado · sem
+ * ligação».
  *
  * Desenho decidido no canvas de design de Contas («1 · Contas»).
  */
 
 import { useQueryClient } from '@tanstack/react-query'
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { Link } from 'react-router-dom'
 
@@ -58,8 +73,12 @@ import { Avatar } from '../componentes/Avatar'
 import { Botao } from '../componentes/Botao'
 import { CabecalhoPagina } from '../componentes/CabecalhoPagina'
 import { CampoPesquisa } from '../componentes/CampoPesquisa'
+import { ApenasLeitor } from '../componentes/ApenasLeitor'
+import { AvisoEmBaixo, type Aviso } from '../componentes/AvisoEmBaixo'
+import { EstadoMensagem } from '../componentes/EstadoMensagem'
+import { CarrosselAvisos, PilulaAvisos } from '../componentes/AvisosAutorizacoes'
 import {
-  IconeAlerta,
+  IconeSemLigacao,
   IconeBanco,
   IconeCamadas,
   IconeChevronDireita,
@@ -75,10 +94,12 @@ import {
 import { LinkBotao } from '../componentes/LinkBotao'
 import { Menu, MenuItem, MenuSeparador } from '../componentes/Menu'
 import {
-  estadoAutorizacao,
+  assinaturaDosAvisos,
+  avisosDasAutorizacoes,
+  contaSincroniza,
   valorParaComparar,
   type Conta,
-  type EstadoAutorizacao,
+  type Vinculo,
 } from '../lib/contas'
 import { formatarDinheiro } from '../lib/moedas'
 import { ErroApi } from '../lib/http'
@@ -88,7 +109,7 @@ import { DURACAO_DESLOCAR_MS } from '../lib/movimento'
 
 type Estado =
   | { fase: 'a-carregar' }
-  | { fase: 'erro'; mensagem: string }
+  | { fase: 'erro' }
   | { fase: 'pronto'; contas: Conta[] }
 
 // --- Opções de visualização: ordenar e agrupar ---
@@ -146,6 +167,17 @@ function guardarPreferencia(chave: string, valor: string): void {
   }
 }
 
+/** O conjunto de avisos que o utilizador recolheu (a sua "assinatura" —
+ *  ver assinaturaDosAvisos, em src/lib/contas.ts), guardado no browser, ou
+ *  null se não recolheu nenhum (ou sem localStorage disponível). */
+function lerRecolhidos(chave: string): string | null {
+  try {
+    return localStorage.getItem(chave)
+  } catch {
+    return null
+  }
+}
+
 /** Devolve uma cópia das contas ordenadas pelo campo escolhido (nome ou
  *  saldo), na direção escolhida (ascendente ou descendente).
  *
@@ -175,7 +207,9 @@ function ordenarContas(contas: Conta[], campo: CampoOrdem, direcao: Direcao): Co
 /** Reparte as contas em grupos (por tipo ou por banco), cada grupo por
  *  ordem alfabética do seu nome; a ordem das contas DENTRO de cada grupo é
  *  a que vier (já ordenada). "nenhum" devolve um único grupo sem nome.
- *  Contas sem o campo caem num grupo "Sem tipo" / "Sem banco". */
+ *  Contas sem o campo caem num grupo "Sem tipo" / "Sem banco", que fica
+ *  sempre no FIM (não é um banco nem um tipo como os outros, e por ordem
+ *  alfabética cairia a meio da lista). */
 function agruparContas(contas: Conta[], agrupamento: Agrupamento): [string, Conta[]][] {
   if (agrupamento === 'nenhum') return [['', contas]]
   const semRotulo = agrupamento === 'tipo' ? 'Sem tipo' : 'Sem banco'
@@ -186,7 +220,9 @@ function agruparContas(contas: Conta[], agrupamento: Agrupamento): [string, Cont
     lista.push(conta)
     grupos.set(chave, lista)
   }
-  return [...grupos.entries()].sort(([a], [b]) => a.localeCompare(b, 'pt'))
+  return [...grupos.entries()].sort(
+    ([a], [b]) => Number(a === semRotulo) - Number(b === semRotulo) || a.localeCompare(b, 'pt'),
+  )
 }
 
 /** "1 movimento novo" / "N movimentos novos" — o resultado de
@@ -228,35 +264,32 @@ function Esqueleto() {
   )
 }
 
-/** O que o leitor de ecrã ouve sobre o estado da ligação de uma conta —
- *  o ícone (SeloLigacao) é só visual. */
-const DESCRICAO_LIGACAO: Record<EstadoAutorizacao, string> = {
-  ativa: 'ligada ao banco',
-  'a-expirar': 'ligação ao banco a expirar',
-  expirada: 'ligação ao banco expirada',
+/** O que o leitor de ecrã ouve sobre o estado de uma conta com vínculo —
+ *  o ícone (SeloVinculo) é só visual. */
+const DESCRICAO_ESTADO: Record<Vinculo['estado'], string> = {
+  vinculada: 'vinculada',
+  suspensa: 'suspensa',
 }
 
-/** O pequeno ícone sobre o monograma de uma conta ligada ao banco, com o
- *  estado da ligação (ver estadoAutorizacao, em src/lib/contas.ts):
- *  - "ativa": círculo escuro com dois elos de corrente;
- *  - "a-expirar" (7 dias ou menos de validade): âmbar, com "!";
- *  - "expirada": vermelho, com a corrente partida.
- *  Só o ícone, sem texto na linha — decisão de desenho: a lista fica
- *  limpa, e a página da conta (onde o mesmo estado aparece por extenso,
- *  com as mesmas cores e símbolos) explica o que significa. É decorativo
- *  para leitores de ecrã ("aria-hidden"): o estado vai, em texto, dentro
- *  da própria linha (ver CartaoConta). */
-function SeloLigacao({ estado }: { estado: EstadoAutorizacao }) {
-  const classe = {
-    ativa: estilos.seloLigada,
-    'a-expirar': estilos.seloAExpirar,
-    expirada: estilos.seloExpirada,
-  }[estado]
+/** O pequeno ícone sobre o monograma de uma conta com vínculo ao banco.
+ *  Diz só o ESTADO DA CONTA, num círculo escuro, pela forma do símbolo:
+ *  - "vinculada" (recebe movimentos do banco): dois elos de corrente;
+ *  - "suspensa" (a autorização terminou, ou o banco deixou de partilhar a
+ *    conta: mantém o vínculo, mas não sincroniza): a corrente partida.
+ *  Uma conta manual não tem ícone. "A expirar" NÃO é um estado da conta,
+ *  é um aviso sobre a autorização: está nos avisos (a pílula e o
+ *  carrossel), não aqui. Só o ícone, sem texto na linha — a lista fica
+ *  limpa, e a página da conta explica. É decorativo para leitores de ecrã
+ *  ("aria-hidden"): o estado vai, em texto, dentro da própria linha (ver
+ *  CartaoConta). */
+function SeloVinculo({ estado }: { estado: Vinculo['estado'] }) {
   return (
-    <span className={`${estilos.selo} ${classe}`} aria-hidden="true">
-      {estado === 'ativa' && <IconeLigacao tamanho={10} traco={3} />}
-      {estado === 'a-expirar' && <span className={estilos.seloExclamacao}>!</span>}
-      {estado === 'expirada' && <IconeLigacaoPartida tamanho={10} traco={3} />}
+    <span className={estilos.selo} aria-hidden="true">
+      {estado === 'vinculada' ? (
+        <IconeLigacao tamanho={10} traco={3} />
+      ) : (
+        <IconeLigacaoPartida tamanho={11} traco={2.8} />
+      )}
     </span>
   )
 }
@@ -289,22 +322,24 @@ function CartaoConta({ conta }: { conta: Conta }) {
   const negativo = Number(conta.saldo) < 0
   const moedaPrincipal = utilizador?.moeda_principal ?? 'EUR'
   const mostraConversao = conta.moeda !== moedaPrincipal && conta.saldo_convertido !== null
-  const ligacao = conta.vinculo ? estadoAutorizacao(conta.vinculo.valido_ate) : null
+  const estadoVinculo = conta.vinculo?.estado ?? null
 
   return (
     <Link to={`/contas/${conta.id}`} className={estilos.cartao}>
       {/* O invólucro "marca" é o ponto de referência (position: relative)
-          para o ícone do estado da ligação, colado ao canto do monograma. */}
+          para o ícone do estado da conta, colado ao canto do monograma. */}
       <span className={estilos.marca}>
         <Avatar nome={conta.banco || conta.nome} />
-        {ligacao && <SeloLigacao estado={ligacao} />}
+        {estadoVinculo && <SeloVinculo estado={estadoVinculo} />}
       </span>
       <span className={estilos.cartaoIdentidade}>
         <span className={estilos.cartaoNome}>{conta.nome}</span>
         <span className={estilos.cartaoMoeda}>{conta.moeda}</span>
         {/* Invisível no ecrã, lido pelos leitores de ecrã como parte do
-            link: o equivalente em texto do ícone do estado da ligação. */}
-        {ligacao && <span className={estilos.apenasLeitor}>, {DESCRICAO_LIGACAO[ligacao]}</span>}
+            link: o equivalente em texto do ícone do estado da conta. */}
+        {estadoVinculo && (
+          <ApenasLeitor>, {DESCRICAO_ESTADO[estadoVinculo]}</ApenasLeitor>
+        )}
       </span>
       <span className={estilos.cartaoValores}>
         <span
@@ -367,7 +402,7 @@ function MenuOrdenarAgrupar({
   aoMudarDirecao: (valor: Direcao) => void
   aoMudarAgrupamento: (valor: Agrupamento) => void
   // A razão por que "Sincronizar agora" está indisponível (ex.: "Nenhuma
-  // conta ligada"), ou null quando está disponível.
+  // conta vinculada"), ou null quando está disponível.
   semSincronizar: string | null
   aoSincronizar: () => void
 }) {
@@ -429,12 +464,17 @@ function MenuOrdenarAgrupar({
             Agrupar por
           </MenuItem>
           <MenuSeparador />
-          {/* Sempre visível — mesmo sem contas ligadas, para ensinar que
-              existe; nesse caso fica desativado e diz porquê por baixo. */}
+          {/* Sempre visível — mesmo sem contas vinculadas, para ensinar que
+              existe; nesse caso fica a cinzento, e a razão fica só para
+              leitores de ecrã (ver "descricaoOculta", mais abaixo). */}
           <MenuItem
             icone={<IconeSincronizar />}
             desativado={semSincronizar !== null}
+            // A razão fica só para leitores de ecrã: o item a cinzento já
+            // diz que não está disponível, e uma segunda linha só carregava
+            // o menu (decisão D3 do desenho).
             descricao={semSincronizar ?? undefined}
+            descricaoOculta
             onClick={aoSincronizar}
           >
             Sincronizar agora
@@ -509,37 +549,6 @@ function MenuOrdenarAgrupar({
   )
 }
 
-/** A forma comum dos estados com mensagem (erro, sem contas, procura sem
- *  resultados): um ícone num círculo, um título, um texto curto e, por
- *  baixo, os botões. Uma só peça para os três estados terem sempre o mesmo
- *  aspecto — ícone no mesmo círculo, botões da aplicação (Botao/LinkBotao)
- *  com o mesmo raio. "papel" põe role="alert" no erro, para um leitor de
- *  ecrã o anunciar logo. */
-function EstadoMensagem({
-  icone,
-  titulo,
-  texto,
-  acoes,
-  papel,
-}: {
-  icone: ReactNode
-  titulo: string
-  texto: string
-  acoes: ReactNode
-  papel?: 'alert'
-}) {
-  return (
-    <div className={estilos.estado} role={papel}>
-      <span className={estilos.estadoIcone} aria-hidden="true">
-        {icone}
-      </span>
-      <p className={estilos.estadoTitulo}>{titulo}</p>
-      <p className={estilos.estadoTexto}>{texto}</p>
-      <div className={estilos.estadoAcoes}>{acoes}</div>
-    </div>
-  )
-}
-
 /* MODO DE PESQUISA — as quatro fases de uma ida e volta:
  *   "normal"   → o campo está no seu sítio, por baixo do título;
  *   "a-entrar" → o campo acabou de passar a FIXO no topo do ecrã, mas é
@@ -580,13 +589,7 @@ export function Contas() {
   const estado: Estado = consultaContas.data
     ? { fase: 'pronto', contas: consultaContas.data }
     : consultaContas.error && !consultaContas.isFetching
-      ? {
-          fase: 'erro',
-          mensagem:
-            consultaContas.error instanceof ErroApi
-              ? consultaContas.error.message
-              : 'Não foi possível carregar as contas.',
-        }
+      ? { fase: 'erro' }
       : { fase: 'a-carregar' }
   const clienteConsultas = useQueryClient()
   const [pesquisa, setPesquisa] = useState('')
@@ -744,12 +747,19 @@ export function Contas() {
     guardarPreferencia(CHAVE_AGRUPAMENTO, novo)
   }
 
-  // "Sincronizar agora": o aviso no fundo do ecrã — "a decorrer" fica
-  // visível até terminar; o resultado desaparece sozinho (animação CSS).
-  // "chave" muda a cada aviso novo, para a animação recomeçar.
-  const [aviso, setAviso] = useState<{ texto: string; aDecorrer: boolean; chave: number } | null>(
-    null,
-  )
+  // "Sincronizar agora": o aviso no fundo do ecrã (ver AvisoEmBaixo) —
+  // "andamento" fica visível até terminar; o resultado sai sozinho. "chave"
+  // muda a cada aviso novo, para a contagem do tempo recomeçar.
+  const [aviso, setAviso] = useState<Aviso | null>(null)
+  // Se a sincronização está a decorrer. À parte do aviso, de propósito: o
+  // aviso «A sincronizar…» fecha-se com um toque, e isso não pode deixar
+  // arrancar uma segunda sincronização por cima da primeira (as contas
+  // ainda bloqueadas responderiam 409, e gastavam-se acessos ao banco). Uma
+  // "ref" (e não estado): só serve para esta decisão, nunca para desenhar.
+  const aSincronizarRef = useRef(false)
+  // Estável entre desenhos (useCallback): o aviso recomeça a contar o tempo
+  // sempre que esta função muda, por isso não pode ser uma nova a cada vez.
+  const fecharAviso = useCallback(() => setAviso(null), [])
 
   // "Tentar outra vez" (no estado de erro): pede a lista de novo.
   function tentarOutraVez() {
@@ -757,56 +767,122 @@ export function Contas() {
   }
 
   const temContas = estado.fase === 'pronto' && estado.contas.length > 0
-  // Contas que se podem sincronizar: ligadas ao banco e com a ligação
-  // ainda válida (uma ligação expirada já não recebe nada do banco: é
-  // preciso voltar a autorizar o banco, em Nova conta › Ligar um banco, e
-  // a ligação dessa conta renova-se sozinha).
-  const contasLigadas =
+  // Contas que se podem sincronizar: as VINCULADAS. Uma conta suspensa
+  // mantém o vínculo, mas o banco já não responde por ela: é preciso
+  // renovar a autorização (nos avisos), e a conta volta a sincronizar.
+  const contasComVinculo =
     estado.fase === 'pronto' ? estado.contas.filter((conta) => conta.vinculo !== null) : []
-  const contasSincronizaveis = contasLigadas.filter(
-    (conta) => conta.vinculo && estadoAutorizacao(conta.vinculo.valido_ate) !== 'expirada',
-  )
+  const contasSincronizaveis = contasComVinculo.filter(contaSincroniza)
   // A razão por que "Sincronizar agora" está indisponível, ou null.
+  // (Todas suspensas: «Todas as autorizações terminaram» se foi por isso;
+  // se alguma o banco deixou de partilhar, uma frase mais geral.)
   const semSincronizar =
-    contasLigadas.length === 0
-      ? 'Nenhuma conta ligada'
+    contasComVinculo.length === 0
+      ? 'Nenhuma conta vinculada'
       : contasSincronizaveis.length === 0
-        ? 'Todas as ligações expiraram'
+        ? contasComVinculo.every((conta) => conta.vinculo?.autorizacao_terminada_em)
+          ? 'Todas as autorizações terminaram'
+          : 'Todas as contas vinculadas estão suspensas'
         : null
 
-  // Pede ao banco os movimentos novos de cada conta ligada, uma de cada
+  // --- Avisos das autorizações (ver a nota no topo do ficheiro) ---
+  const { utilizador } = useAuth()
+  const avisos = estado.fase === 'pronto' ? avisosDasAutorizacoes(estado.contas) : []
+  const assinatura = assinaturaDosAvisos(avisos)
+  // Onde se guarda, no browser, o conjunto de avisos que o utilizador
+  // recolheu — por utilizador, para duas pessoas no mesmo browser não
+  // partilharem a escolha.
+  const chaveRecolhidos = `contasAvisosRecolhidos:${utilizador?.id ?? ''}`
+  // A última escolha feita NESTA visita, com a chave a que se refere. Lê-se
+  // do browser sempre que a página se desenha (e não só uma vez, ao
+  // montar): o utilizador pode ainda não estar carregado no primeiro
+  // instante, e a chave muda quando chega. Esta cópia serve para a escolha
+  // valer mesmo sem localStorage (janela privada, por exemplo).
+  const [escolhaLocal, setEscolhaLocal] = useState<{ chave: string; valor: string | null } | null>(
+    null,
+  )
+  const assinaturaRecolhida =
+    escolhaLocal?.chave === chaveRecolhidos ? escolhaLocal.valor : lerRecolhidos(chaveRecolhidos)
+  // Abertos, a não ser que o utilizador tenha recolhido EXATAMENTE este
+  // conjunto de avisos. Se o conjunto mudar, voltam a abrir-se sozinhos.
+  const avisosAbertos = assinatura !== assinaturaRecolhida
+
+  // Sem avisos, a escolha guardada já não serve para nada: apaga-se. Senão,
+  // se um dia voltasse EXATAMENTE o mesmo conjunto de avisos, abria-se já
+  // recolhido, sem o utilizador se lembrar de o ter recolhido.
+  const semAvisos = estado.fase === 'pronto' && avisos.length === 0
+  useEffect(() => {
+    if (!semAvisos) return
+    try {
+      localStorage.removeItem(chaveRecolhidos)
+    } catch {
+      // Sem localStorage — não há nada a apagar.
+    }
+  }, [semAvisos, chaveRecolhidos])
+
+  function alternarAvisos() {
+    const nova = avisosAbertos ? assinatura : null
+    setEscolhaLocal({ chave: chaveRecolhidos, valor: nova })
+    try {
+      if (nova === null) localStorage.removeItem(chaveRecolhidos)
+      else localStorage.setItem(chaveRecolhidos, nova)
+    } catch {
+      // Sem localStorage — a escolha só dura enquanto a página estiver aberta.
+    }
+  }
+
+  // Pede ao banco os movimentos novos de cada conta vinculada, uma de cada
   // vez (em sequência, não em paralelo: são poucas contas, e pedidos em
   // simultâneo ao mesmo banco arriscam ser recusados). Uma conta que
   // falhe não impede as seguintes. No fim, recarrega a lista (os saldos
   // mudaram) e diz o resultado.
   async function sincronizarTodas() {
-    if (semSincronizar !== null || aviso?.aDecorrer) return
+    if (semSincronizar !== null || aSincronizarRef.current) return
+    aSincronizarRef.current = true
     const n = contasSincronizaveis.length
     // "chave": um contador (a do aviso anterior + 1) — só tem de ser
     // diferente da anterior, para a animação recomeçar.
     setAviso((anterior) => ({
-      texto: n === 1 ? 'A sincronizar 1 conta…' : `A sincronizar ${n} contas…`,
-      aDecorrer: true,
+      texto: n === 1 ? 'A sincronizar · 1 conta' : `A sincronizar · ${n} contas`,
+      tipo: 'andamento',
       chave: (anterior?.chave ?? 0) + 1,
     }))
     let novos = 0
     let falhas = 0
+    // Porque falharam, para o aviso dizer o motivo quando nenhuma
+    // sincronizou: o LIMITE DE ACESSOS do banco (429: tentar hoje já não
+    // adianta); um CONFLITO (409: a autorização terminou no banco, ou outra
+    // operação na conta — tenta-se mais tarde); o resto é falta de ligação
+    // (sem rede, o banco não respondeu ou demorou demasiado).
+    let limite = false
+    let conflitos = 0
     for (const conta of contasSincronizaveis) {
       try {
         const resultado = await sincronizar((conta.vinculo as NonNullable<Conta['vinculo']>).conta_bancaria_id)
         novos += resultado.movimentos_importados
-      } catch {
+      } catch (erro) {
         falhas += 1
+        if (erro instanceof ErroApi && erro.estado === 429) limite = true
+        if (erro instanceof ErroApi && erro.estado === 409) conflitos += 1
       }
     }
+    aSincronizarRef.current = false
     setAviso((anterior) => ({
+      // Sempre «Estado · detalhe» (decisão D8 do desenho): «Atualizado» se
+      // pelo menos uma conta sincronizou, «Não atualizado» se nenhuma.
       texto:
         falhas === 0
           ? textoMovimentosNovos(novos)
-          : falhas === 1
-            ? 'Não foi possível sincronizar 1 conta'
-            : `Não foi possível sincronizar ${falhas} contas`,
-      aDecorrer: false,
+          : falhas < n
+            ? falhas === 1
+              ? 'Atualizado · 1 conta falhou'
+              : `Atualizado · ${falhas} contas falharam`
+            : limite
+              ? 'Não atualizado · limite do banco'
+              : conflitos === falhas
+                ? 'Não atualizado · tenta mais tarde'
+                : 'Não atualizado · sem ligação',
+      tipo: falhas === 0 ? 'ok' : 'alerta',
       chave: (anterior?.chave ?? 0) + 1,
     }))
     // Os saldos mudaram: invalida as contas (a lista e o detalhe de cada
@@ -831,6 +907,9 @@ export function Contas() {
             ? `${estilos.cabecalhoRecolhivel} ${estilos.cabecalhoRecolhido}`
             : estilos.cabecalhoRecolhivel
         }
+        // Recolhido (modo de pesquisa): fora do teclado e dos leitores de
+        // ecrã — a pílula e os «Renovar» do carrossel estão invisíveis.
+        inert={recolhido || undefined}
       >
         <div
           className={
@@ -855,6 +934,16 @@ export function Contas() {
             // título compacto na barra de topo, que se via de relance ao
             // sair da pesquisa. Suspende-se o colapso enquanto ela dura.
             suspenderColapso={emPesquisa}
+            aoLadoDoTitulo={
+              avisos.length > 0 ? (
+                <PilulaAvisos
+                  avisos={avisos}
+                  aberto={avisosAbertos}
+                  aoAlternar={alternarAvisos}
+                  idCarrossel="avisos-autorizacoes"
+                />
+              ) : undefined
+            }
             acao={
               temContas ? (
                 <>
@@ -875,6 +964,11 @@ export function Contas() {
               ) : undefined
             }
           />
+          {/* O carrossel dos avisos vive dentro do invólucro do título: no
+              modo de pesquisa recolhe-se com ele, no mesmo gesto. */}
+          {avisos.length > 0 && (
+            <CarrosselAvisos avisos={avisos} aberto={avisosAbertos} id="avisos-autorizacoes" />
+          )}
         </div>
       </div>
 
@@ -883,29 +977,24 @@ export function Contas() {
       {estado.fase === 'erro' && (
         <EstadoMensagem
           papel="alert"
-          icone={<IconeAlerta tamanho={26} />}
+          icone={<IconeSemLigacao tamanho={26} />}
           titulo="Não foi possível carregar as contas"
-          texto={estado.mensagem}
+          // A causa mais comum, e o que fazer (o desenho): não se repete o
+          // título nem se mostra a mensagem técnica do pedido.
+          texto="Verifica a ligação à internet e tenta outra vez."
           acoes={<Botao onClick={tentarOutraVez}>Tentar outra vez</Botao>}
         />
       )}
 
-      {/* Sem contas: os mesmos dois caminhos de "Nova conta", com o banco
-          primeiro (o recomendado). "via" na query string abre "Nova conta"
-          já dentro do caminho escolhido (ver ContaNova.tsx). */}
+      {/* Sem contas: só o título e um botão, que abre "Nova conta" — o
+          mesmo ecrã do "+", onde se escolhe com ou sem vínculo ao banco. O
+          texto que explicava os dois caminhos saiu daqui: repetia o ecrã
+          seguinte, que já os explica (decisão D9 do desenho). */}
       {estado.fase === 'pronto' && estado.contas.length === 0 && (
         <EstadoMensagem
           icone={<IconeBanco tamanho={26} />}
           titulo="Ainda não tens contas"
-          texto="Liga o teu banco e os movimentos passam a entrar sozinhos. Também podes adicionar uma conta à mão, por exemplo a carteira."
-          acoes={
-            <>
-              <LinkBotao para="/contas/nova?via=banco">Ligar um banco</LinkBotao>
-              <LinkBotao para="/contas/nova?via=manual" variante="secundario">
-                Adicionar manualmente
-              </LinkBotao>
-            </>
-          }
+          acoes={<LinkBotao para="/contas/nova">Adicionar conta</LinkBotao>}
         />
       )}
 
@@ -1019,22 +1108,10 @@ export function Contas() {
         </>
       )}
 
-      {/* Aviso de "Sincronizar agora". "key" muda a cada aviso novo, para o
-          React criar um elemento novo e a animação de saída recomeçar. */}
-      {aviso && (
-        <div
-          key={aviso.chave}
-          className={aviso.aDecorrer ? `${estilos.aviso} ${estilos.avisoADecorrer}` : estilos.aviso}
-          role="status"
-        >
-          {aviso.aDecorrer ? (
-            <span className={estilos.avisoRoda} aria-hidden="true" />
-          ) : (
-            <IconeSincronizar tamanho={16} />
-          )}
-          {aviso.texto}
-        </div>
-      )}
+      {/* Aviso de "Sincronizar agora": sempre montado (a região que os
+          leitores de ecrã escutam); o resultado toma o lugar de «A
+          sincronizar…» no mesmo elemento, sem voltar a animar. */}
+      <AvisoEmBaixo aviso={aviso} aoFechar={fecharAviso} />
     </div>
   )
 }

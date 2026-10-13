@@ -29,6 +29,7 @@ import {
   criarContaDoBanco,
   desvincular,
   iniciarAutorizacao,
+  renovarAutorizacao,
   listarContasBancarias,
   sincronizar,
 } from './openBanking'
@@ -53,6 +54,22 @@ describe('iniciarAutorizacao', () => {
     expect(destino.pathname).toBe('/api/open-banking/autorizar')
     expect(destino.searchParams.get('banco')).toBe('Caixa Geral de Depósitos')
     expect(destino.searchParams.get('pais')).toBe('PT')
+  })
+})
+
+describe('renovarAutorizacao', () => {
+  it('submete um formulário POST para /api/open-banking/autorizar com a autorização a renovar', () => {
+    const espiao = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {})
+
+    renovarAutorizacao('a1')
+
+    const formulario = espiao.mock.contexts[0] as HTMLFormElement
+    expect(formulario.method).toBe('post')
+    const destino = new URL(formulario.action, window.location.origin)
+    expect(destino.pathname).toBe('/api/open-banking/autorizar')
+    // O banco e o país vêm da autorização antiga, do lado do backend.
+    expect(destino.searchParams.get('renova')).toBe('a1')
+    expect(destino.searchParams.has('banco')).toBe(false)
   })
 })
 

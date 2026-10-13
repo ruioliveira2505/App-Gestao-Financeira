@@ -121,6 +121,12 @@
   font-weight: 500;
 }
 
+/* Uma ação que não é destrutiva ("neutra"): na cor do texto, a negrito. */
+.botaoNeutro {
+  color: var(--cor-texto);
+  font-weight: 600;
+}
+
 .botaoAcao:active {
   background: var(--cor-superficie-2);
 }

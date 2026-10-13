@@ -43,6 +43,10 @@ type Props = {
   // Verdadeiro enquanto a ação confirmada está em curso — desativa os
   // botões e muda o texto.
   aConfirmar?: boolean
+  // Uma ação que NÃO é destrutiva (ex.: renovar uma autorização no banco):
+  // o botão de confirmar fica na cor do texto, e não a vermelho — a cor só
+  // onde carrega significado.
+  neutra?: boolean
   aoConfirmar: () => void
   aoCancelar: () => void
 }
@@ -52,6 +56,7 @@ export function Confirmacao({
   children,
   textoConfirmar = 'Confirmar',
   aConfirmar = false,
+  neutra = false,
   aoConfirmar,
   aoCancelar,
 }: Props) {
@@ -160,7 +165,7 @@ export function Confirmacao({
           </div>
           <button
             type="button"
-            className={estilos.botaoAcao}
+            className={neutra ? `${estilos.botaoAcao} ${estilos.botaoNeutro}` : estilos.botaoAcao}
             onClick={aoConfirmar}
             disabled={aConfirmar}
           >

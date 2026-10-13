@@ -31,6 +31,9 @@ import { QueryClient } from '@tanstack/react-query'
 export const CHAVES = {
   contas: ['contas'] as const,
   conta: (id: string) => ['contas', id] as const,
+  // Debaixo da chave da conta: invalidar ['contas'] (por exemplo, depois de
+  // sincronizar) também volta a pedir as reconciliações.
+  reconciliacoes: (contaId: string) => ['contas', contaId, 'reconciliacoes'] as const,
 }
 
 /**

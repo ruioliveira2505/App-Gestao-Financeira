@@ -396,8 +396,8 @@ export function IconeSincronizar(props: PropsIcone) {
   )
 }
 
-// Dois elos de corrente — uma conta ligada ao banco (ver EstadoAutorizacao, em
-// src/lib/contas.ts).
+// Dois elos de corrente — uma conta VINCULADA ao banco (recebe movimentos
+// dele; ver SeloVinculo, em src/paginas/Contas.tsx).
 export function IconeLigacao(props: PropsIcone) {
   return (
     <Svg {...props}>
@@ -407,7 +407,9 @@ export function IconeLigacao(props: PropsIcone) {
   )
 }
 
-// A mesma corrente, partida ao meio — uma ligação ao banco já expirada.
+// A mesma corrente, partida ao meio — uma conta SUSPENSA (mantém o vínculo
+// ao banco, mas já não recebe movimentos: a autorização terminou, ou o banco
+// deixou de partilhar a conta).
 export function IconeLigacaoPartida(props: PropsIcone) {
   return (
     <Svg {...props}>
@@ -426,6 +428,27 @@ export function IconeAlerta(props: PropsIcone) {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7.5v5.5" />
       <path d="M12 16.5h.01" />
+    </Svg>
+  )
+}
+
+// O sinal de rede sem fios, cortado por uma diagonal — sem ligação (ex.:
+// não foi possível carregar uma página).
+export function IconeSemLigacao(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0" />
+      <path d="M3 3l18 18" />
+    </Svg>
+  )
+}
+
+// Duas folhas sobrepostas — copiar (ex.: o IBAN de uma conta).
+export function IconeCopiar(props: PropsIcone) {
+  return (
+    <Svg {...props}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h9" />
     </Svg>
   )
 }

@@ -40,6 +40,11 @@
  * esse estado muda — para a própria página poder animar em sincronia
  * outros elementos que também devam desaparecer ao rolar (ex.: a barra de
  * procura, logo a seguir a este cabeçalho).
+ *
+ * "aoLadoDoTitulo": um elemento pequeno na MESMA linha do título, encostado
+ * à direita dessa linha (ex.: a pílula dos avisos das autorizações, em
+ * Contas). Ao contrário de "acao", não vai para a barra de topo: pertence
+ * ao conteúdo, e por isso rola e desaparece com o título.
  */
 
 import { useContext, useEffect, type ReactNode } from 'react'
@@ -56,6 +61,8 @@ type Props = {
   subtitulo?: ReactNode
   icone?: ReactNode
   acao?: ReactNode
+  // Um elemento na linha do título, à direita (ver a nota no topo).
+  aoLadoDoTitulo?: ReactNode
   voltar?: string
   aoRecuar?: (navegarDeFacto: () => void) => void
   colapsavel?: boolean
@@ -75,6 +82,7 @@ export function CabecalhoPagina({
   subtitulo,
   icone,
   acao,
+  aoLadoDoTitulo,
   voltar,
   aoRecuar,
   colapsavel = false,
@@ -133,8 +141,15 @@ export function CabecalhoPagina({
             ? `${estilos.tituloGrande} ${estilos.tituloGrandeEscondido}`
             : estilos.tituloGrande
         }
+        // Escondido (o título já está compacto na barra de topo): fora do
+        // teclado e dos leitores de ecrã — por exemplo, o que estiver ao
+        // lado do título (a pílula dos avisos em Contas) deixa de ser focável.
+        inert={tituloCompacto || undefined}
       >
-        <h1>{titulo}</h1>
+        <div className={estilos.linhaTitulo}>
+          <h1>{titulo}</h1>
+          {aoLadoDoTitulo}
+        </div>
         {subtitulo && <p className={estilos.subtitulo}>{subtitulo}</p>}
         {colapsavel && <div ref={sentinelaRef} className={estilos.sentinelaColapso} aria-hidden="true" />}
       </div>
@@ -145,7 +160,10 @@ export function CabecalhoPagina({
     <header className={estilos.cabecalho}>
       {icone && <div className={estilos.icone}>{icone}</div>}
       <div className={estilos.textos}>
-        <h1>{titulo}</h1>
+        <div className={estilos.linhaTitulo}>
+          <h1>{titulo}</h1>
+          {aoLadoDoTitulo}
+        </div>
         {subtitulo && <p className={estilos.subtitulo}>{subtitulo}</p>}
       </div>
       {acao && <div className={estilos.acao}>{acao}</div>}

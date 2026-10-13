@@ -1,71 +1,38 @@
 /*
- * ESTILOS DA PÁGINA DE DETALHE DE UMA CONTA
- * ========================================
+ * ESTILOS DA PÁGINA DE UMA CONTA («VER CONTA»)
+ * ============================================
  *
  * O nome da conta vive ao centro da barra de topo (BarraTopoMobile). Aqui
- * ficam:
- *   - um bloco de IDENTIDADE centrado — monograma grande e, por baixo, a
- *     legenda "SALDO ATUAL" a introduzir o saldo;
- *   - as secções "Detalhes" e "Reconciliações": cada título tem um traço
- *     fino por baixo, à largura do conteúdo (funciona igual em mobile e
- *     em desktop, onde o conteúdo é uma coluna centrada);
- *   - a lista de "Detalhes" são pares rótulo/valor, sem ficha;
- *   - as acções (Editar / Remover) num menu "⋯" no cabeçalho.
+ * ficam o CABEÇALHO (o monograma e o saldo, centrados) e três PAINÉIS com a
+ * mesma forma: contorno fino da cor da borda, cantos de 12px, sem fundo; e
+ * em cada linha o campo (pequeno, cinzento) em cima e o valor por baixo.
+ * Entre linhas, um traço fino com 16px de margem de cada lado (alinhado com
+ * o texto); entre painéis, só espaço. Os títulos dos painéis ("DETALHES",
+ * "RECONCILIAÇÕES") são pequenos, em maiúsculas e cinzentos, como os
+ * cabeçalhos de grupo da lista de Contas, recuados 16px para alinharem com
+ * o texto de dentro.
  *
- * Os títulos de secção seguem o estilo dos cabeçalhos de grupo da lista de
- * Contas (pequenos, em maiúsculas, esbatidos), agora com o traço por baixo.
- *
- * A entrada/saída a deslizar (o "push"/"pop" do iOS, em mobile) já não é
- * feita aqui — vem de fora, do <PaginaDeslizante> que envolve esta página
- * (ver a nota em ContaDetalhe.tsx e em PaginaDeslizante.tsx).
+ * A entrada/saída a deslizar (o "push"/"pop" do iOS, em mobile) vem de
+ * fora, do <PaginaDeslizante> que envolve esta página.
  */
 
-.nota {
-  color: var(--cor-texto-2);
-}
+/* --- Cabeçalho: monograma + saldo, centrados --- */
 
-/* --- Estado de erro: mensagem + saída para a lista --- */
-
-.erroBloco {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--espaco-3);
-}
-
-.erroVoltar {
-  color: var(--cor-texto-2);
-  font-size: var(--texto-sm);
-}
-
-/* --- Bloco de identidade: monograma + legenda + saldo, centrados --- */
-
-.perfil {
+.heroi {
   display: flex;
   flex-direction: column;
   align-items: center;
-  /* Gap pequeno: a legenda e o saldo são um par. O espaço a seguir ao
-     monograma é maior, dado pela margem da legenda. */
-  gap: var(--espaco-1);
+  gap: 4px;
   text-align: center;
-  margin-bottom: var(--espaco-6);
+  padding-bottom: 28px;
 }
 
-/* Legenda que introduz o saldo — pequena, em maiúsculas, esbatida. A
-   margem separa o bloco do saldo do monograma (dois blocos: identidade e
-   valor). */
-.saldoRotulo {
-  margin-top: var(--espaco-4);
-  font-size: var(--texto-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--cor-texto-2);
-}
-
-/* O saldo, o herói da página. */
+/* O saldo, o herói da página: 12px abaixo do monograma (8px de margem
+   mais os 4px de espaço do bloco). */
 .saldo {
+  margin-top: 8px;
   font-size: var(--texto-3xl);
+  line-height: 38px;
   font-weight: 600;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -75,118 +42,284 @@
   color: var(--cor-negativo-text);
 }
 
-/* O valor original (a moeda da própria conta), só quando o saldo em
-   destaque acima é o CONVERTIDO — ver a nota em ContaDetalhe.tsx. Tinta
-   secundária e mais pequeno do que o hero: é uma referência, não o
-   herói. "--texto-ui" (não "--texto-sm"): um degrau só acima, ainda
-   claramente secundário, mas menos "legenda mínima" e mais legível —
-   sem mexer na cor nem no peso, para não competir com o hero pela
-   atenção. Sem margem própria: o "gap" de ".perfil" já dá o espaço
-   mínimo até ao saldo — o objectivo é ficar bem junto a ele, como uma
-   legenda. */
+/* O valor original (na moeda da própria conta), só quando o saldo acima é
+   o convertido: uma referência, mais pequena e em tinta secundária. */
 .saldoOriginal {
   font-size: var(--texto-ui);
   color: var(--cor-texto-2);
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Secções (Detalhes, Reconciliações) --- */
+/* --- Secções e painéis --- */
 
 .seccao {
-  margin-bottom: var(--espaco-6);
-}
-
-.seccao:last-child {
-  margin-bottom: 0;
-}
-
-/* Um pouco mais de ar antes de uma secção que venha a seguir a outra
-   (Detalhes → Reconciliações). É "padding" para não colapsar com a margem
-   da secção anterior. */
-.seccao + .seccao {
-  padding-top: var(--espaco-2);
-}
-
-/* Título de secção: pequeno, em maiúsculas, esbatido (como os cabeçalhos
-   de grupo da lista de Contas), com um traço fino por baixo à largura do
-   conteúdo — é o que separa uma secção da seguinte. */
-.seccaoTitulo {
-  font-size: var(--texto-sm);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--cor-texto-3);
-  padding-bottom: var(--espaco-2);
-  margin-bottom: var(--espaco-2);
-  border-bottom: 1px solid var(--cor-borda-leve);
-}
-
-/* Lista de pares rótulo/valor, sem ficha, à largura do conteúdo. Fechada
-   em baixo por um traço fino (o de cima é o do título da secção). */
-.lista {
-  margin: 0;
-  border-bottom: 1px solid var(--cor-borda-leve);
-}
-
-.par {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--espaco-4);
-  padding: var(--espaco-3) 0;
+  flex-direction: column;
+  padding: 16px 0 10px;
 }
 
-/* Traço fino entre linhas. */
-.par + .par {
+/* O painel do banco não tem título: fica mais perto do cabeçalho. */
+.seccaoBanco {
+  padding-top: 4px;
+}
+
+.titulo {
+  margin: 0 0 6px;
+  padding: 0 16px;
+  font-size: var(--texto-sm);
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--cor-texto-3);
+}
+
+.painel {
+  margin: 0;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--raio-lg);
+  overflow: hidden;
+}
+
+/* Uma linha: os textos (campo + valor) à esquerda e, se houver, um botão
+   só com ícone à direita (o "↻", o copiar). 64px de altura mínima. */
+.linha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  margin: 0;
+  padding: 0 6px 0 16px;
+  box-sizing: border-box;
+}
+
+/* O traço entre linhas: com 16px de margem de cada lado, alinhado com o
+   texto (e não de ponta a ponta do painel). */
+.linha + .linha::before,
+.reconciliacao + .reconciliacao::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 16px;
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-.par dt {
-  flex-shrink: 0;
+.textos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.campo {
+  font-size: var(--texto-sm);
+  line-height: 18px;
   color: var(--cor-texto-2);
 }
 
-.par dd {
-  margin: 0;
+/* O valor: peso normal (sem negrito), algarismos alinhados. Corta-se com
+   reticências se não couber (um nome de banco muito comprido). É um bloco
+   (e não flex): as reticências só funcionam num bloco de texto. */
+.valor {
+  display: block;
   min-width: 0;
-  text-align: right;
+  font-size: var(--texto-base);
+  line-height: 22px;
   font-variant-numeric: tabular-nums;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* --- "Open Banking": indicador de ligação + acções --- */
-
-.acoesLigacao {
+/* Um valor com o ponto de cor à frente (as linhas de estado): flex, para
+   alinhar o ponto, com o texto num <span> próprio que leva as reticências. */
+.valorComPonto {
   display: flex;
-  gap: var(--espaco-3);
-  margin-top: var(--espaco-3);
+  align-items: center;
+  gap: 8px;
 }
 
-.acoesLigacao > * {
-  flex: 1;
+.valorTexto {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* --- "Reconciliações": estado "em breve", discreto, sem ficha --- */
+/* Um valor que pode passar para a linha seguinte (o IBAN). */
+.valorQuebra {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
-.emBreve {
+/* Uma mensagem de erro dentro de um painel (ex.: as reconciliações não
+   carregaram). */
+.textoErro {
+  color: var(--cor-texto-2);
+}
+
+/* Um campo vazio («Sem banco», «Sem tipo», «Ainda sem reconciliações»). */
+.vazio {
+  color: var(--cor-texto-3);
+}
+
+/* O texto da linha da sincronização, na cor do caso: a preto quando está
+   tudo bem, e na cor de texto das caixas de aviso quando algo falhou. */
+.texto_ok {
+  color: var(--cor-texto);
+}
+
+.texto_neutro {
+  color: var(--cor-texto-2);
+}
+
+.texto_aviso {
+  color: var(--cor-aviso-text);
+}
+
+.texto_negativo {
+  color: var(--cor-negativo-text);
+}
+
+/* O ponto de cor do estado: 9px. */
+.ponto {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.ponto_ok {
+  background: var(--cor-positivo);
+}
+
+.ponto_aviso {
+  background: var(--cor-aviso);
+}
+
+.ponto_negativo {
+  background: var(--cor-negativo);
+}
+
+/* Cinzento que se vê nos dois temas (o da borda quase não se distinguia). */
+.ponto_neutro {
+  background: var(--cor-texto-3);
+}
+
+/* Um botão só com ícone dentro da linha (o "↻", o copiar): só o ícone, em
+   tinta secundária, com 44px de área de toque. Sem círculo nem sombra: o
+   círculo com sombra é só para o que flutua. */
+.icone {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--cor-texto-2);
+  cursor: pointer;
+}
+
+.icone:active {
+  background: var(--cor-superficie);
+}
+
+/* Indisponível (o limite do banco: só amanhã): esbatido, e não reage. */
+.icone[aria-disabled='true'] {
+  color: var(--cor-texto-3);
+  cursor: default;
+}
+
+.icone[aria-disabled='true']:active {
+  background: none;
+}
+
+/* A roda que substitui o "↻" enquanto sincroniza. */
+.roda {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--cor-borda);
+  border-top-color: var(--cor-texto);
+  box-sizing: border-box;
+  animation: rodar 0.8s linear infinite;
+}
+
+@keyframes rodar {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Reconciliações --- */
+
+/* Uma linha: a data (a preto) à esquerda e, à direita, o saldo com o
+   acerto por baixo. As duas colunas têm a mesma métrica (16/22 em cima,
+   14/20 em baixo), para «Ao vincular» ficar na mesma linha do acerto. */
+.reconciliacao {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.reconciliacaoEsquerda,
+.reconciliacaoDireita {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--espaco-2);
-  padding: var(--espaco-6) var(--espaco-4);
-  text-align: center;
-  color: var(--cor-texto-3);
-  font-size: var(--texto-sm);
+  gap: 4px;
 }
 
-.emBreveIcone {
-  display: flex;
-  color: var(--cor-texto-3);
+.reconciliacaoEsquerda {
+  font-size: var(--texto-base);
+  line-height: 22px;
 }
 
-/* --- "Editar" (lápis) no cabeçalho --- */
+.reconciliacaoDireita {
+  align-items: flex-end;
+}
+
+.reconciliacaoNota {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--cor-texto-2);
+}
+
+.reconciliacaoSaldo {
+  font-size: var(--texto-base);
+  line-height: 22px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reconciliacaoAcerto {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.acertoPositivo {
+  color: var(--cor-positivo-text);
+}
+
+.acertoNegativo {
+  color: var(--cor-negativo-text);
+}
+
+/* «0,00 €» a cinzento, mas legível (o texto-3 fica abaixo do contraste
+   mínimo para texto a ler). */
+.acertoZero {
+  color: var(--cor-texto-2);
+}
+
+/* --- O lápis da barra de topo --- */
 
 /* Círculo branco com sombra, igual ao botão "‹" da barra de topo. Ser um
    círculo do mesmo tamanho que o "‹" faz as duas zonas laterais da barra
@@ -211,8 +344,7 @@
 /* --- Esqueleto de carregamento --- */
 
 /* Blocos cinzentos que pulsam devagar, no lugar do conteúdo enquanto a
-   conta não chega. Com "prefers-reduced-motion" o index.css pára o pulsar
-   — ficam blocos estáticos, que é o pretendido. */
+   conta não chega. Com "reduzir movimento", o index.css pára o pulsar. */
 .esq {
   display: block;
   background: var(--cor-superficie-2);
@@ -226,96 +358,31 @@
   }
 }
 
-/* Bloco de identidade: círculo + duas barras, centrados. */
-.esqPerfil {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--espaco-2);
-  margin-bottom: var(--espaco-6);
-}
-
 .esqAvatar {
-  width: 8rem;
-  height: 8rem;
+  width: 88px;
+  height: 88px;
   border-radius: 50%;
 }
 
-.esqSaldoBarra {
-  width: 45%;
-  height: 2rem;
+.esqSaldo {
+  width: 170px;
+  height: 30px;
+  margin-top: 14px;
 }
 
-.esqCaption {
-  width: 25%;
-  height: 0.75rem;
-  margin-top: var(--espaco-3);
+.linhaEsqueleto {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
 }
 
-/* Barra no lugar do título "Detalhes". */
-.esqTitulo {
-  width: 30%;
-  height: 0.9rem;
-  margin-bottom: var(--espaco-3);
-}
-
-/* Barras rótulo/valor dentro de cada linha (reaproveita .lista / .par,
-   para o espaçamento e os traços serem os mesmos da lista real). */
-.esqRotulo {
-  width: 35%;
-  height: 0.9rem;
+.esqCampo {
+  width: 70px;
+  height: 12px;
 }
 
 .esqValor {
-  width: 22%;
-  height: 0.9rem;
-}
-
-/* Aviso de chegada ("Conta criada", "Conta ligada") — uma pílula escura a
-   flutuar no topo, ao centro (flutua a sério: é o único sítio da página
-   com sombra, como tudo o que flutua nesta app). Entra, fica uns segundos
-   e sai sozinha — só com CSS, sem temporizador em JavaScript; no fim fica
-   invisível e deixa de captar toques. */
-.aviso {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
-  left: 50%;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: var(--espaco-2);
-  padding: var(--espaco-2) var(--espaco-4);
-  border-radius: 999px;
-  background: var(--cor-acento);
-  color: var(--cor-acento-texto);
-  font-size: var(--texto-ui);
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: var(--sombra-menu);
-  pointer-events: none;
-  animation: aviso-mostrar 2.8s ease forwards;
-}
-
-@keyframes aviso-mostrar {
-  0% { opacity: 0; transform: translate(-50%, -8px); }
-  10% { opacity: 1; transform: translate(-50%, 0); }
-  80% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, -8px); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .aviso {
-    animation: aviso-mostrar-sem-movimento 2.8s ease forwards;
-    /* A regra global de index.css encurta TODAS as animações para quase
-       zero neste modo (com !important). Aqui isso deixaria o aviso a
-       saltar logo para o fim da animação, invisível, e o utilizador nunca
-       o leria. Este aviso só aparece e desvanece (sem deslizar), por isso
-       mantém a sua duração: o !important numa classe ganha ao do "*",
-       por ser um seletor mais específico. */
-    animation-duration: 2.8s !important;
-  }
-  @keyframes aviso-mostrar-sem-movimento {
-    0%, 80% { opacity: 1; transform: translateX(-50%); }
-    100% { opacity: 0; transform: translateX(-50%); }
-  }
+  width: 140px;
+  height: 14px;
 }

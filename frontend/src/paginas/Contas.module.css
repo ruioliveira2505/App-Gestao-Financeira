@@ -269,13 +269,15 @@
   align-items: baseline;
   justify-content: space-between;
   gap: var(--espaco-3);
-  padding: 0 var(--espaco-2);
+  /* Sem recuo: o nome do grupo alinha com o início do monograma das
+     linhas (e o traço por baixo também), como os títulos de secção da
+     página de uma conta alinham com o texto de dentro. */
+  padding: 0;
   margin-bottom: var(--espaco-2);
 }
 
-/* Traço fino por baixo do nome do grupo. Vai a toda a largura do
-   cabeçalho — alinhado com a margem da página, mais largo do que o texto
-   (que mantém o seu ligeiro recuo). Fica a meio do espaço entre o
+/* Traço fino por baixo do nome do grupo, a toda a largura do cabeçalho,
+   alinhado com a margem da página. Fica a meio do espaço entre o
    cabeçalho e a primeira linha, por isso não rouba altura às linhas de
    conta. */
 .grupoCabecalho::after {
@@ -348,7 +350,7 @@
   border-top: 1px solid var(--cor-borda-leve);
 }
 
-/* --- Estado da ligação ao banco (ver SeloLigacao, em Contas.tsx) --- */
+/* --- Estado da conta com vínculo ao banco (ver SeloVinculo, em Contas.tsx) --- */
 
 /* Invólucro do monograma — é o ponto de referência ("position: relative")
    para o ícone do estado, colado ao canto inferior direito. */
@@ -358,9 +360,12 @@
   flex-shrink: 0;
 }
 
-/* O ícone do estado: um círculo de 18px a sair ligeiramente do monograma
-   (−3px), com um contorno da cor do fundo da página — é o contorno que o
-   separa do monograma, sem precisar de sombra. Símbolo a branco. */
+/* O ícone do estado da conta: um círculo escuro de 18px a sair
+   ligeiramente do monograma (−3px), com um contorno da cor do fundo da
+   página — é o contorno que o separa do monograma, sem precisar de sombra.
+   Os dois estados (vinculada, suspensa) usam o MESMO círculo: distinguem-se
+   só pela forma do símbolo (elos ou corrente partida); a cor fica para os
+   avisos das autorizações, que pedem uma ação. */
 .selo {
   position: absolute;
   right: -3px;
@@ -372,46 +377,13 @@
   border-radius: 50%;
   border: 2px solid var(--cor-fundo);
   box-sizing: border-box;
-  color: #ffffff;
-}
-
-/* As três cores do estado — as mesmas que o cartão da ligação usa na
-   página da conta, para se aprenderem num sítio e reconhecerem no outro. */
-.seloLigada {
   background: var(--cor-texto);
   /* Em modo escuro, "--cor-texto" é claro — o símbolo passa a escuro,
      para continuar visível. */
   color: var(--cor-fundo);
 }
 
-.seloAExpirar {
-  background: var(--cor-aviso);
-}
 
-.seloExpirada {
-  background: var(--cor-negativo);
-}
-
-.seloExclamacao {
-  font-size: 11px;
-  font-weight: 800;
-  line-height: 1;
-}
-
-/* Texto só para leitores de ecrã: invisível e sem ocupar espaço, mas
-   lido como parte do link (a técnica habitual "visually hidden" — não
-   "display: none", que o esconderia também dos leitores de ecrã). */
-.apenasLeitor {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
 
 /* Envolve o nome (+ a moeda, com conversão) — ocupa o meio da linha e
    empurra o saldo para a direita; "min-width: 0" é o que deixa o nome, lá
@@ -504,129 +476,5 @@
   height: 0.9rem;
 }
 
-/* --- Estados com mensagem: erro, sem contas, procura sem resultados ---
-   (ver EstadoMensagem, em Contas.tsx). A mesma forma nos três: ícone num
-   círculo, título, texto e botões — para nenhum ter um aspecto próprio. */
 
-.estado {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--espaco-2);
-  padding: var(--espaco-8) var(--espaco-4) var(--espaco-5);
-  text-align: center;
-}
 
-/* Sempre um círculo de 56px no cinzento de superfície, com o ícone a
-   cinzento-escuro — nunca um quadrado arredondado, nunca outra cor. */
-.estadoIcone {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: var(--espaco-2);
-  border-radius: 50%;
-  background: var(--cor-superficie);
-  color: var(--cor-texto-2);
-}
-
-.estadoTitulo {
-  margin: 0;
-  font-size: var(--texto-md);
-  font-weight: 600;
-  color: var(--cor-texto);
-}
-
-.estadoTexto {
-  margin: 0;
-  max-width: 18rem;
-  font-size: var(--texto-ui);
-  line-height: 1.4;
-  color: var(--cor-texto-2);
-}
-
-/* Botões empilhados e da mesma largura (até 280px) — os da aplicação
-   (Botao/LinkBotao), com o mesmo raio em todos os estados. */
-.estadoAcoes {
-  display: flex;
-  flex-direction: column;
-  gap: var(--espaco-2);
-  width: 100%;
-  max-width: 17.5rem;
-  margin-top: var(--espaco-3);
-}
-
-/* --- Aviso de "Sincronizar agora" ---
-   A mesma pílula escura do aviso de chegada na página de uma conta
-   (ContaDetalhe.module.css), no mesmo sítio, para os avisos da app terem
-   todos o mesmo aspecto. Desaparece sozinho (animação); enquanto a
-   sincronização decorre (".avisoADecorrer") fica visível, sem animação. */
-.aviso {
-  position: fixed;
-  top: calc(env(safe-area-inset-top, 0px) + 4.5rem);
-  left: 50%;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: var(--espaco-2);
-  padding: var(--espaco-2) var(--espaco-4);
-  border-radius: 999px;
-  background: var(--cor-acento);
-  color: var(--cor-acento-texto);
-  font-size: var(--texto-ui);
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: var(--sombra-menu);
-  pointer-events: none;
-  animation: aviso-mostrar 2.8s ease forwards;
-}
-
-.avisoADecorrer {
-  animation: none;
-  transform: translateX(-50%);
-}
-
-/* A roda de progresso dentro do aviso, enquanto sincroniza. */
-.avisoRoda {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--cor-acento-texto) 35%, transparent);
-  border-top-color: var(--cor-acento-texto);
-  box-sizing: border-box;
-  animation: rodar 0.8s linear infinite;
-}
-
-@keyframes rodar {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes aviso-mostrar {
-  0% { opacity: 0; transform: translate(-50%, -8px); }
-  10% { opacity: 1; transform: translate(-50%, 0); }
-  80% { opacity: 1; transform: translate(-50%, 0); }
-  100% { opacity: 0; transform: translate(-50%, -8px); }
-}
-
-/* Movimento reduzido: o aviso só aparece e desvanece, sem deslizar. */
-@media (prefers-reduced-motion: reduce) {
-  .aviso {
-    animation: aviso-mostrar-sem-movimento 2.8s ease forwards;
-    /* A regra global de index.css encurta TODAS as animações para quase
-       zero neste modo (com !important). Aqui isso deixaria o aviso a
-       saltar logo para o fim da animação, invisível, e o utilizador nunca
-       o leria. Este aviso só aparece e desvanece (sem deslizar), por isso
-       mantém a sua duração: o !important numa classe ganha ao do "*",
-       por ser um seletor mais específico. */
-    animation-duration: 2.8s !important;
-  }
-  .avisoADecorrer {
-    animation: none;
-  }
-  @keyframes aviso-mostrar-sem-movimento {
-    0%, 80% { opacity: 1; transform: translateX(-50%); }
-    100% { opacity: 0; transform: translateX(-50%); }
-  }
-}

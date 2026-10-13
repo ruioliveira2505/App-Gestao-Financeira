@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { formatarIntervalo, hojeIso, rotuloDiaRelativo } from './datas'
+import { diaCurto, formatarIntervalo, hojeIso, mesmoDia, rotuloDiaRelativo, tempoDecorrido } from './datas'
 
 /** ISO (AAAA-MM-DD) de hoje deslocado N dias, em data LOCAL — tal como
  *  rotuloDiaRelativo compara (não UTC, senão a poucas horas da meia-noite
@@ -77,5 +77,57 @@ describe('hojeIso', () => {
     vi.setSystemTime(new Date(2026, 6, 3, 0, 30))
 
     expect(hojeIso()).toBe('2026-07-03')
+  })
+})
+
+describe('tempoDecorrido', () => {
+  // Um momento fixo, para os testes não dependerem da hora em que correm.
+  const AGORA = new Date('2026-10-13T12:00:00Z')
+  const antes = (ms: number) => new Date(AGORA.getTime() - ms).toISOString()
+  const MIN = 60 * 1000
+  const HORA = 60 * MIN
+  const DIA = 24 * HORA
+
+  it('menos de um minuto é «agora»', () => {
+    expect(tempoDecorrido(antes(20 * 1000), AGORA)).toBe('agora')
+  })
+
+  it('em minutos, horas e dias, com o singular certo', () => {
+    expect(tempoDecorrido(antes(5 * MIN), AGORA)).toBe('há 5 min')
+    expect(tempoDecorrido(antes(HORA), AGORA)).toBe('há 1 hora')
+    expect(tempoDecorrido(antes(2 * HORA + 10 * MIN), AGORA)).toBe('há 2 horas')
+    expect(tempoDecorrido(antes(DIA), AGORA)).toBe('há 1 dia')
+    expect(tempoDecorrido(antes(3 * DIA), AGORA)).toBe('há 3 dias')
+  })
+
+  it('nos limites: 59 min, 23 horas, 6 dias', () => {
+    expect(tempoDecorrido(antes(59 * MIN), AGORA)).toBe('há 59 min')
+    expect(tempoDecorrido(antes(23 * HORA + 59 * MIN), AGORA)).toBe('há 23 horas')
+    expect(tempoDecorrido(antes(6 * DIA + 23 * HORA), AGORA)).toBe('há 6 dias')
+  })
+
+  it('uma data no futuro (relógio desacertado) é «agora»; uma inválida dá texto vazio', () => {
+    expect(tempoDecorrido(new Date(AGORA.getTime() + 5 * MIN).toISOString(), AGORA)).toBe('agora')
+    expect(tempoDecorrido('não é uma data', AGORA)).toBe('')
+  })
+
+  it('a partir de uma semana, a data curta', () => {
+    expect(tempoDecorrido('2026-09-02T10:00:00Z', AGORA)).toBe('a 2 set')
+  })
+})
+
+describe('diaCurto', () => {
+  it('dia e mês abreviado; o ano só se não for o atual', () => {
+    const agora = new Date('2026-10-13T12:00:00Z')
+    expect(diaCurto('2026-09-02T10:00:00Z', agora)).toBe('2 set')
+    expect(diaCurto('2025-12-30T10:00:00Z', agora)).toBe('30 dez 2025')
+  })
+})
+
+describe('mesmoDia', () => {
+  it('compara o dia no fuso do aparelho', () => {
+    const agora = new Date(2026, 9, 13, 18, 0)
+    expect(mesmoDia(new Date(2026, 9, 13, 0, 5).toISOString(), agora)).toBe(true)
+    expect(mesmoDia(new Date(2026, 9, 12, 23, 55).toISOString(), agora)).toBe(false)
   })
 })

@@ -6,7 +6,7 @@
 import { render as renderBase, screen, waitFor, within } from '@testing-library/react'
 import { useQueryClient } from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 
@@ -17,6 +17,7 @@ import { PilhaDePaginas } from '../componentes/PilhaDePaginas'
 import { CHAVES } from '../lib/consultas'
 import { Contas } from './Contas'
 import { ComConsultas } from '../test/consultas'
+import type { Vinculo } from '../lib/contas'
 
 // Todas as montagens deste ficheiro levam a cache dos dados do servidor à
 // volta (a app recebe-a em main.tsx; aqui, cada montagem tem uma nova —
@@ -57,12 +58,42 @@ function conta(sobrepor: Record<string, unknown> = {}) {
   return base
 }
 
-// Uma ligação ao banco válida até daqui a "dias" dias (negativo = já
-// expirou). Relativa ao momento em que o teste corre, porque o estado da
-// ligação (ligada / a expirar / expirada) depende da data de hoje.
-function ligacao(dias: number, id = 'cl1') {
+// Um vínculo ao banco cuja autorização vale até daqui a "dias" dias.
+// Relativo ao momento em que o teste corre, porque o aviso «a expirar»
+// depende da data de hoje. Com "dias" negativo, a autorização já terminou e
+// a conta está SUSPENSA (é o backend quem o deduz; aqui imita-se o que ele
+// devolveria). "autorizacao" e "titular" identificam a autorização: contas
+// da mesma autorização dão um só aviso.
+function ligacao(
+  dias: number,
+  id = 'cl1',
+  {
+    autorizacao = `a-${id}`,
+    titular = 'Rui Oliveira',
+    banco = 'BPI',
+    indisponivel = false,
+  }: { autorizacao?: string; titular?: string; banco?: string; indisponivel?: boolean } = {},
+): Vinculo {
   const validoAte = new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString()
-  return { conta_bancaria_id: id, banco: 'BPI', valido_ate: validoAte }
+  const terminada = dias < 0
+  // "indisponivel": o banco deixou de partilhar a conta (suspensa), com a
+  // autorização ainda ativa.
+  const suspensa = terminada || indisponivel
+  return {
+    conta_bancaria_id: id,
+    banco,
+    titular,
+    valido_ate: validoAte,
+    autorizacao_id: autorizacao,
+    iban: null,
+    sincronizado_em: null,
+    suspensa_desde: suspensa ? (terminada ? validoAte : new Date().toISOString()) : null,
+    autorizacao_terminada_em: terminada ? validoAte : null,
+    falha_em: null,
+    falha_motivo: null,
+    estado: suspensa ? 'suspensa' : 'vinculada',
+    motivo: indisponivel ? 'indisponivel' : terminada ? 'expirada' : null,
+  }
 }
 
 function montar() {
@@ -317,6 +348,25 @@ describe('Página Contas', () => {
     expect(within(grupoOrdem).queryByRole('link', { name: /Reserva/ })).not.toBeInTheDocument()
   })
 
+  it('agrupado, «Sem banco» fica no fim, mesmo antes de bancos que vêm depois do «S» (Unicaixa)', async () => {
+    localStorage.setItem('contasAgrupamento', 'banco')
+    servidorMsw.use(
+      http.get('/api/contas', () =>
+        HttpResponse.json([
+          conta({ id: 'a', nome: 'Carteira', banco: null }),
+          conta({ id: 'b', nome: 'Conta U', banco: 'Unicaixa' }),
+          conta({ id: 'c', nome: 'Conta A', banco: 'Abanca' }),
+        ]),
+      ),
+    )
+
+    montar()
+
+    await screen.findByRole('link', { name: /Carteira/ })
+    const grupos = screen.getAllByText(/^(Abanca|Unicaixa|Sem banco)$/).map((e) => e.textContent)
+    expect(grupos).toEqual(['Abanca', 'Unicaixa', 'Sem banco'])
+  })
+
   it('o menu "⋯" funciona também em ecrã de telemóvel', async () => {
     // Em mobile o painel do menu alinha-se de forma diferente (à margem da
     // página, não ao gatilho). Este teste garante que o gatilho e o submenu
@@ -363,15 +413,19 @@ describe('Página Contas', () => {
     montar()
 
     expect(await screen.findByText('Ainda não tens contas')).toBeInTheDocument()
-    // Os dois caminhos de "Nova conta", cada um a abrir já no seu passo.
-    expect(screen.getByRole('link', { name: 'Ligar um banco' })).toHaveAttribute(
-      'href',
-      '/contas/nova?via=banco',
-    )
-    expect(screen.getByRole('link', { name: 'Adicionar manualmente' })).toHaveAttribute(
-      'href',
-      '/contas/nova?via=manual',
-    )
+    // Um só botão, para o mesmo ecrã do "+" (onde se escolhe com ou sem
+    // vínculo ao banco).
+    expect(screen.getByRole('link', { name: 'Adicionar conta' })).toHaveAttribute('href', '/contas/nova')
+  })
+
+  it('sem avisos, apaga a escolha «recolhido» que tivesse ficado guardada', async () => {
+    localStorage.setItem('contasAvisosRecolhidos:u1', 'a-cl1:a-expirar')
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta()])))
+
+    montar()
+
+    await screen.findByRole('link', { name: /Conta X/ })
+    await waitFor(() => expect(localStorage.getItem('contasAvisosRecolhidos:u1')).toBeNull())
   })
 
   it('mostra uma mensagem de erro se a API falhar', async () => {
@@ -383,7 +437,10 @@ describe('Página Contas', () => {
 
     montar()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Sessão inválida ou expirada.')
+    // O título e o que fazer (não a mensagem técnica do pedido).
+    const alerta = await screen.findByRole('alert')
+    expect(alerta).toHaveTextContent('Não foi possível carregar as contas')
+    expect(alerta).toHaveTextContent('Verifica a ligação à internet e tenta outra vez.')
   })
 
   it('quando uma página por cima altera as contas (ex.: cria uma), a lista por baixo actualiza-se', async () => {
@@ -460,8 +517,8 @@ describe('Página Contas', () => {
     expect(pedidos).toBe(2)
   })
 
-  describe('ligação ao banco', () => {
-    it('diz o estado da ligação de cada conta ligada (ligada, a expirar, expirada)', async () => {
+  describe('vínculo ao banco', () => {
+    it('diz o estado de cada conta com vínculo (vinculada ou suspensa); a expirar continua vinculada', async () => {
       servidorMsw.use(
         http.get('/api/contas', () =>
           HttpResponse.json([
@@ -476,13 +533,14 @@ describe('Página Contas', () => {
       montar()
 
       // O ícone é só visual; o estado vai, em texto, no nome da linha.
-      expect(await screen.findByRole('link', { name: /Ativa.*ligada ao banco/ })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: /Quase.*a expirar/ })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: /Antiga.*expirada/ })).toBeInTheDocument()
-      expect(screen.getByRole('link', { name: /Manual/ })).not.toHaveTextContent(/ligad|ligação/)
+      // «A expirar» não é um estado da conta (é um aviso da autorização).
+      expect(await screen.findByRole('link', { name: /Ativa.*vinculada/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Quase.*vinculada/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Antiga.*suspensa/ })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /Manual/ })).not.toHaveTextContent(/vinculada|suspensa/)
     })
 
-    it('"Sincronizar agora" fica desativado, com a razão, sem contas ligadas', async () => {
+    it('"Sincronizar agora" fica desativado sem contas vinculadas, com a razão só para leitores de ecrã', async () => {
       servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta()])))
 
       montar()
@@ -490,17 +548,17 @@ describe('Página Contas', () => {
 
       const item = screen.getByRole('menuitem', { name: /Sincronizar agora/ })
       expect(item).toHaveAttribute('aria-disabled', 'true')
-      expect(item).toHaveTextContent('Nenhuma conta ligada')
+      expect(item).toHaveTextContent('Nenhuma conta vinculada')
     })
 
-    it('"Sincronizar agora" sincroniza as contas com ligação válida e diz o resultado', async () => {
+    it('"Sincronizar agora" sincroniza as contas vinculadas (não as suspensas) e diz o resultado', async () => {
       const sincronizadas: string[] = []
       servidorMsw.use(
         http.get('/api/contas', () =>
           HttpResponse.json([
             conta({ id: 'a', nome: 'Uma', vinculo: ligacao(60, 'cl1') }),
             conta({ id: 'b', nome: 'Outra', vinculo: ligacao(3, 'cl2') }),
-            // Expirada: o banco já não responde — não é pedida.
+            // Suspensa: o banco já não responde — não é pedida.
             conta({ id: 'c', nome: 'Velha', vinculo: ligacao(-1, 'cl3') }),
           ]),
         ),
@@ -516,6 +574,213 @@ describe('Página Contas', () => {
 
       expect(await screen.findByText('Atualizado · 3 movimentos novos')).toBeInTheDocument()
       expect(sincronizadas).toEqual(['cl1', 'cl2'])
+    })
+
+    it('"Sincronizar agora" com uma conta a falhar diz quantas falharam, e o resto fica atualizado', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({ id: 'a', nome: 'Uma', vinculo: ligacao(60, 'cl1') }),
+            conta({ id: 'b', nome: 'Outra', vinculo: ligacao(60, 'cl2') }),
+          ]),
+        ),
+        http.post('/api/open-banking/contas-bancarias/:id/sincronizar', ({ params }) =>
+          params.id === 'cl1'
+            ? HttpResponse.json({ movimentos_importados: 1 })
+            : HttpResponse.json({ detail: 'O banco não respondeu.' }, { status: 502 }),
+        ),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+
+      expect(await screen.findByText('Atualizado · 1 conta falhou')).toBeInTheDocument()
+    })
+
+    it('fechar o aviso «A sincronizar» não deixa arrancar uma segunda sincronização por cima', async () => {
+      let pedidos = 0
+      let terminar: () => void = () => {}
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(60, 'cl1') })])),
+        http.post('/api/open-banking/contas-bancarias/:id/sincronizar', async () => {
+          pedidos += 1
+          await new Promise<void>((resolver) => (terminar = resolver))
+          return HttpResponse.json({ movimentos_importados: 0 })
+        }),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+      // Fecha o aviso «A sincronizar» com um toque, e tenta outra vez.
+      await userEvent.click(await screen.findByText('A sincronizar · 1 conta'))
+      await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+
+      expect(pedidos).toBe(1)
+      terminar()
+      expect(await screen.findByText('Atualizado · sem movimentos novos')).toBeInTheDocument()
+    })
+
+    it('com todas a falhar por conflito (409), diz «tenta mais tarde», e não «sem ligação»', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(60, 'cl1') })])),
+        http.post('/api/open-banking/contas-bancarias/:id/sincronizar', () =>
+          HttpResponse.json({ detail: 'Outra operação a decorrer.' }, { status: 409 }),
+        ),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+
+      expect(await screen.findByText('Não atualizado · tenta mais tarde')).toBeInTheDocument()
+    })
+
+    it('"Sincronizar agora" sem nenhuma conta atualizada distingue o limite do banco da falta de ligação', async () => {
+      let resposta = 429
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(60, 'cl1') })])),
+        http.post('/api/open-banking/contas-bancarias/:id/sincronizar', () =>
+          HttpResponse.json({ detail: 'Limite.' }, { status: resposta }),
+        ),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+      const aviso = await screen.findByText('Não atualizado · limite do banco')
+
+      // Tocar no aviso fecha-o.
+      await userEvent.click(aviso)
+      expect(screen.queryByText('Não atualizado · limite do banco')).not.toBeInTheDocument()
+
+      resposta = 502
+      await userEvent.click(screen.getByRole('button', { name: 'Mais opções' }))
+      await userEvent.click(screen.getByRole('menuitem', { name: /Sincronizar agora/ }))
+      expect(await screen.findByText('Não atualizado · sem ligação')).toBeInTheDocument()
+    })
+  })
+
+  describe('avisos das autorizações', () => {
+    it('sem autorizações a terminar nem terminadas, não há pílula nem cartões', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(60) })])),
+      )
+
+      montar()
+
+      await screen.findByRole('link', { name: /Conta X/ })
+      expect(screen.queryByRole('button', { name: /a verificar/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: 'Autorizações a verificar' })).not.toBeInTheDocument()
+    })
+
+    it('mostra a pílula com o número e um cartão por autorização, a terminada primeiro', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([
+            conta({ id: 'a', nome: 'Quase', vinculo: ligacao(3, 'cl1', { banco: 'Santander' }) }),
+            conta({ id: 'b', nome: 'Velha', vinculo: ligacao(-1, 'cl2', { banco: 'Revolut' }) }),
+            // Outra conta da MESMA autorização terminada: não conta outra vez.
+            conta({ id: 'c', nome: 'Velha 2', vinculo: ligacao(-1, 'cl3', { banco: 'Revolut', autorizacao: 'a-cl2' }) }),
+          ]),
+        ),
+      )
+
+      montar()
+
+      const pilula = await screen.findByRole('button', { name: '2 autorizações a verificar. Recolher' })
+      expect(pilula).toHaveAttribute('aria-expanded', 'true')
+      const cartoes = within(screen.getByRole('list', { name: 'Autorizações a verificar' })).getAllByRole('listitem')
+      expect(cartoes.map((c) => c.textContent)).toEqual([
+        expect.stringMatching(/Revolut.*Rui Oliveira.*Terminada.*Renovar/),
+        expect.stringMatching(/Santander.*A expirar.*Renovar/),
+      ])
+    })
+
+    it('a pílula recolhe os cartões, e a escolha fica guardada até os avisos mudarem', async () => {
+      let contas = [conta({ id: 'a', nome: 'Quase', vinculo: ligacao(3, 'cl1') })]
+      servidorMsw.use(http.get('/api/contas', () => HttpResponse.json(contas)))
+
+      const { unmount } = montar()
+      await userEvent.click(await screen.findByRole('button', { name: /1 autorização a verificar/ }))
+
+      expect(screen.getByRole('button', { name: '1 autorização a verificar. Mostrar' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+
+      // Ao voltar à página, continua recolhido (mesmo conjunto de avisos).
+      unmount()
+      montar()
+      expect(await screen.findByRole('button', { name: /Mostrar/ })).toBeInTheDocument()
+
+      // Entra outra autorização: os avisos voltam a abrir-se sozinhos.
+      unmount()
+      contas = [...contas, conta({ id: 'b', nome: 'Velha', vinculo: ligacao(-1, 'cl2') })]
+      montar()
+      expect(await screen.findByRole('button', { name: '2 autorizações a verificar. Recolher' })).toBeInTheDocument()
+    })
+
+    it('a partir de dez autorizações, a pílula mostra «9+»', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json(
+            Array.from({ length: 10 }, (_, i) => conta({ id: `c${i}`, nome: `Conta ${i}`, vinculo: ligacao(3, `cl${i}`) })),
+          ),
+        ),
+      )
+
+      montar()
+
+      const pilula = await screen.findByRole('button', { name: /10 autorizações a verificar/ })
+      expect(pilula).toHaveTextContent('9+')
+    })
+
+    it('recolhidos, os cartões ficam fora do teclado e dos leitores de ecrã (inert)', async () => {
+      servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([conta({ vinculo: ligacao(3, 'cl1') })])))
+
+      montar()
+      const pilula = await screen.findByRole('button', { name: /1 autorização a verificar/ })
+      const carrossel = document.getElementById(pilula.getAttribute('aria-controls') as string) as HTMLElement
+      expect(carrossel).not.toHaveAttribute('inert')
+
+      await userEvent.click(pilula)
+
+      expect(carrossel).toHaveAttribute('inert')
+    })
+
+    it('uma conta que o banco deixou de partilhar (autorização ativa) fica suspensa, sem aviso', async () => {
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([conta({ nome: 'Fechada', vinculo: ligacao(60, 'cl1', { indisponivel: true }) })]),
+        ),
+      )
+
+      montar()
+
+      expect(await screen.findByRole('link', { name: /Fechada.*suspensa/ })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /a verificar/ })).not.toBeInTheDocument()
+    })
+
+    it('«Renovar» pede confirmação e só depois segue para o banco, com a autorização a renovar', async () => {
+      const espiao = vi.spyOn(HTMLFormElement.prototype, 'submit').mockImplementation(() => {})
+      servidorMsw.use(
+        http.get('/api/contas', () =>
+          HttpResponse.json([conta({ vinculo: ligacao(-1, 'cl1', { banco: 'Revolut', autorizacao: 'a9' }) })]),
+        ),
+      )
+
+      montar()
+      await userEvent.click(await screen.findByRole('button', { name: /Revolut, Rui Oliveira, terminou a .*\. Renovar/ }))
+
+      expect(espiao).not.toHaveBeenCalled()
+      await userEvent.click(screen.getByRole('button', { name: 'Continuar para Revolut' }))
+
+      const formulario = espiao.mock.contexts[0] as HTMLFormElement
+      expect(new URL(formulario.action, window.location.origin).searchParams.get('renova')).toBe('a9')
+      espiao.mockRestore()
     })
   })
 

@@ -1,0 +1,14 @@
+/* Estilos de ApenasLeitor.tsx: texto invisível no ecrã e sem ocupar
+   espaço, mas lido pelos leitores de ecrã (a técnica "visually hidden":
+   1px, recortado, fora do fluxo). */
+.apenasLeitor {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

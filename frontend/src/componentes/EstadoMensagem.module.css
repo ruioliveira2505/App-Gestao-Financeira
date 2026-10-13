@@ -1,0 +1,89 @@
+/* Estilos de EstadoMensagem.tsx: um estado de página (sem contas, erro,
+   sem resultados…).
+   - Em telemóvel (o desenho): a mensagem ao centro do ECRÃ e os botões no
+     rodapé, a toda a largura (ver o @media no fim).
+   - Em ecrã largo: a mensagem ao centro da coluna, com espaço por cima, e
+     os botões logo por baixo (o desenho é de telemóvel; aqui, um rodapé
+     longe da mensagem ficava perdido no meio de um ecrã grande). */
+.estado {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--espaco-2);
+  padding: var(--espaco-8) var(--espaco-4) var(--espaco-5);
+  text-align: center;
+}
+
+/* Sempre um círculo de 56px no cinzento de superfície, com o ícone a
+   cinzento-escuro — nunca um quadrado arredondado, nunca outra cor. */
+.icone {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: var(--espaco-2);
+  border-radius: 50%;
+  background: var(--cor-superficie);
+  color: var(--cor-texto-2);
+}
+
+.titulo {
+  margin: 0;
+  font-size: var(--texto-md);
+  font-weight: 600;
+  color: var(--cor-texto);
+}
+
+.texto {
+  margin: 0;
+  max-width: 18rem;
+  /* Parte as linhas de modo a não deixar uma palavra sozinha na última. */
+  text-wrap: pretty;
+  font-size: var(--texto-ui);
+  line-height: 1.4;
+  color: var(--cor-texto-2);
+}
+
+/* Botões empilhados e da mesma largura (até 280px) — os da aplicação
+   (Botao/LinkBotao), com o mesmo raio em todos os estados. */
+.acoes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--espaco-2);
+  width: 100%;
+  max-width: 17.5rem;
+  margin-top: var(--espaco-3);
+}
+
+/* Telemóvel: a mensagem ao centro do ecrã e os botões no rodapé.
+   O invólucro passa a cobrir o ecrã inteiro (fixo, de canto a canto) e
+   centra a mensagem na vertical; os botões ficam presos ao fundo DELE, a
+   30px (mais a margem do iPhone, "safe-area"). É transparente aos toques
+   ("pointer-events: none"), para a barra de topo e o título continuarem a
+   responder; só a mensagem e os botões os recebem.
+   Sem "transform" no invólucro, de propósito: um "transform" tornava-o a
+   referência dos elementos fixos lá dentro, e o rodapé deixava de ficar
+   preso ao ecrã. */
+@media (max-width: 768px) {
+  .estado {
+    position: fixed;
+    inset: 0;
+    justify-content: center;
+    padding: 0 var(--espaco-8);
+    pointer-events: none;
+  }
+
+  .estado > * {
+    pointer-events: auto;
+  }
+
+  .acoes {
+    position: absolute;
+    left: var(--espaco-4);
+    right: var(--espaco-4);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 30px);
+    width: auto;
+    max-width: none;
+    margin: 0;
+  }
+}
