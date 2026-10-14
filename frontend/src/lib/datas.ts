@@ -34,6 +34,21 @@ export function formatarData(iso: string): string {
   return new Intl.DateTimeFormat('pt-PT', { dateStyle: 'medium' }).format(data)
 }
 
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+/**
+ * "2026-07-03" -> "3 jul 2026": o dia sem zero à frente, o mês abreviado
+ * (sempre em minúsculas e sem ponto) e o ano. É o formato curto da app
+ * (o mesmo do calendário), que não depende do idioma nem da versão do
+ * browser — ao contrário de formatarData (acima), cujo resultado ("01/01/2026"
+ * ou "1 de jan. de 2026") muda com o browser. Só trabalha com a data (os
+ * primeiros 10 caracteres), por isso também aceita um instante ISO.
+ */
+export function formatarDataCurta(iso: string): string {
+  const [ano, mes, dia] = iso.slice(0, 10).split('-').map(Number)
+  return `${dia} ${MESES_CURTOS[mes - 1]} ${ano}`
+}
+
 /** "2026-03" -> "Março 2026" (mês por extenso, capitalizado, + ano). Para
  *  o resumo do filtro "Mês específico". */
 export function rotuloMes(mesIso: string): string {

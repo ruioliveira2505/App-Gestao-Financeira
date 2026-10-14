@@ -5,7 +5,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { diaCurto, formatarIntervalo, hojeIso, mesmoDia, rotuloDiaRelativo, tempoDecorrido } from './datas'
+import { diaCurto, formatarDataCurta, formatarIntervalo, hojeIso, mesmoDia, rotuloDiaRelativo, tempoDecorrido } from './datas'
 
 /** ISO (AAAA-MM-DD) de hoje deslocado N dias, em data LOCAL — tal como
  *  rotuloDiaRelativo compara (não UTC, senão a poucas horas da meia-noite
@@ -129,5 +129,17 @@ describe('mesmoDia', () => {
     const agora = new Date(2026, 9, 13, 18, 0)
     expect(mesmoDia(new Date(2026, 9, 13, 0, 5).toISOString(), agora)).toBe(true)
     expect(mesmoDia(new Date(2026, 9, 12, 23, 55).toISOString(), agora)).toBe(false)
+  })
+})
+
+describe('formatarDataCurta', () => {
+  it('dia sem zero à frente, mês abreviado em minúsculas e ano', () => {
+    expect(formatarDataCurta('2026-07-03')).toBe('3 jul 2026')
+    expect(formatarDataCurta('2026-01-01')).toBe('1 jan 2026')
+    expect(formatarDataCurta('2025-12-31')).toBe('31 dez 2025')
+  })
+
+  it('aceita também um instante ISO (só conta a data)', () => {
+    expect(formatarDataCurta('2026-10-14T09:30:00Z')).toBe('14 out 2026')
   })
 })

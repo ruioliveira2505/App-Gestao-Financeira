@@ -65,7 +65,7 @@ import { LinkBotao } from '../componentes/LinkBotao'
 import { LinkVoltar } from '../componentes/LinkVoltar'
 import { PaginaDeslizante } from '../componentes/PaginaDeslizante'
 import { estadoDaAutorizacaoDoVinculo, type Conta, type Vinculo } from '../lib/contas'
-import { diaCurto, formatarData, tempoDecorrido } from '../lib/datas'
+import { diaCurto, formatarDataCurta, tempoDecorrido } from '../lib/datas'
 import { escutarAvisos } from '../lib/avisoPendente'
 import { ErroApi } from '../lib/http'
 import { etiquetaMoeda, formatarDinheiro } from '../lib/moedas'
@@ -175,7 +175,7 @@ function LinhaReconciliacao({ reconciliacao, moeda }: { reconciliacao: Reconcili
   return (
     <div className={estilos.reconciliacao}>
       <span className={estilos.reconciliacaoEsquerda}>
-        <span>{formatarData(reconciliacao.data)}</span>
+        <span>{formatarDataCurta(reconciliacao.data)}</span>
         {reconciliacao.origem === 'banco' && <span className={estilos.reconciliacaoNota}>Ao vincular</span>}
       </span>
       <span className={estilos.reconciliacaoDireita}>
@@ -424,7 +424,7 @@ export function ContaDetalhe() {
                     <div className={estilos.linha}>
                       <span className={estilos.textos}>
                         <span className={estilos.campo}>Data inicial</span>
-                        <span className={estilos.valor}>{formatarData(conta.data_ancora)}</span>
+                        <span className={estilos.valor}>{formatarDataCurta(conta.data_ancora)}</span>
                       </span>
                     </div>
                     <div className={estilos.linha}>
