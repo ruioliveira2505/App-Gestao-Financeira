@@ -92,6 +92,15 @@
  * a única forma de recuar um passo. O que já se tinha escrito no
  * formulário perde-se num refresh — é o normal num formulário por gravar.
  *
+ * SAIR DO FORMULÁRIO MANUAL COM DADOS ESCRITOS. Fechar a folha (o "‹",
+ * Escape, o toque no fundo, arrastá-la) perderia o que se escreveu, por
+ * isso, com algum campo já preenchido, a folha não sai: aparece primeiro
+ * uma confirmação («Descartar» ou «Continuar a editar»). O mesmo vale para
+ * arrastar para baixo um painel aberto por cima do formulário (a moeda, o
+ * banco): fecha-se esse painel e pergunta-se. Se o utilizador confirmar,
+ * faz-se o que ele queria — recuar à escolha, ou sair do fluxo todo. Um
+ * formulário por tocar sai sem perguntar.
+ *
  * Ao SAIR sem criar, recua no histórico (ou vai para "/contas" se a rota
  * foi aberta directamente); ao CRIAR, vai para o detalhe da conta (ou para
  * a lista, se foram várias), levando no "state" da navegação o aviso a
@@ -113,7 +122,8 @@ import {
   type DadosContasLigadas,
 } from '../componentes/ContaLigadaFormulario'
 import { ContextoFolha } from '../componentes/contextoFolha'
-import { Folha } from '../componentes/Folha'
+import { Confirmacao } from '../componentes/Confirmacao'
+import { Folha, type Intencao } from '../componentes/Folha'
 import {
   IconeBanco,
   IconeCheck,
@@ -269,6 +279,11 @@ export function ContaNova() {
   // --- Passo "manual" ---
   const [aSubmeter, setASubmeter] = useState(false)
   const [valido, setValido] = useState(false)
+  // Há dados escritos no formulário (ver SAIR DO FORMULÁRIO MANUAL COM
+  // DADOS ESCRITOS), e o que o utilizador queria quando tentou sair — a
+  // confirmação está aberta enquanto isto não for null.
+  const [alterado, setAlterado] = useState(false)
+  const [saidaPendente, setSaidaPendente] = useState<Intencao | null>(null)
 
   // --- Passo "banco": país, lista, banco escolhido (por confirmar nas
   // permissões) e se já se tocou em "Continuar para <banco>" ---
@@ -310,6 +325,8 @@ export function ContaNova() {
   const [espelhoAninhada, setEspelhoAninhada] = useState(0)
   const [aEspelharAninhada, setAEspelharAninhada] = useState(false)
   const [aAbandonarAninhada, setAAbandonarAninhada] = useState(false)
+  // Com dados escritos no formulário manual, a saída pede confirmação.
+  const proteger = passo.tipo === 'manual' && alterado && !aSubmeter
   const contextoParaSeletor = useMemo(
     () => ({
       // Em cascata (ver COORDENAÇÃO DE ARRASTO): o mesmo deslocamento vai
@@ -321,13 +338,17 @@ export function ContaNova() {
         contextoParaAninhada.espelharDeslocamento(y)
       },
       concluirArrasto: (descartar: boolean) => {
+        // Com dados por guardar, o gesto fecha só o painel de cima (a
+        // moeda, o banco) e pergunta; as folhas de baixo voltam ao sítio.
+        const sair = descartar && !proteger
+        if (descartar && proteger) setSaidaPendente('dispensar')
         setAEspelharAninhada(false)
-        if (descartar) setAAbandonarAninhada(true)
+        if (sair) setAAbandonarAninhada(true)
         else setEspelhoAninhada(0)
-        contextoParaAninhada.concluirArrasto(descartar)
+        contextoParaAninhada.concluirArrasto(sair)
       },
     }),
-    [contextoParaAninhada],
+    [contextoParaAninhada, proteger],
   )
 
   // Para onde navegar quando a folha acabar de sair, e o que levar no
@@ -1071,6 +1092,26 @@ export function ContaNova() {
         )}
       </Folha>
 
+      {saidaPendente !== null && (
+        <Confirmacao
+          titulo="Tens dados por guardar"
+          textoConfirmar="Descartar"
+          textoCancelar="Continuar a editar"
+          aoConfirmar={() => {
+            // Faz o que o utilizador queria quando tentou sair (a folha,
+            // já sem a proteção, desaparece).
+            const intencao = saidaPendente
+            setSaidaPendente(null)
+            setAlterado(false)
+            if (intencao === 'recuar') irPara({ tipo: 'escolha' })
+            else aoSair()
+          }}
+          aoCancelar={() => setSaidaPendente(null)}
+        >
+          Se saíres agora, perdes o que escreveste.
+        </Confirmacao>
+      )}
+
       {aninhadaAberta && (
         <ContextoFolha.Provider value={contextoParaAninhada}>
           <Folha
@@ -1079,6 +1120,8 @@ export function ContaNova() {
             varianteFechar="circulo"
             aoRecuar={() => (configNaAninhada ? setFase('contas') : irPara({ tipo: 'escolha' }))}
             aoDispensar={aoSair}
+            protegida={proteger}
+            aoTentarSair={setSaidaPendente}
             deslocamentoExterno={espelhoAninhada}
             aSeguirExterno={aEspelharAninhada}
             aExternamenteASair={aAbandonarAninhada}
@@ -1116,6 +1159,7 @@ export function ContaNova() {
                       botaoNoRodape={false}
                       aoMudarSubmissao={setASubmeter}
                       aoMudarValidez={setValido}
+                      aoMudarAlterado={setAlterado}
                     />
                   </div>
                 ) : passo.tipo === 'banco' ? (

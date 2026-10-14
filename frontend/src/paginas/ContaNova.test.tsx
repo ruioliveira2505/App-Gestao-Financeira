@@ -549,6 +549,146 @@ describe('Página Nova conta', () => {
   })
 })
 
+describe('Página Nova conta — limpar a procura de um seletor', () => {
+  it('o ✕ só aparece com texto escrito, limpa a procura e devolve o foco ao campo', async () => {
+    definirEcraMobile(true)
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
+    montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+    await userEvent.click(screen.getByText(/Euro/))
+    const painel = await screen.findByRole('dialog', { name: 'Moeda' })
+
+    // Sem nada escrito, não há ✕.
+    expect(within(painel).queryByRole('button', { name: 'Limpar pesquisa' })).not.toBeInTheDocument()
+
+    const campo = within(painel).getByRole('textbox', { name: 'Procurar moeda' })
+    await userEvent.type(campo, 'xyz')
+    expect(within(painel).getByText('Sem resultados para «xyz».')).toBeInTheDocument()
+
+    await userEvent.click(within(painel).getByRole('button', { name: 'Limpar pesquisa' }))
+
+    expect(campo).toHaveValue('')
+    expect(campo).toHaveFocus()
+    expect(within(painel).getByText(/Dólar americano/)).toBeInTheDocument()
+    expect(within(painel).queryByRole('button', { name: 'Limpar pesquisa' })).not.toBeInTheDocument()
+  })
+})
+
+describe('Página Nova conta — sair com dados escritos', () => {
+  async function abrirManualEEscrever() {
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
+    montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+    await userEvent.type(screen.getByLabelText('Nome'), 'Ordenado')
+  }
+
+  it('o nome vazio mostra «Conta de ativo» esbatido', async () => {
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
+    montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+
+    expect(screen.getByLabelText('Nome')).toHaveAttribute('placeholder', 'Conta de ativo')
+  })
+
+  it('«‹» com dados escritos pergunta antes; «Continuar a editar» mantém o formulário', async () => {
+    await abrirManualEEscrever()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    const pergunta = await screen.findByRole('dialog', { name: 'Tens dados por guardar' })
+    expect(within(pergunta).getByText('Se saíres agora, perdes o que escreveste.')).toBeInTheDocument()
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Continuar a editar' }))
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Tens dados por guardar' })).not.toBeInTheDocument(),
+    )
+    // O formulário e o que se escreveu continuam lá.
+    expect(screen.getByLabelText('Nome')).toHaveValue('Ordenado')
+  })
+
+  it('«Descartar» recua à escolha, e um formulário novo abre vazio e sem perguntar', async () => {
+    await abrirManualEEscrever()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    const pergunta = await screen.findByRole('dialog', { name: 'Tens dados por guardar' })
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Descartar' }))
+
+    await waitFor(() => expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'Adicionar manualmente' })).toBeInTheDocument()
+
+    // Volta ao formulário: vazio, e sair já não pergunta.
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+    expect(screen.getByLabelText('Nome')).toHaveValue('')
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+    await waitFor(() => expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument())
+    expect(screen.queryByRole('dialog', { name: 'Tens dados por guardar' })).not.toBeInTheDocument()
+  })
+
+  it('Escape com dados escritos também pergunta', async () => {
+    await abrirManualEEscrever()
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(await screen.findByRole('dialog', { name: 'Tens dados por guardar' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome')).toHaveValue('Ordenado')
+  })
+
+  it('arrastar a folha para baixo com dados escritos pergunta, e «Descartar» sai do fluxo', async () => {
+    definirEcraMobile(true)
+    await abrirManualEEscrever()
+    const formulario = screen.getAllByRole('dialog')[1]
+    const cabecalho = formulario.firstElementChild?.firstElementChild as HTMLElement
+
+    fireEvent.pointerDown(cabecalho, { clientY: 80, pointerId: 1 })
+    fireEvent.pointerMove(cabecalho, { clientY: 330, pointerId: 1 })
+    fireEvent.pointerUp(cabecalho, { clientY: 330, pointerId: 1 })
+
+    // Não saiu: pergunta, e a folha voltou ao sítio.
+    const pergunta = await screen.findByRole('dialog', { name: 'Tens dados por guardar' })
+    expect(screen.queryByText('lista de contas')).not.toBeInTheDocument()
+    expect(formulario.style.transform).toBe('translateY(0px)')
+
+    await userEvent.click(within(pergunta).getByRole('button', { name: 'Descartar' }))
+    expect(await screen.findByText('lista de contas')).toBeInTheDocument()
+  })
+
+  it('arrastar o painel da moeda para baixo com dados escritos fecha só esse painel e pergunta', async () => {
+    definirEcraMobile(true)
+    await abrirManualEEscrever()
+    await userEvent.click(screen.getByText(/Euro/))
+    const painel = await screen.findByRole('dialog', { name: 'Moeda' })
+    const cabecalho = painel.firstElementChild?.firstElementChild as HTMLElement
+
+    fireEvent.pointerDown(cabecalho, { clientX: 40, clientY: 80, pointerId: 1 })
+    fireEvent.pointerMove(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })
+    fireEvent.pointerUp(cabecalho, { clientX: 44, clientY: 330, pointerId: 1 })
+
+    expect(await screen.findByRole('dialog', { name: 'Tens dados por guardar' })).toBeInTheDocument()
+    expect(screen.queryByText('lista de contas')).not.toBeInTheDocument()
+    // As folhas de baixo voltaram ao sítio.
+    const [base, formulario] = screen.getAllByRole('dialog')
+    expect(base.style.transform).toBe('translateY(0px)')
+    expect(formulario.style.transform).toBe('translateY(0px)')
+  })
+
+  it('só mudar a moeda também conta como dados escritos', async () => {
+    definirEcraMobile(true)
+    servidorMsw.use(http.get('/api/contas', () => HttpResponse.json([])))
+    montar()
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar manualmente' }))
+    await userEvent.click(screen.getByText(/Euro/))
+    const painel = await screen.findByRole('dialog', { name: 'Moeda' })
+    await userEvent.click(within(painel).getByText(/Dólar americano/))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Moeda' })).not.toBeInTheDocument(),
+    )
+
+    await userEvent.click(screen.getByRole('button', { name: 'Voltar' }))
+
+    expect(await screen.findByRole('dialog', { name: 'Tens dados por guardar' })).toBeInTheDocument()
+  })
+})
+
 describe('Página Nova conta — Open Banking', () => {
   it('o primeiro ecrã pergunta manual ou banco, sem mostrar já o formulário', () => {
     montar()

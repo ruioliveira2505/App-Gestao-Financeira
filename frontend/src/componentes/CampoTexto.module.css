@@ -129,6 +129,13 @@
   color: var(--cor-texto);
 }
 
+/* CORES DOS VALORES nas linhas "lado" (uma regra só, igual em todos os
+   campos da ficha — ver também CampoDinheiro, CampoSelecao e SeletorData):
+   o valor, escrito ou escolhido, em cinzento escuro (--cor-valor) — também «Sem banco» e
+   «Sem tipo», que são uma escolha válida e não uma dica; só o que serve de
+   dica do que escrever (o exemplo «Conta de ativo», «0,00 €») fica em cinzento
+   claro; o nome do campo, à esquerda, a preto. */
 .lado input {
   text-align: right;
+  color: var(--cor-valor);
 }

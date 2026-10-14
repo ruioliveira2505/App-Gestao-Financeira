@@ -149,6 +149,11 @@
   --cor-texto: #1a1a1a;
   --cor-texto-2: #5c5c66; /* secundário — contraste suficiente para leitura */
   --cor-texto-3: #8a8a94; /* ténue — não usar em texto a ler */
+  /* O VALOR de uma linha de ficha (o que está escrito ou escolhido, à direita
+     do nome do campo): um cinzento mais escuro que o secundário, para se
+     destacar da dica esbatida (--cor-texto-3) e continuar a distinguir-se do
+     nome do campo, a preto. */
+  --cor-valor: #3d3d45;
 
   /* Bordas, em dois pesos: a normal delimita zonas; a leve separa linhas
      dentro da mesma zona. */
@@ -236,6 +241,7 @@
     --cor-texto: #ededed;
     --cor-texto-2: #a0a0a0;
     --cor-texto-3: #7a7a7a;
+    --cor-valor: #c4c4c4;
 
     --cor-borda: #333333;
     --cor-borda-leve: #2a2a2a;

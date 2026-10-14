@@ -40,6 +40,15 @@
  * aceitam um nó React ou uma função "(fechar) => nó"; "fechar" faz um
  * recuo animado (ex.: escolher uma opção e voltar).
  *
+ * SAÍDA PROTEGIDA ("protegida" + "aoTentarSair"). Um formulário com dados
+ * escritos não deve perdê-los por um toque ou um arrasto sem querer. Com
+ * "protegida", NENHUM gesto de saída (o "‹"/"X", Escape, o toque no fundo,
+ * os dois arrastos) tira a folha: ela fica (ou volta ao sítio, se estava a
+ * ser arrastada) e avisa quem a montou, por "aoTentarSair(intencao)", para
+ * este perguntar ao utilizador (ex.: «Descartar»). A intenção diz o que
+ * ele queria: "recuar" um nível ou "dispensar" o fluxo todo. Se confirmar,
+ * quem montou a folha faz a ação por si (já sem a proteção).
+ *
  * "aria-modal" + armadilha de foco (o Tab não sai da folha) + o botão de
  * fechar recebe o foco ao abrir. O "onKeyDown" faz "stopPropagation" do
  * Escape/Tab: uma folha por cima de outra trata ela própria dessas teclas.
@@ -74,7 +83,7 @@ const DURACAO_SAIDA_MS = DURACAO_DESLOCAR_MS
 const CONSULTA_DESKTOP = '(min-width: 769px)'
 
 type Direcao = 'baixo' | 'direita'
-type Intencao = 'recuar' | 'dispensar'
+export type Intencao = 'recuar' | 'dispensar'
 type Eixo = 'x' | 'y'
 
 // "children" e "acao" podem ser um nó fixo ou uma função que recebe o
@@ -97,6 +106,10 @@ type Props = {
   // Recuar um nível ("‹" / Escape / fundo / arrasto para o lado). Corre
   // DEPOIS da animação. Se ausente, estes gestos caem no "aoDispensar".
   aoRecuar?: () => void
+  // Saída protegida (ver SAÍDA PROTEGIDA, no topo): nenhum gesto de saída
+  // tira a folha; avisa por "aoTentarSair".
+  protegida?: boolean
+  aoTentarSair?: (intencao: Intencao) => void
   // Ícone do botão de fechar (por omissão, um "‹").
   iconeFechar?: ReactNode
   // Rótulo acessível do botão de fechar (por omissão, "Voltar").
@@ -123,6 +136,8 @@ export function Folha({
   direcao = 'baixo',
   aoDispensar,
   aoRecuar,
+  protegida = false,
+  aoTentarSair,
   iconeFechar,
   rotuloFechar = 'Voltar',
   varianteFechar = 'simples',
@@ -190,13 +205,21 @@ export function Folha({
   const sair = useCallback(
     (intencao: Intencao) => {
       if (aSair) return
+      // Saída protegida: a folha fica onde está (se vinha a ser arrastada,
+      // volta ao sítio) e quem a montou pergunta ao utilizador.
+      if (protegida) {
+        setAArrastar(false)
+        setDeslocamento(0)
+        aoTentarSair?.(intencao)
+        return
+      }
       const recuaPeloLado = intencao === 'recuar' && aoRecuar !== undefined
       setIntencaoSaida(recuaPeloLado ? 'recuar' : 'dispensar')
       setEixo(recuaPeloLado ? 'x' : 'y')
       setAArrastar(false)
       setASair(true)
     },
-    [aSair, aoRecuar],
+    [aSair, aoRecuar, protegida, aoTentarSair],
   )
 
   const fechar = useCallback(() => sair('recuar'), [sair])
@@ -272,7 +295,8 @@ export function Folha({
     const passouLimiar = bruto > LIMIAR_DESCARTE
     if (eixoArrasto === 'y') {
       // Para baixo: abandona o fluxo. A folha de fundo sai / repõe junto.
-      contexto?.concluirArrasto(passouLimiar)
+      // Protegida, a folha de fundo também não sai (a pergunta vem de "sair").
+      contexto?.concluirArrasto(passouLimiar && !protegida)
       if (passouLimiar) sair('dispensar')
       else setDeslocamento(0)
     } else if (passouLimiar) {

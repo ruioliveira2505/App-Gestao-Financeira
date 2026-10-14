@@ -26,8 +26,8 @@
  * oferece "Adicionar «…»". MOEDA é um seletor de conjunto fechado (o
  * símbolo e a futura conversão dependem do código).
  *
- * DATA DE INÍCIO: o calendário SeletorData (sobe de baixo como o teclado,
- * em telemóvel), sem dias futuros — o backend não os aceita.
+ * DATA DE INÍCIO: o calendário SeletorData (um cartão branco que flutua em
+ * baixo, em telemóvel), sem dias futuros — o backend não os aceita.
  *
  * MOEDA: numa conta nova, começa na moeda principal do utilizador (a das
  * Preferências), não sempre em Euro — é a que a maioria das contas dele
@@ -46,9 +46,9 @@
  * branco com contorno (sem sombra), cada campo numa linha com o nome à
  * esquerda e o valor à direita (disposicao="lado", como nas Definições do
  * iOS e como a linha do interruptor), e um traço fino recuado a separar as
- * linhas. O Nome, vazio, mostra um exemplo esbatido ("Ex.: Conta
- * ordenado"), tal como o saldo mostra "0,00 €" — diz o que escrever sem
- * repetir o rótulo. Os rótulos da âncora são curtos ("Data inicial",
+ * linhas. O Nome, vazio, mostra «Conta de ativo» esbatido, tal como o saldo
+ * mostra "0,00 €" — diz o que escrever sem repetir o rótulo nem parecer
+ * um valor já escolhido. Os rótulos da âncora são curtos ("Data inicial",
  * "Saldo inicial") para caberem ao lado do valor; o que significam
  * explica-o a nota por baixo da ficha.
  *
@@ -61,6 +61,12 @@
  * fundo (onde estava antes) ficava escondida fora do ecrã num telemóvel,
  * e o toque no "✓" parecia não ter feito nada. No topo fica também junto
  * do Nome — o campo do erro mais provável ("Já tens uma conta chamada…").
+ *
+ * DADOS POR GUARDAR: "aoMudarAlterado" diz se algum campo já difere do
+ * valor inicial (o de uma conta a editar; numa conta nova, vazio, a moeda
+ * principal e o dia de hoje). Quem abre este formulário numa folha usa-o
+ * para perguntar antes de a fechar («Descartar»), para um toque ou um
+ * arrasto sem querer não apagar o que se escreveu.
  *
  * BOTÃO DE SUBMETER: por omissão, no rodapé do formulário ("Criar conta" /
  * "Guardar alterações"). Quem preferir um botão FORA (ex.: o "✓" no
@@ -112,6 +118,9 @@ type Props = {
   // Avisa se os campos OBRIGATÓRIOS estão preenchidos — para o botão
   // externo ("✓") só ficar ativo quando dá para guardar.
   aoMudarValidez?: (valido: boolean) => void
+  // Avisa se há dados por guardar (algum campo difere do valor inicial) —
+  // ver DADOS POR GUARDAR, no topo.
+  aoMudarAlterado?: (alterado: boolean) => void
 }
 
 const MENSAGEM_ERRO_GENERICA = 'Não foi possível guardar. Tenta novamente.'
@@ -123,6 +132,7 @@ export function ContaFormulario({
   idFormulario,
   aoMudarSubmissao,
   aoMudarValidez,
+  aoMudarAlterado,
 }: Props) {
   const eEdicao = inicial !== undefined
 
@@ -199,6 +209,22 @@ export function ContaFormulario({
     aoMudarValidez?.(valido)
   }, [valido, aoMudarValidez])
 
+  // Há dados por guardar quando algum campo difere do valor com que o
+  // formulário abriu (ver DADOS POR GUARDAR, no topo).
+  const moedaInicial = inicial?.moeda ?? utilizador?.moeda_principal ?? 'EUR'
+  const alterado =
+    nome !== (inicial?.nome ?? '') ||
+    banco !== (inicial?.banco ?? '') ||
+    tipo !== (inicial?.tipo ?? '') ||
+    moeda !== moedaInicial ||
+    dataAncora !== (inicial?.data_ancora ?? hoje) ||
+    saldoAncora !== (inicial?.saldo_ancora?.replace('-', '') ?? '') ||
+    negativo !== (inicial ? Number(inicial.saldo_ancora) < 0 : false)
+
+  useEffect(() => {
+    aoMudarAlterado?.(alterado)
+  }, [alterado, aoMudarAlterado])
+
   async function submeter() {
     setErro(null)
 
@@ -262,7 +288,7 @@ export function ContaFormulario({
           // mesma regra do backend, para nunca se escrever um nome que ele
           // depois recusa).
           maxCaracteres={120}
-          placeholder="Ex.: Conta ordenado"
+          placeholder="Conta de ativo"
         />
         <CampoSelecao
           disposicao="lado"

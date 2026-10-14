@@ -90,14 +90,12 @@
 }
 
 /* Divulgação em linha (desktop): a lista aparece por baixo do campo,
-   dentro da ficha, empurrando o resto. Um traço fino separa-a do valor;
-   altura limitada com scroll interno para listas longas. */
+   dentro da ficha, empurrando o resto. Um traço fino separa-a do valor, e
+   a procura fica a 12px dele (antes colava-se ao traço). Quem rola é só a
+   zona das opções, dentro do ListaDeOpcoes (cinco linhas à vista). */
 .painelLinha {
-  margin-top: var(--espaco-2);
+  padding: var(--espaco-3) 0 0;
   border-top: 1px solid var(--cor-borda-leve);
-  max-height: 15rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 /* --- disposicao="lado": rótulo à esquerda, valor e ">" à direita ---
@@ -125,7 +123,7 @@
 }
 
 .lado .gatilhoValor {
-  color: var(--cor-texto-2);
+  color: var(--cor-valor);
 }
 
 .lado .gatilhoSeta {

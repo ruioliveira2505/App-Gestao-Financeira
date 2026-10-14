@@ -82,7 +82,7 @@
 }
 
 .lado .valor {
-  color: var(--cor-texto-2);
+  color: var(--cor-valor);
 }
 
 /* --- O calendário (igual nas duas apresentações) --- */
@@ -284,7 +284,9 @@
 /* --- Ecrã largo: por baixo do campo, dentro da ficha --- */
 
 .emLinha {
-  padding: 0 var(--espaco-2) var(--espaco-3);
+  padding: var(--espaco-2) var(--espaco-2) var(--espaco-3);
+  /* O mesmo traço fino que separa as listas dos outros campos. */
+  border-top: 1px solid var(--cor-borda-leve);
 }
 
 /* --- Telemóvel: um cartão a flutuar em baixo, ao estilo do iOS --- */
@@ -315,8 +317,11 @@
   }
 }
 
-/* O cartão exterior, cinzento claro, com margem dos lados e em baixo — não
-   toca nas bordas do ecrã, por isso tem os quatro cantos arredondados. */
+/* O cartão, BRANCO como o resto da app (as folhas, as fichas): um só, sem
+   cartão por dentro. Flutua, por isso leva sombra, e destaca-se do
+   formulário pelo véu escuro e pela sombra, não por uma cor diferente.
+   Tem margem dos lados e em baixo — não toca nas bordas do ecrã, por isso
+   tem os quatro cantos arredondados. */
 .painel {
   position: fixed;
   left: var(--espaco-2);
@@ -326,7 +331,7 @@
   box-sizing: border-box;
   padding: var(--espaco-3);
   border-radius: 2rem;
-  background: var(--cor-superficie);
+  background: var(--cor-fundo);
   box-shadow: var(--sombra-menu);
   animation: painel-subir var(--movimento-deslocar) var(--curva-deslocar);
 }
@@ -399,9 +404,7 @@
   background: var(--cor-acento-hover);
 }
 
-/* O cartão interior, branco, onde vive o calendário. */
+/* A área do calendário, por baixo da barra (a mesma superfície branca). */
 .cartao {
-  padding: var(--espaco-2) var(--espaco-2) var(--espaco-3);
-  border-radius: 1.5rem;
-  background: var(--cor-fundo);
+  padding: 0 0 var(--espaco-1);
 }

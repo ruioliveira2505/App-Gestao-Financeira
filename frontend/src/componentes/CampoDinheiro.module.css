@@ -149,6 +149,15 @@
   text-align: right;
 }
 
+/* O valor em cinzento escuro, como nos outros campos de uma ficha (ver
+   CampoTexto.module.css), exceto o saldo negativo, que fica a vermelho:
+   por isso o ":not(.valorNegativo)" — sem ele, esta regra, que vem depois,
+   ganhava ao vermelho. */
+.lado .valorLinha:not(.valorNegativo),
+.lado .valorLinha:not(.valorNegativo) .input {
+  color: var(--cor-valor);
+}
+
 /* Com símbolo: o valor (já com a largura do texto) e o "€" encostados à
    direita. */
 .lado .valorLinha {

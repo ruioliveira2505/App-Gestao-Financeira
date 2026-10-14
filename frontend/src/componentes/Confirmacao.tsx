@@ -40,6 +40,9 @@ type Props = {
   titulo: string
   children: ReactNode
   textoConfirmar?: string
+  // O texto do botão que não faz nada e fecha («Cancelar», por omissão;
+  // «Continuar a editar», ao sair de um formulário com dados por guardar).
+  textoCancelar?: string
   // Verdadeiro enquanto a ação confirmada está em curso — desativa os
   // botões e muda o texto.
   aConfirmar?: boolean
@@ -55,6 +58,7 @@ export function Confirmacao({
   titulo,
   children,
   textoConfirmar = 'Confirmar',
+  textoCancelar = 'Cancelar',
   aConfirmar = false,
   neutra = false,
   aoConfirmar,
@@ -179,7 +183,7 @@ export function Confirmacao({
           onClick={cancelar}
           disabled={aConfirmar}
         >
-          Cancelar
+          {textoCancelar}
         </button>
       </div>
     </div>,

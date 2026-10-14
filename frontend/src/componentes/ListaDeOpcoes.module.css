@@ -86,17 +86,9 @@
   display: flex;
 }
 
-/* "esbatido" (lista em linha do desktop): as opções por onde se escolhe
-   ficam em tinta secundária; a que está escolhida (com o "✓") em tinta
-   plena, para se destacar. A acção "Adicionar…" mantém o tom de acento. */
-.esbatido .linha {
-  color: var(--cor-texto-3);
-}
-
-.esbatido .linhaSelecionada {
-  color: var(--cor-texto);
-}
-
+/* "esbatido" (lista em linha do desktop): as opções ficam TODAS em tinta
+   plena, como no telemóvel — o escolhido distingue-se pelo "✓" e pelo peso.
+   (Antes ficavam esbatidas, e só a escolhida a preto.) */
 .esbatido .linhaAcao {
   color: var(--cor-acento);
 }
@@ -203,6 +195,22 @@
   outline: none;
 }
 
+/* O "✕" que limpa a procura — o mesmo do CampoPesquisa (páginas): só o
+   ícone, em tinta ténue, dentro do padding da pílula. */
+.procuraLimpar {
+  display: flex;
+  flex-shrink: 0;
+  padding: var(--espaco-1);
+  border: none;
+  background: none;
+  border-radius: 999px;
+  color: var(--cor-texto-3);
+}
+
+.procuraLimpar:active {
+  color: var(--cor-texto-2);
+}
+
 /* Um cartão de opções: o mesmo das fichas dos formulários — fundo
    branco, contorno fino, cantos arredondados. */
 .cartao {
@@ -301,20 +309,80 @@
   color: var(--cor-texto-3);
 }
 
-/* Desktop (lista em linha, já dentro de uma ficha): sem cartões. */
+/* A zona das opções. No telemóvel não é uma caixa (os cartões ficam como
+   filhos diretos da coluna, com o seu espaço entre eles); no desktop
+   ("esbatido") é a que rola — ver mais abaixo. */
+.rolagem {
+  display: contents;
+}
+
+/* Desktop (lista em linha, já dentro de uma ficha): um menu, sem cartões.
+   A procura (40px) fica a 8px das opções, que são linhas de 44px; os
+   traços entre linhas, inclusive entre «Sem banco» e as opções, têm a
+   largura do texto. Só a zona das opções rola, com cinco linhas à vista
+   (224px = 14rem). O "margin/padding" de 8px à volta dá lugar ao fundo
+   que aparece ao passar o rato, sem o cortar. */
+.comProcura.esbatido {
+  gap: 0;
+}
+
+.esbatido .procura {
+  min-height: 2.5rem;
+  margin-bottom: var(--espaco-2);
+}
+
+.esbatido .procuraInput {
+  font-size: var(--texto-ui);
+}
+
+.esbatido .rolagem {
+  display: block;
+  max-height: 14rem;
+  margin: 0 calc(-1 * var(--espaco-2));
+  padding: 0 var(--espaco-2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .esbatido .cartao {
   border: none;
   border-radius: 0;
   background: none;
+  overflow: visible;
 }
 
 .esbatido .cartao .linha {
-  padding-left: 0;
-  padding-right: 0;
+  min-height: 2.75rem;
+  margin: 0 calc(-1 * var(--espaco-2));
+  width: calc(100% + 2 * var(--espaco-2));
+  padding: 0 var(--espaco-2);
+  border-radius: var(--raio-sm);
+  font-size: var(--texto-base);
+}
+
+@media (hover: hover) {
+  .esbatido .cartao .linha:hover {
+    background: var(--cor-superficie);
+  }
 }
 
 .esbatido .cartao li + li::before {
   left: 0;
+  right: 0;
+}
+
+/* O traço entre o cartão de «Sem banco» e o das opções. */
+.esbatido .cartao + .cartao {
+  position: relative;
+}
+
+.esbatido .cartao + .cartao::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--cor-borda-leve);
 }
 
 /* A ajuda da primeira vez (nada usado ainda) e o "Sem resultados". */

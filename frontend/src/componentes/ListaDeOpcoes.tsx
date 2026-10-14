@@ -56,12 +56,18 @@
  * letra de cada banco) ficam num cartão por grupo, com o nome do grupo
  * por cima. Na lista em linha do
  * desktop ("esbatido"), que já vive dentro de uma ficha, os cartões
- * perdem o contorno — um cartão dentro de outro seria ruído.
+ * perdem o contorno — um cartão dentro de outro seria ruído — e a lista
+ * ganha o aspeto de um menu: a procura com respiro à volta, as opções em
+ * linhas de 44px, TODAS em tinta plena (o escolhido leva o "✓", como no
+ * telemóvel), com os traços finos de sempre e um fundo claro ao passar o
+ * rato. O campo de procura leva, quando há texto, um "✕" que o limpa e lhe
+ * devolve o foco (o mesmo do CampoPesquisa das páginas). Só a zona das opções rola (cinco linhas à vista), para a procura
+ * não rolar com elas.
  */
 
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
-import { IconeCheck, IconeLupa, IconeMais } from './icones'
+import { IconeCheck, IconeFechar, IconeLupa, IconeMais } from './icones'
 import estilos from './ListaDeOpcoes.module.css'
 
 export type OpcaoLista = {
@@ -89,8 +95,9 @@ type Props = {
   // Última linha "Adicionar…" com campo de escrita. Recebe o texto cortado.
   aoAdicionar?: (valor: string) => void
   rotuloAdicionar?: string
-  // "esbatido" (lista em linha do desktop): as opções ficam em tinta
-  // secundária e só a escolhida em tinta plena.
+  // "esbatido" (lista em linha do desktop, dentro de uma ficha): sem
+  // cartões, linhas de 44px, só a zona das opções rola (ver a nota no topo
+  // do ficheiro). O nome é histórico: já não esbate nenhuma opção.
   esbatido?: boolean
   // Liga o modo PROCURAR OU ADICIONAR (ver a nota no topo do ficheiro): o
   // texto do campo de escrita no topo (também o seu nome acessível).
@@ -222,6 +229,22 @@ export function ListaDeOpcoes({
             onChange={(evento) => setPesquisa(evento.target.value)}
             onKeyDown={aoTeclarNaPesquisa}
           />
+          {/* Limpar de uma vez, só com texto escrito; devolve o foco ao
+              campo, porque quem limpa quer, quase sempre, escrever outra
+              coisa a seguir. */}
+          {pesquisa !== '' && (
+            <button
+              type="button"
+              className={estilos.procuraLimpar}
+              aria-label="Limpar pesquisa"
+              onClick={() => {
+                setPesquisa('')
+                pesquisaRef.current?.focus()
+              }}
+            >
+              <IconeFechar tamanho={16} />
+            </button>
+          )}
         </label>
 
         {depoisDaProcura}
@@ -235,35 +258,42 @@ export function ListaDeOpcoes({
           <p className={estilos.textoVazio}>{textoVazio}</p>
         )}
 
-        {nenhuma && <ul className={estilos.cartao}>{linhaComProcura(nenhuma)}</ul>}
+        {/* A zona das opções. No telemóvel não tem efeito (os cartões são
+            filhos diretos da coluna); no desktop ("esbatido") é ela que
+            rola, com a procura parada por cima. */}
+        <div className={estilos.rolagem}>
+          {nenhuma && <ul className={estilos.cartao}>{linhaComProcura(nenhuma)}</ul>}
 
-        {(podeAdicionar || (comValor.length > 0 && !comGrupos)) && (
-          <ul className={estilos.cartao}>
-            {podeAdicionar && (
-              <li>
-                <button
-                  type="button"
-                  className={`${estilos.linha} ${estilos.linhaAdicionar}`}
-                  onClick={() => aoAdicionar?.(pesquisa.trim())}
-                >
-                  <span className={estilos.adicionarMais} aria-hidden="true">
-                    <IconeMais tamanho={14} traco={2.6} />
-                  </span>
-                  <span className={estilos.rotulo}>Adicionar «{pesquisa.trim()}»</span>
-                </button>
-              </li>
-            )}
-            {!comGrupos && comValor.map(linhaComProcura)}
-          </ul>
-        )}
+          {(podeAdicionar || (comValor.length > 0 && !comGrupos)) && (
+            <ul className={estilos.cartao}>
+              {podeAdicionar && (
+                <li>
+                  <button
+                    type="button"
+                    className={`${estilos.linha} ${estilos.linhaAdicionar}`}
+                    onClick={() => aoAdicionar?.(pesquisa.trim())}
+                  >
+                    <span className={estilos.adicionarMais} aria-hidden="true">
+                      <IconeMais tamanho={14} traco={2.6} />
+                    </span>
+                    <span className={estilos.rotulo}>Adicionar «{pesquisa.trim()}»</span>
+                  </button>
+                </li>
+              )}
+              {!comGrupos && comValor.map(linhaComProcura)}
+            </ul>
+          )}
 
-        {comGrupos &&
-          grupos.map((g) => (
-            <div key={g.grupo ?? ''} className={estilos.grupoComProcura}>
-              {g.grupo !== undefined && <span className={estilos.cabecalhoProcura}>{g.grupo}</span>}
-              <ul className={estilos.cartao}>{g.opcoes.map(linhaComProcura)}</ul>
-            </div>
-          ))}
+          {comGrupos &&
+            grupos.map((g) => (
+              <div key={g.grupo ?? ''} className={estilos.grupoComProcura}>
+                {g.grupo !== undefined && (
+                  <span className={estilos.cabecalhoProcura}>{g.grupo}</span>
+                )}
+                <ul className={estilos.cartao}>{g.opcoes.map(linhaComProcura)}</ul>
+              </div>
+            ))}
+        </div>
       </div>
     )
   }
