@@ -12,9 +12,16 @@
  * Ao montar, faz um pedido a GET /auth/me para descobrir se o browser já
  * tem um cookie de sessão válido de uma visita anterior — é isso que
  * mantém o utilizador com sessão iniciada depois de recarregar a página.
+ *
+ * SESSÃO TERMINADA A MEIO. A sessão dura 30 minutos desde o último pedido.
+ * Se terminar enquanto a pessoa está na app, o primeiro pedido seguinte
+ * recebe 401 e o cliente HTTP (src/lib/http.ts) avisa este componente, que
+ * passa logo a 'anonimo' com o motivo 'expirou': a RotaProtegida leva ao
+ * login, que explica o que aconteceu. Sem isto, a app ficava a mostrar
+ * erros de «ligação» sem dizer que o problema era a sessão.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 // Funções do cliente HTTP. São importadas com outro nome (apiLogin, etc.)
 // para não colidirem com as funções locais deste componente, que têm o
@@ -27,13 +34,37 @@ import {
   registar as apiRegistar,
   type Utilizador,
 } from '../lib/api'
-import { AuthContexto, type EstadoAutenticacao } from './contexto'
+import { definirAoSessaoTerminar } from '../lib/http'
+import { AuthContexto, type EstadoAutenticacao, type MotivoSemSessao } from './contexto'
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Dois pedaços de estado, mantidos em sincronia pelas funções abaixo:
   // quem é o utilizador (ou null), e em que fase está a autenticação.
   const [utilizador, setUtilizador] = useState<Utilizador | null>(null)
   const [estado, setEstado] = useState<EstadoAutenticacao>('a-carregar')
+  const [motivoSemSessao, setMotivoSemSessao] = useState<MotivoSemSessao>('inicio')
+
+  // O estado atual, numa referência, para o aviso de «sessão terminada»
+  // (registado uma só vez, mais abaixo) o ler sempre atualizado e para vários
+  // pedidos a falhar ao mesmo tempo só provocarem UMA saída.
+  const estadoRef = useRef<EstadoAutenticacao>('a-carregar')
+  useEffect(() => {
+    estadoRef.current = estado
+  }, [estado])
+
+  // Regista-se no cliente HTTP para saber quando um pedido devolve 401.
+  // Só conta se havia sessão (estado 'autenticado'): ao arrancar, o 401 de
+  // GET /auth/me quer só dizer «ainda não entraste».
+  useEffect(() => {
+    definirAoSessaoTerminar(() => {
+      if (estadoRef.current !== 'autenticado') return
+      estadoRef.current = 'anonimo'
+      setUtilizador(null)
+      setMotivoSemSessao('expirou')
+      setEstado('anonimo')
+    })
+    return () => definirAoSessaoTerminar(null)
+  }, [])
 
   // useEffect com lista de dependências vazia ([]) corre uma única vez,
   // depois da primeira renderização. É aqui que se verifica, ao arrancar,
@@ -73,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const u = await apiLogin(email, password)
     setUtilizador(u)
+    setMotivoSemSessao('inicio')
     setEstado('autenticado')
   }
 
@@ -94,6 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await apiLogout()
     } finally {
       setUtilizador(null)
+      setMotivoSemSessao('logout')
       setEstado('anonimo')
     }
   }
@@ -110,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContexto.Provider
-      value={{ estado, utilizador, registar, login, logout, atualizarPreferencias }}
+      value={{ estado, utilizador, motivoSemSessao, registar, login, logout, atualizarPreferencias }}
     >
       {children}
     </AuthContexto.Provider>

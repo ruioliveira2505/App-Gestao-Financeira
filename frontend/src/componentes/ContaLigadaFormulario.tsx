@@ -209,7 +209,7 @@ export function ContaLigadaFormulario({ contas, idFormulario, aoConfirmar, aoMud
               rotuloVazio="Sem tipo"
               permiteNovo
               rotuloNovo="Adicionar tipo"
-              textoVazio="Escreve um tipo no campo acima (ex.: Conta à ordem) para o adicionar."
+              textoVazio="Escreve o nome do tipo para o adicionar"
             />
             <CampoFixo etiqueta="Moeda" valor={etiquetaMoeda(conta.moeda)} />
             {conta.iban && <CampoFixo etiqueta="IBAN" valor={ibanAbreviado(conta.iban)} />}

@@ -299,7 +299,7 @@ export function ContaFormulario({
           rotuloVazio="Sem banco"
           permiteNovo
           rotuloNovo="Adicionar banco"
-          textoVazio="Escreve o nome do banco no campo acima para o adicionar."
+          textoVazio="Escreve o nome do banco para o adicionar"
         />
         <CampoSelecao
           disposicao="lado"
@@ -310,7 +310,7 @@ export function ContaFormulario({
           rotuloVazio="Sem tipo"
           permiteNovo
           rotuloNovo="Adicionar tipo"
-          textoVazio="Escreve um tipo no campo acima (ex.: Conta à ordem) para o adicionar."
+          textoVazio="Escreve o nome do tipo para o adicionar"
         />
         <CampoSelecao
           disposicao="lado"

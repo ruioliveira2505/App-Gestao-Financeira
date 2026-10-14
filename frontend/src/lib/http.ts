@@ -16,6 +16,14 @@
  *      sempre o erro da mesma maneira, seja qual for o endpoint.
  *
  *   3. Se o endereço da API mudar, muda-se aqui e em mais lado nenhum.
+ *
+ *   4. A SESSÃO TERMINADA é detetada aqui, num só sítio: um 401 numa rota
+ *      que não é de entrada (login, registo, logout) quer dizer que a
+ *      sessão deixou de ser válida (30 minutos sem pedidos, ou o cookie
+ *      apagado). Sem isto, cada página tratava o 401 como um erro
+ *      qualquer e mostrava «sem ligação», e a pessoa ficava na app sem
+ *      saber o que se passava. Quem quiser reagir (o AuthProvider)
+ *      regista-se com definirAoSessaoTerminar.
  */
 
 // Prefixo comum a todos os pedidos. Em desenvolvimento, o servidor do
@@ -29,6 +37,22 @@ const PREFIXO_API = '/api'
 // (por exemplo, um erro de validação 422, cujo campo "detail" é uma lista
 // estruturada e não uma frase, ou uma falha sem corpo JSON nenhum).
 const MENSAGEM_ERRO_GENERICA = 'Ocorreu um erro inesperado. Tenta novamente.'
+
+// As rotas em que um 401 NÃO quer dizer «a sessão terminou»: no login, é
+// «email ou password incorretos»; no registo e no logout, a pessoa não tem
+// (ou já não precisa de) sessão.
+const CAMINHOS_ONDE_401_NAO_E_SESSAO_TERMINADA = ['/auth/login', '/auth/registo', '/auth/logout']
+
+// Quem quer saber quando a sessão termina (só o AuthProvider). Guarda-se
+// aqui, num módulo, porque o cliente HTTP não é um componente e não tem
+// acesso ao contexto do React.
+let aoSessaoTerminar: (() => void) | null = null
+
+/** Regista (ou, com null, retira) a função a chamar quando um pedido
+ *  devolve 401 numa rota autenticada. Só há uma de cada vez. */
+export function definirAoSessaoTerminar(ouvinte: (() => void) | null): void {
+  aoSessaoTerminar = ouvinte
+}
 
 /**
  * Erro lançado quando a API responde com um código de falha (4xx ou 5xx).
@@ -85,6 +109,15 @@ export async function pedido<T>(caminho: string, opcoes: RequestInit = {}): Prom
   // resposta.ok é verdadeiro para 200–299. Para qualquer outro, lança-se
   // um ErroApi.
   if (!resposta.ok) {
+    // Sessão terminada (ver o ponto 4, no topo): avisa-se ANTES de lançar o
+    // erro, para a app já estar a sair para o login quando a página que
+    // pediu receber a falha.
+    if (
+      resposta.status === 401 &&
+      !CAMINHOS_ONDE_401_NAO_E_SESSAO_TERMINADA.some((c) => caminho.startsWith(c))
+    ) {
+      aoSessaoTerminar?.()
+    }
     // O FastAPI coloca a mensagem de erro no campo "detail". Quando é uma
     // frase (401, 404, 409...), usa-se essa; num 422 de validação seria
     // uma lista, e aí recorre-se à mensagem genérica.

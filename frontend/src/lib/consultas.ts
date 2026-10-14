@@ -25,6 +25,8 @@
 
 import { QueryClient } from '@tanstack/react-query'
 
+import { ErroApi } from './http'
+
 // As chaves da cache. São listas porque a invalidação funciona por
 // PREFIXO: invalidar ['contas'] invalida também ['contas', '123'] — a
 // lista e o detalhe de cada conta de uma vez.
@@ -34,6 +36,12 @@ export const CHAVES = {
   // Debaixo da chave da conta: invalidar ['contas'] (por exemplo, depois de
   // sincronizar) também volta a pedir as reconciliações.
   reconciliacoes: (contaId: string) => ['contas', contaId, 'reconciliacoes'] as const,
+}
+
+/** Repete uma vez, menos um 401 (ver a nota "retry", abaixo). */
+function repetirUmaVez(tentativasFeitas: number, erro: unknown): boolean {
+  if (erro instanceof ErroApi && erro.estado === 401) return false
+  return tentativasFeitas < 1
 }
 
 /**
@@ -47,7 +55,9 @@ export const CHAVES = {
  *   alterações feitas NA app não dependem disto: invalidam a chave
  *   explicitamente.
  * - retry: um pedido falhado é repetido uma vez (uma falha de rede
- *   momentânea não chega a mostrar erro). Nos testes, nunca — um teste de
+ *   momentânea não chega a mostrar erro) — exceto um 401: a sessão
+ *   terminou, repetir não adianta e a app já está a sair para o login
+ *   (ver src/lib/http.ts). Nos testes, nunca — um teste de
  *   erro quer ver o erro logo, não esperar pela repetição.
  * - Por omissão, a biblioteca também volta a pedir os dados desactualizados
  *   quando a janela volta a ter o foco (ex.: voltar à app no telemóvel
@@ -58,7 +68,7 @@ export function criarClienteConsultas({ testes = false }: { testes?: boolean } =
     defaultOptions: {
       queries: {
         staleTime: 30_000,
-        retry: testes ? false : 1,
+        retry: testes ? false : repetirUmaVez,
       },
     },
   })

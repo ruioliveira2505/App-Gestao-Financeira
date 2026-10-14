@@ -103,7 +103,7 @@ type Props = {
   // texto do campo de escrita no topo (também o seu nome acessível).
   procura?: string
   // Só com "procura": o que se mostra quando ainda não há opção nenhuma
-  // (ex.: "Escreve o nome do banco no campo acima para o adicionar.").
+  // (ex.: "Escreve o nome do banco para o adicionar" — curto, para caber numa linha).
   textoVazio?: string
   // Só com "procura": algo a mostrar ENTRE o campo de procura e as opções
   // (ex.: a ficha do país, na lista de bancos — o país filtra a lista, por

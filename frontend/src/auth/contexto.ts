@@ -40,6 +40,19 @@ import type { Utilizador } from '../lib/api'
 export type EstadoAutenticacao = 'a-carregar' | 'autenticado' | 'anonimo'
 
 /**
+ * Porque é que não há sessão (quando o estado é 'anonimo'):
+ *
+ *   - 'inicio': a pessoa chegou sem sessão (primeira visita, ou o cookie
+ *     já tinha expirado).
+ *   - 'logout': saiu de propósito, no botão «Terminar sessão».
+ *   - 'expirou': tinha sessão, e ela deixou de ser válida a meio da
+ *     utilização (um pedido autenticado devolveu 401). É o caso em que o
+ *     ecrã de login explica o que aconteceu e, depois de entrar, se volta
+ *     à página onde se estava.
+ */
+export type MotivoSemSessao = 'inicio' | 'logout' | 'expirou'
+
+/**
  * Valor partilhado através do contexto. É isto que o hook useAuth devolve
  * a qualquer componente que o chame.
  */
@@ -48,6 +61,9 @@ export type ValorAutenticacao = {
 
   // Dados do utilizador com sessão iniciada, ou null quando não há sessão.
   utilizador: Utilizador | null
+
+  // Porque é que não há sessão (só faz sentido com estado 'anonimo').
+  motivoSemSessao: MotivoSemSessao
 
   // Regista um novo utilizador e inicia-lhe logo a sessão (o backend não
   // cria sessão no registo, por isso esta função encadeia registo + login).
